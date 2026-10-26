@@ -1,0 +1,14 @@
+# SFS2X 常量符号解析 (12 项)  [ptr=字符串指针, char=单字节常量]
+
+_ZN5Sfs2X4Util9XMLParser11EXCLAMATIONE                                 @0x3aff3e8   char '!'
+_ZN5Sfs2X4Util9XMLParser2GTE                                           @0x3aff3e1   char '>'
+_ZN5Sfs2X4Util9XMLParser2LTE                                           @0x3aff3e0   char '<'
+_ZN5Sfs2X4Util9XMLParser3SQRE                                          @0x3aff3ea   char ']'
+_ZN5Sfs2X4Util9XMLParser4DASHE                                         @0x3aff3e9   char '-'
+_ZN5Sfs2X4Util9XMLParser5QMARKE                                        @0x3aff3e6   char '?'
+_ZN5Sfs2X4Util9XMLParser5QUOTEE                                        @0x3aff3e3   char '"'
+_ZN5Sfs2X4Util9XMLParser5SLASHE                                        @0x3aff3e5   char '/'
+_ZN5Sfs2X4Util9XMLParser5SPACEE                                        @0x3aff3e2   char ' '
+_ZN5Sfs2X4Util9XMLParser6EQUALSE                                       @0x3aff3e7   char '='
+_ZN5Sfs2X4Util9XMLParser6QUOTE2E                                       @0x3aff3e4   char "'"
+_ZN5Sfs2X8Bitswarm10UDPManager16RESPONSE_TIMEOUTE                      @0x31425a0   ptr  'g5'

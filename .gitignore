@@ -1,0 +1,32 @@
+# 大体积分析素材(可从 APK 重新生成)
+*.apk
+apk-extract/
+apktool/
+ghidra-project/
+
+# 运行时产物
+map-index*.json
+map-index.backup-*.json
+scan-history.json
+scan.pid
+scan.log
+*.xlsx
+*.csv
+
+# frida 抓包产物(体积大)
+*.jsonl
+*.log
+
+# 第三方二进制与提取产物(可从 APK / 官方渠道重新获取)
+frida/devlib/
+frida/frida-server-*
+*.so
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 系统
+.DS_Store

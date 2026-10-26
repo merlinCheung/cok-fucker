@@ -1,0 +1,350 @@
+定义类总数: 21107 | 去重: 21107
+
+=== 命名空间类数量 (top 45) ===
+  com.elex                                        2683
+  com.google                                      1966
+  io.reactivex                                    1648
+  org.apache                                      1421
+  com.amazonaws                                   1377
+  net.aihelp                                      1238
+  com.facebook                                    1234
+  androidx.core                                    731
+  com.parse                                        720
+  com.bumptech                                     631
+  org.jboss                                        515
+  androidx.appcompat                               401
+  com.tencent                                      317
+  com.amazon                                       282
+  com.alipay                                       251
+  sfs2x.client                                     235
+  com.alibaba                                      219
+  okhttp3.internal                                 216
+  androidx.recyclerview                            213
+  android.support                                  191
+  io.branch                                        190
+  org.hcg                                          185
+  kotlin.collections                               165
+  androidx.fragment                                155
+  kotlin.jvm                                       149
+  androidx.transition                              145
+  com.liulishuo                                    142
+  com.ksyun                                        136
+  org.cocos2dx                                     112
+  com.bytedance                                    102
+  com.clash                                         98
+  skin.support                                      98
+  com.sina                                          98
+  net.sf                                            98
+  androidx.room                                     96
+  androidx.media                                    94
+  kotlin.sequences                                  84
+  org.java_websocket                                77
+  com.nineoldandroids                               75
+  androidx.lifecycle                                74
+  org.jdom                                          73
+  kotlin.text                                       70
+  androidx.annotation                               68
+  net.minidev                                       65
+  com.chad                                          64
+
+=== 应用自有包 (com.clash / com.hcg / org.hcg) 类清单 ===
+   Lcom.clash.of.kings.COKApplication
+   Lcom.clash.of.kings.COKInstallReceiver
+   Lcom.clash.of.kings.COK_CN1$1
+   Lcom.clash.of.kings.COK_CN1
+   Lcom.clash.of.kings.ParseXmlService
+   Lcom.clash.of.kings.UpdateManager$1
+   Lcom.clash.of.kings.UpdateManager$2
+   Lcom.clash.of.kings.UpdateManager$downloadApkThread
+   Lcom.clash.of.kings.UpdateManager
+   Lcom.clash.of.kings.UtilCOKApplication
+   Lcom.clash.of.publish.PublishImpl
+   Lcom.clash.of.screenshot.ScreenShotListenManager$1
+   Lcom.clash.of.screenshot.ScreenShotListenManager$MediaContentObserver
+   Lcom.clash.of.screenshot.ScreenShotListenManager$OnScreenShotListener
+   Lcom.clash.of.screenshot.ScreenShotListenManager
+   Lcom.clash.of.share.BaseShare$1
+   Lcom.clash.of.share.BaseShare$2
+   Lcom.clash.of.share.BaseShare
+   Lcom.clash.of.share.FacebookShare$1
+   Lcom.clash.of.share.FacebookShare$2
+   Lcom.clash.of.share.FacebookShare$3
+   Lcom.clash.of.share.FacebookShare$4
+   Lcom.clash.of.share.FacebookShare
+   Lcom.clash.of.share.IShare$ShareListener
+   Lcom.clash.of.share.IShare
+   Lcom.clash.of.share.ShareContent
+   Lcom.clash.of.share.ShareManager$1
+   Lcom.clash.of.share.ShareManager$2
+   Lcom.clash.of.share.ShareManager$3
+   Lcom.clash.of.share.ShareManager
+   Lcom.clash.of.share.TwitterShare$1$1
+   Lcom.clash.of.share.TwitterShare$1
+   Lcom.clash.of.share.TwitterShare$2
+   Lcom.clash.of.share.TwitterShare$3
+   Lcom.clash.of.share.TwitterShare
+   Lcom.clash.of.share.VKShare
+   Lcom.clash.of.share.WeChatKeyManager
+   Lcom.clash.of.share.WeChatShare
+   Lcom.clash.of.share.WeiBoShare$1$1
+   Lcom.clash.of.share.WeiBoShare$1
+   Lcom.clash.of.share.WeiBoShare
+   Lcom.clash.of.twitter.ImageHelper
+   Lcom.clash.of.twitter.TwitterReceiver
+   Lcom.clash.of.twitter.TwitterSdk$1
+   Lcom.clash.of.twitter.TwitterSdk$Callback
+   Lcom.clash.of.twitter.TwitterSdk
+   Lcom.clash.of.utils.BiUtils
+   Lcom.clash.of.utils.ModuleName
+   Lcom.clash.of.vk.FileUtil
+   Lcom.clash.of.vk.PathUtils
+   Lcom.clash.of.vk.VKFileUploadInfo
+   Lcom.clash.of.vk.VKObject
+   Lcom.clash.of.vk.VKSaveInfo
+   Lcom.clash.of.vk.VKServerUploadInfo
+   Lcom.clash.of.vk.VKShareDialog$1$1
+   Lcom.clash.of.vk.VKShareDialog$1
+   Lcom.clash.of.vk.VKShareDialog$UploadingLink$1
+   Lcom.clash.of.vk.VKShareDialog$UploadingLink
+   Lcom.clash.of.vk.VKShareDialog$VKShareDialogListener
+   Lcom.clash.of.vk.VKShareDialog
+   Lcom.clash.of.vk.VKWallPostCommand$Companion
+   Lcom.clash.of.vk.VKWallPostCommand$FileUploadInfoParser
+   Lcom.clash.of.vk.VKWallPostCommand$ResponseApiParser
+   Lcom.clash.of.vk.VKWallPostCommand$SaveInfoParser
+   Lcom.clash.of.vk.VKWallPostCommand$ServerUploadInfoParser
+   Lcom.clash.of.vk.VKWallPostCommand
+   Lcom.clash.of.vk.VkSharePostListener
+   Lcom.clash.of.vk.VkShareUtil$$ExternalSyntheticLambda0
+   Lcom.clash.of.vk.VkShareUtil$$ExternalSyntheticLambda1
+   Lcom.clash.of.vk.VkShareUtil$1
+   Lcom.clash.of.vk.VkShareUtil$2
+   Lcom.clash.of.vk.VkShareUtil
+   Lcom.clash.of.vk.VkUtils$Companion$sharePost$1
+   Lcom.clash.of.vk.VkUtils$Companion
+   Lcom.clash.of.vk.VkUtils
+   Lcom.clash.of.vk.photo.VKImageParameters$1
+   Lcom.clash.of.vk.photo.VKImageParameters$2
+   Lcom.clash.of.vk.photo.VKImageParameters$VKImageType
+   Lcom.clash.of.vk.photo.VKImageParameters
+   Lcom.clash.of.vk.photo.VKUploadImage$1
+   Lcom.clash.of.vk.photo.VKUploadImage
+   Lcom.clash.of.webview.WebViewHelper$1
+   Lcom.clash.of.webview.WebViewHelper$2
+   Lcom.clash.of.webview.WebViewHelper$3
+   Lcom.clash.of.webview.WebViewHelper$4
+   Lcom.clash.of.webview.WebViewHelper$JsWebChromeClient
+   Lcom.clash.of.webview.WebViewHelper$JsWebViewClient
+   Lcom.clash.of.webview.WebViewHelper
+   Lcom.clash.of.weibo.Constants
+   Lcom.clash.of.weibo.WeiBoSdk$1
+   Lcom.clash.of.weibo.WeiBoSdk$AuthListener
+   Lcom.clash.of.weibo.WeiBoSdk$Instance
+   Lcom.clash.of.weibo.WeiBoSdk$WeiBoCallback
+   Lcom.clash.of.weibo.WeiBoSdk
+   Lcom.clash.of.weixin.WeixinUtil$1$1
+   Lcom.clash.of.weixin.WeixinUtil$1
+   Lcom.clash.of.weixin.WeixinUtil$2
+   Lcom.clash.of.weixin.WeixinUtil
+   Lcom.hcg.cok.StorageAdapter
+   Lcom.hcg.cok.cn1.AnimationUtils$1
+   Lcom.hcg.cok.cn1.AnimationUtils
+   Lcom.hcg.cok.cn1.BuildConfig
+   Lcom.hcg.cok.cn1.PingppPaymentDialog$1$1
+   Lcom.hcg.cok.cn1.PingppPaymentDialog$1
+   Lcom.hcg.cok.cn1.PingppPaymentDialog
+   Lcom.hcg.cok.cn1.R$dimen
+   Lcom.hcg.cok.cn1.R$drawable
+   Lcom.hcg.cok.cn1.R$id
+   Lcom.hcg.cok.cn1.R$layout
+   Lcom.hcg.cok.cn1.R$mipmap
+   Lcom.hcg.cok.cn1.R$string
+   Lcom.hcg.cok.cn1.R$style
+   Lcom.hcg.cok.cn1.R
+   Lcom.hcg.cok.cn1.wxapi.WXEntryActivity
+   Lorg.hcg.IF.AmazonAuthorizeListener
+   Lorg.hcg.IF.AmazonSignOutListener
+   Lorg.hcg.IF.BuildConfig
+   Lorg.hcg.IF.COKLifecycleCallbacks$1
+   Lorg.hcg.IF.COKLifecycleCallbacks$2$1
+   Lorg.hcg.IF.COKLifecycleCallbacks$2
+   Lorg.hcg.IF.COKLifecycleCallbacks$3
+   Lorg.hcg.IF.COKLifecycleCallbacks
+   Lorg.hcg.IF.CheckManager$1
+   Lorg.hcg.IF.CheckManager$downloadApkThread$1
+   Lorg.hcg.IF.CheckManager$downloadApkThread
+   Lorg.hcg.IF.CheckManager
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda0
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda10
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda11
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda12
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda13
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda14
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda15
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda16
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda17
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda18
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda19
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda1
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda20
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda2
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda3
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda4
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda5
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda6
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda7
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda8
+   Lorg.hcg.IF.IF$$ExternalSyntheticLambda9
+   Lorg.hcg.IF.IF$1
+   Lorg.hcg.IF.IF$2
+   Lorg.hcg.IF.IF$3
+   Lorg.hcg.IF.IF
+   Lorg.hcg.IF.Jni$$ExternalSyntheticLambda0
+   Lorg.hcg.IF.Jni$1
+   Lorg.hcg.IF.Jni$2
+   Lorg.hcg.IF.Jni
+   Lorg.hcg.IF.LanguageAdaptation
+   Lorg.hcg.IF.Net$1
+   Lorg.hcg.IF.Net$2
+   Lorg.hcg.IF.Net$3
+   Lorg.hcg.IF.Net
+   Lorg.hcg.IF.NetClient$1
+   Lorg.hcg.IF.NetClient$2
+   Lorg.hcg.IF.NetClient$3
+   Lorg.hcg.IF.NetClient$4
+   Lorg.hcg.IF.NetClient
+   Lorg.hcg.IF.NetClientManager
+   Lorg.hcg.IF.Payment$$ExternalSyntheticLambda0
+   Lorg.hcg.IF.Payment$$ExternalSyntheticLambda1
+   Lorg.hcg.IF.Payment$$ExternalSyntheticLambda2
+   Lorg.hcg.IF.Payment$$ExternalSyntheticLambda3
+   Lorg.hcg.IF.Payment$1
+   Lorg.hcg.IF.Payment
+   Lorg.hcg.IF.R$anim
+   Lorg.hcg.IF.R$bool
+   Lorg.hcg.IF.R$color
+   Lorg.hcg.IF.R$dimen
+   Lorg.hcg.IF.R$drawable
+   Lorg.hcg.IF.R$id
+   Lorg.hcg.IF.R$integer
+   Lorg.hcg.IF.R$layout
+   Lorg.hcg.IF.R$raw
+   Lorg.hcg.IF.R$string
+   Lorg.hcg.IF.R$style
+   Lorg.hcg.IF.R$xml
+   Lorg.hcg.IF.R
+   Lorg.hcg.IF.SDKConfig
+   Lorg.hcg.IF.UtilApplication$$ExternalSyntheticLambda0
+   Lorg.hcg.IF.UtilApplication
+   Lorg.hcg.IF.WebViewAdapter
+   Lorg.hcg.IF.chatservicereflect.ChatServiceJniHandle$$ExternalSyntheticLambda0
+   Lorg.hcg.IF.chatservicereflect.ChatServiceJniHandle$1
+   Lorg.hcg.IF.chatservicereflect.ChatServiceJniHandle
+   Lorg.hcg.IF.chatservicereflect.MailGetNewData
+   Lorg.hcg.IF.crash.CrashReportManager$BuglyCrashReportApi
+   Lorg.hcg.IF.crash.CrashReportManager$CrashReportApi
+   Lorg.hcg.IF.crash.CrashReportManager$Factory
+   Lorg.hcg.IF.crash.CrashReportManager
+   Lorg.hcg.IF.jsondeserializer.ChatServiceJsonDeSerializer
+   Lorg.hcg.IF.permission.PermissionHelper$$ExternalSyntheticLambda0
+   Lorg.hcg.IF.permission.PermissionHelper$$ExternalSyntheticLambda1
+   Lorg.hcg.IF.permission.PermissionHelper$$ExternalSyntheticLambda2
+   Lorg.hcg.IF.permission.PermissionHelper$$ExternalSyntheticLambda3
+   Lorg.hcg.IF.permission.PermissionHelper$1
+   Lorg.hcg.IF.permission.PermissionHelper$2
+   Lorg.hcg.IF.permission.PermissionHelper$3
+   Lorg.hcg.IF.permission.PermissionHelper
+   Lorg.hcg.IF.permission.PermissionRequestListener
+   Lorg.hcg.IF.permission.PermissionSupervisor$$ExternalSyntheticLambda0
+   Lorg.hcg.IF.permission.PermissionSupervisor$$ExternalSyntheticLambda1
+   Lorg.hcg.IF.permission.PermissionSupervisor$LordPortraitPermission
+   Lorg.hcg.IF.permission.PermissionSupervisor$PermissionBase$1
+   Lorg.hcg.IF.permission.PermissionSupervisor$PermissionBase
+   Lorg.hcg.IF.permission.PermissionSupervisor$ReadPhoneStatePermission
+   Lorg.hcg.IF.permission.PermissionSupervisor$ReadWriteStoragePermission
+   Lorg.hcg.IF.permission.PermissionSupervisor
+   Lorg.hcg.notifies.AmazonNotificationManager$1$1
+   Lorg.hcg.notifies.AmazonNotificationManager$1
+   Lorg.hcg.notifies.AmazonNotificationManager$2
+   Lorg.hcg.notifies.AmazonNotificationManager$PushType
+   Lorg.hcg.notifies.AmazonNotificationManager
+   Lorg.hcg.notifies.HFParseCustomReceiver
+   Lorg.hcg.notifies.IFJobService
+   Lorg.hcg.notifies.LocalBroadcastReceiver
+   Lorg.hcg.notifies.LocalNotification
+   Lorg.hcg.notifies.LocalNotificationIntentService
+   Lorg.hcg.notifies.LocalNotificationManager$$ExternalSyntheticLambda8
+   Lorg.hcg.notifies.LocalNotificationManager$1
+   Lorg.hcg.notifies.LocalNotificationManager
+   Lorg.hcg.notifies.NetworkChangeReceiver$1
+   Lorg.hcg.notifies.NetworkChangeReceiver
+   Lorg.hcg.notifies.NotificationReceiver
+   Lorg.hcg.stac.empire.common.activity.CommonActivity$1
+   Lorg.hcg.stac.empire.common.activity.CommonActivity$2
+   Lorg.hcg.stac.empire.common.activity.CommonActivity
+   Lorg.hcg.stac.empire.core.util.DebugLog
+   Lorg.hcg.stac.empire.pay.PayItemData$Currency
+   Lorg.hcg.stac.empire.pay.PayItemData$PaymentPrice
+   Lorg.hcg.stac.empire.pay.PayItemData
+   Lorg.hcg.stac.empire.publish.AbstractPublishImpl$1
+   Lorg.hcg.stac.empire.publish.AbstractPublishImpl$2
+   Lorg.hcg.stac.empire.publish.AbstractPublishImpl$3
+   Lorg.hcg.stac.empire.publish.AbstractPublishImpl$4
+   Lorg.hcg.stac.empire.publish.AbstractPublishImpl
+   Lorg.hcg.stac.empire.publish.IPublishChannel
+   Lorg.hcg.stac.empire.sns.FBFriendPoj
+   Lorg.hcg.stac.empire.sns.FBUtil$10$1
+   Lorg.hcg.stac.empire.sns.FBUtil$10
+   Lorg.hcg.stac.empire.sns.FBUtil$11
+   Lorg.hcg.stac.empire.sns.FBUtil$12
+   Lorg.hcg.stac.empire.sns.FBUtil$13$1$1
+   Lorg.hcg.stac.empire.sns.FBUtil$13$1
+   Lorg.hcg.stac.empire.sns.FBUtil$13$2
+   Lorg.hcg.stac.empire.sns.FBUtil$13$3
+   Lorg.hcg.stac.empire.sns.FBUtil$13
+   Lorg.hcg.stac.empire.sns.FBUtil$14$1
+   Lorg.hcg.stac.empire.sns.FBUtil$14$2
+   Lorg.hcg.stac.empire.sns.FBUtil$14$3
+   Lorg.hcg.stac.empire.sns.FBUtil$14
+   Lorg.hcg.stac.empire.sns.FBUtil$15$1
+   Lorg.hcg.stac.empire.sns.FBUtil$15
+   Lorg.hcg.stac.empire.sns.FBUtil$16$1$1
+   Lorg.hcg.stac.empire.sns.FBUtil$16$1
+   Lorg.hcg.stac.empire.sns.FBUtil$16
+   Lorg.hcg.stac.empire.sns.FBUtil$1
+   Lorg.hcg.stac.empire.sns.FBUtil$2
+   Lorg.hcg.stac.empire.sns.FBUtil$3
+   Lorg.hcg.stac.empire.sns.FBUtil$4$1$1
+   Lorg.hcg.stac.empire.sns.FBUtil$4$1
+   Lorg.hcg.stac.empire.sns.FBUtil$4
+   Lorg.hcg.stac.empire.sns.FBUtil$5$1$1
+   Lorg.hcg.stac.empire.sns.FBUtil$5$1
+   Lorg.hcg.stac.empire.sns.FBUtil$5
+   Lorg.hcg.stac.empire.sns.FBUtil$6$1$1
+   Lorg.hcg.stac.empire.sns.FBUtil$6$1
+   Lorg.hcg.stac.empire.sns.FBUtil$6
+   Lorg.hcg.stac.empire.sns.FBUtil$7$1$1
+   Lorg.hcg.stac.empire.sns.FBUtil$7$1
+   Lorg.hcg.stac.empire.sns.FBUtil$7
+   Lorg.hcg.stac.empire.sns.FBUtil$8$1
+   Lorg.hcg.stac.empire.sns.FBUtil$8$2
+   Lorg.hcg.stac.empire.sns.FBUtil$8$3
+   Lorg.hcg.stac.empire.sns.FBUtil$8$4
+   Lorg.hcg.stac.empire.sns.FBUtil$8
+   Lorg.hcg.stac.empire.sns.FBUtil$9$1
+   Lorg.hcg.stac.empire.sns.FBUtil$9
+   Lorg.hcg.stac.empire.sns.FBUtil
+   Lorg.hcg.util.AOEUtil$MD5
+   Lorg.hcg.util.AOEUtil
+   Lorg.hcg.util.CommonUtil
+   Lorg.hcg.util.Constants$Platform
+   Lorg.hcg.util.Constants
+   Lorg.hcg.util.DeviceUtil$CMDExecute
+   Lorg.hcg.util.DeviceUtil
+   Lorg.hcg.util.EncryptUtil
+   Lorg.hcg.util.GameContext
+   Lorg.hcg.util.HtmlDialog
+   Lorg.hcg.util.MarketUtil
+   Lorg.hcg.util.NotchUtils
+   Lorg.hcg.util.ScreenUtil
+  小计: 299

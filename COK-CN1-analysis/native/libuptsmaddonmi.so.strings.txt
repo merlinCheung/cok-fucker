@@ -1,0 +1,8 @@
+### libuptsmaddonmi.so
+## SHA-256
+c41e19a7339d0f2b8174626678917307c1b11523ead567a27d49ee8cd7b52a68
+## size
+776992
+## URLs
+http://www.openssl.org/support/faq.html
+## host-like

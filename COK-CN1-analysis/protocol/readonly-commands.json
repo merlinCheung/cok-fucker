@@ -1,0 +1,960 @@
+{
+ "cmd.ping": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "serverNowTime"
+  ],
+  "params_sent": {}
+ },
+ "overview_new.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "queueList",
+   "noOpenList"
+  ],
+  "params_sent": {}
+ },
+ "monthlySign.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "multiDays",
+   "rewardObj",
+   "days",
+   "leftLostSignTimes",
+   "day2ItemIdStr"
+  ],
+  "params_sent": {}
+ },
+ "allianceNewBoss.bossMainInfo": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "bossInfo"
+  ],
+  "params_sent": {}
+ },
+ "al.rank": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "allianceTitle",
+   "rankName",
+   "allianceApply",
+   "list"
+  ],
+  "params_sent": {
+   "allianceId": "58a613bf89754041b39c73d9b192ff49"
+  }
+ },
+ "kingdom.officers": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "kingdomName",
+   "thronePic",
+   "banner",
+   "officers"
+  ],
+  "params_sent": {
+   "serverId": "2223"
+  }
+ },
+ "chat.get.system.mails": {
+  "status": "ERR",
+  "errorCode": "E000000",
+  "fields": [
+   "errorCode"
+  ],
+  "params_sent": {
+   "clientseq": "e058ea557fb742eab65acad2e5442c73",
+   "count": "50",
+   "time": "1792637322542"
+  }
+ },
+ "daily.quest.ls": {
+  "status": "ERR",
+  "errorCode": "102192",
+  "fields": [
+   "errorCode"
+  ],
+  "params_sent": {}
+ },
+ "achieve.ls": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "list",
+   "stageRewardInfo"
+  ],
+  "params_sent": {}
+ },
+ "act.ls": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "act"
+  ],
+  "params_sent": {}
+ },
+ "itemcollection.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "collectedItemStr",
+   "shieldedItemStr"
+  ],
+  "params_sent": {
+   "itemType": "1"
+  }
+ },
+ "gem.getDigView": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "curTimes",
+   "rare_show",
+   "redPoint",
+   "noticeArray",
+   "noticeHistoryArray",
+   "leftFreeTimes",
+   "maxRcvdTimes",
+   "nextRcvTime",
+   "maxGemNum",
+   "gemArray",
+   "maxLuckyValue",
+   "needTimes",
+   "luckyValue"
+  ],
+  "params_sent": {
+   "isLogin": "1"
+  }
+ },
+ "stat.tt": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "success"
+  ],
+  "params_sent": {
+   "id": "5"
+  }
+ },
+ "science.data.cond": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "arrays"
+  ],
+  "params_sent": {
+   "scienceIds": "53698010;0|53698020;0"
+  }
+ },
+ "festivalview.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "maxLevel",
+   "unlock",
+   "openBoxCfg",
+   "level",
+   "noticeHistoryArray",
+   "boxItemCount",
+   "VIPAdditionExp",
+   "superPayUnlock",
+   "exchangeId",
+   "SuperVIPAddition",
+   "freeMark",
+   "superExchangeId",
+   "levelConfigObject",
+   "payMark",
+   "SuperVIPAdditionExp",
+   "superPayMark",
+   "exp",
+   "VIPAddition",
+   "boxKeyCount"
+  ],
+  "params_sent": {
+   "activityId": "57753"
+  }
+ },
+ "generalBP.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "start",
+   "end",
+   "list"
+  ],
+  "params_sent": {
+   "activityId": "57607"
+  }
+ },
+ "formationTrain.bag": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "freeTimes",
+   "score",
+   "pageCount",
+   "totalPage",
+   "pool",
+   "updateTime",
+   "pageData",
+   "autoBreak",
+   "info",
+   "freeScore"
+  ],
+  "params_sent": {
+   "pageNo": "1"
+  }
+ },
+ "worldboss": {
+  "status": "ERR",
+  "errorCode": "103864",
+  "fields": [
+   "errorCode"
+  ],
+  "params_sent": {
+   "op": "0",
+   "type": "16"
+  }
+ },
+ "accountLock.getUnlockView": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "locked"
+  ],
+  "params_sent": {
+   "password": "nil",
+   "emailAddr": "nil",
+   "password2": "nil",
+   "password1": "nil",
+   "verifCode": "nil"
+  }
+ },
+ "mall.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "shoppingMallCurrency",
+   "shoppingMall"
+  ],
+  "params_sent": {}
+ },
+ "get.clash.server.list": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "clashServerList",
+   "groupId"
+  ],
+  "params_sent": {}
+ },
+ "kingdomtask_new.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "stageBuffArr",
+   "stageArray"
+  ],
+  "params_sent": {}
+ },
+ "castleLevelUp.getLevel": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "castlelevel"
+  ],
+  "params_sent": {}
+ },
+ "cemetery.get.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "kingdomCemetery",
+   "beforeDead",
+   "activity",
+   "userCemetery",
+   "quickNeed",
+   "countDown",
+   "canReviveQuick"
+  ],
+  "params_sent": {}
+ },
+ "civilization.prestige.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "civilization_prestige_max",
+   "prestigeLev",
+   "prestigeExp",
+   "civilizationValueLimit",
+   "civilization_score",
+   "prestiges"
+  ],
+  "params_sent": {}
+ },
+ "hero.introduction": {
+  "status": "ERR",
+  "errorCode": "102192",
+  "fields": [
+   "errorCode"
+  ],
+  "params_sent": {}
+ },
+ "oneKeyLoad.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "cost",
+   "loadData"
+  ],
+  "params_sent": {}
+ },
+ "alquick.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "nextCallHelpTime"
+  ],
+  "params_sent": {}
+ },
+ "buidlingextension.resEffect": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "res_effect"
+  ],
+  "params_sent": {}
+ },
+ "strengthen.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "blessCost",
+   "transfer",
+   "blessBuffId",
+   "blessCount",
+   "count",
+   "blessTotal",
+   "skillInfos",
+   "blessBuffValue"
+  ],
+  "params_sent": {}
+ },
+ "kingdomBiography.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "biographies"
+  ],
+  "params_sent": {}
+ },
+ "treasuremap.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "remainTimes",
+   "items",
+   "status"
+  ],
+  "params_sent": {}
+ },
+ "soldierHelp.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "state"
+  ],
+  "params_sent": {}
+ },
+ "permitCommandInfo": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "success"
+  ],
+  "params_sent": {}
+ },
+ "magic.effectList": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "magicEffectCdTime",
+   "magicEffectList",
+   "skillList",
+   "magicAtlasEffectList",
+   "magicStarEffectList",
+   "magicWearInfo"
+  ],
+  "params_sent": {}
+ },
+ "science.data.init": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "allianceScience",
+   "science",
+   "civilization_science"
+  ],
+  "params_sent": {}
+ },
+ "score.login": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "success"
+  ],
+  "params_sent": {}
+ },
+ "featureStateChange.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "feature"
+  ],
+  "params_sent": {}
+ },
+ "scanctuary.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "haveUserData",
+   "subState",
+   "mainState",
+   "mainBeginTime",
+   "mainEndTime",
+   "season "
+  ],
+  "params_sent": {}
+ },
+ "newBoat.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "ships",
+   "shipLimit"
+  ],
+  "params_sent": {}
+ },
+ "auction.getView": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "gold",
+   "diamond",
+   "inActivity",
+   "endTime",
+   "list",
+   "globalList"
+  ],
+  "params_sent": {}
+ },
+ "miraclestone.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "newRewardNum",
+   "returnExchangeIds",
+   "alreadyGetNum",
+   "lastRewardMirStoneTime",
+   "collectNum",
+   "isBoughtMirStoneVIP",
+   "canRewardNum",
+   "suchDayRewardNum",
+   "stoneSumNum",
+   "returnPer"
+  ],
+  "params_sent": {}
+ },
+ "newServerPower.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "base_now",
+   "sky_piea_now",
+   "tech_config_max",
+   "tech_max",
+   "building",
+   "building_config_max",
+   "sky_piea_max",
+   "all_now",
+   "tech_now",
+   "base_max",
+   "all",
+   "all_max",
+   "tech",
+   "equip_now",
+   "end_time",
+   "sky_piea_config_max",
+   "reset_time",
+   "building_max",
+   "all_config_max",
+   "equip_max",
+   "equip",
+   "base_config_max",
+   "sky_piea",
+   "equip_config_max"
+  ],
+  "params_sent": {}
+ },
+ "shadowDragon.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "dragons"
+  ],
+  "params_sent": {}
+ },
+ "convoy.login": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "convoyData"
+  ],
+  "params_sent": {}
+ },
+ "convoy.activityData": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "data"
+  ],
+  "params_sent": {}
+ },
+ "dailyQuest2025.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "dailyTaskId2025",
+   "newWeekRewardList",
+   "curReward",
+   "weekEndTime",
+   "rewardList",
+   "dailyQuest",
+   "weekTaskScore",
+   "weekTaskRewardId2025"
+  ],
+  "params_sent": {}
+ },
+ "cmd.finishinit": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "success"
+  ],
+  "params_sent": {}
+ },
+ "story.task.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "section",
+   "storyTaskList"
+  ],
+  "params_sent": {}
+ },
+ "civilizationCastle.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "def",
+   "maxAidSoldierCount",
+   "maxMarchSoldierCount",
+   "resourceNum",
+   "output",
+   "allianceId",
+   "uid",
+   "removeEndTime",
+   "pointId",
+   "allianceName",
+   "beRobNum",
+   "abbr",
+   "itemAddCount",
+   "buildTime",
+   "level",
+   "userName",
+   "lastOutputTime",
+   "army",
+   "robCount",
+   "civFortStatus",
+   "status",
+   "lastSettleTime",
+   "isDouble"
+  ],
+  "params_sent": {}
+ },
+ "formation.getData": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "uid",
+   "numOrder",
+   "level",
+   "typeOrder",
+   "percent",
+   "lvOrder"
+  ],
+  "params_sent": {}
+ },
+ "skin.introduction": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "skills",
+   "can_dress",
+   "avatar_id",
+   "level",
+   "enchant_skills",
+   "base_skills",
+   "sum_exp",
+   "new_enchant_skills",
+   "avatar_list",
+   "fetter_skills"
+  ],
+  "params_sent": {}
+ },
+ "skill.state.get": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "conVal",
+   "km",
+   "kmsg",
+   "uss",
+   "khis",
+   "kss",
+   "curSid",
+   "pm"
+  ],
+  "params_sent": {}
+ },
+ "general_choice.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "rewardId",
+   "dataList",
+   "time"
+  ],
+  "params_sent": {}
+ },
+ "castle.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "castleLv",
+   "giftIds",
+   "time"
+  ],
+  "params_sent": {}
+ },
+ "heroBadge.badgeList": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "list"
+  ],
+  "params_sent": {}
+ },
+ "nightPet.list": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "power",
+   "list"
+  ],
+  "params_sent": {}
+ },
+ "matchAct.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "nextFreeTime"
+  ],
+  "params_sent": {}
+ },
+ "relic.getRelicList": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "groupIds",
+   "buildingList"
+  ],
+  "params_sent": {}
+ },
+ "tactics.getData": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "generalId"
+  ],
+  "params_sent": {}
+ },
+ "skin.effect_new": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "new_enchant_skills"
+  ],
+  "params_sent": {}
+ },
+ "magic_weapon.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "magicWeaponList"
+  ],
+  "params_sent": {}
+ },
+ "godGift.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "finishTime",
+   "item",
+   "rewardCount",
+   "helpMax",
+   "canTwice",
+   "signCount",
+   "signReward",
+   "num",
+   "openday",
+   "wishMax",
+   "history",
+   "isSign",
+   "result",
+   "help",
+   "canWish",
+   "canAddSign",
+   "addSign",
+   "state"
+  ],
+  "params_sent": {}
+ },
+ "directUpgrade.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "activityArray"
+  ],
+  "params_sent": {}
+ },
+ "lordTask.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "task_arr",
+   "curProgress",
+   "stages",
+   "awardIndex",
+   "rewards"
+  ],
+  "params_sent": {}
+ },
+ "crossthrone.time": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "success"
+  ],
+  "params_sent": {}
+ },
+ "show.status.item": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "statusItems",
+   "extraStatus"
+  ],
+  "params_sent": {}
+ },
+ "medal.list": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "medal"
+  ],
+  "params_sent": {}
+ },
+ "drawNew.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "pools"
+  ],
+  "params_sent": {}
+ },
+ "nfight.data": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "restTime",
+   "sumScore",
+   "actId",
+   "maxScore",
+   "actInfos",
+   "shopScore",
+   "startTime",
+   "signEndTime",
+   "nextSignTime",
+   "crossleave",
+   "fightEndTime",
+   "status"
+  ],
+  "params_sent": {}
+ },
+ "newHeaven.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "unlockGeneralNum",
+   "exploreNum",
+   "unlockDragonNum",
+   "curCrystal",
+   "sky_city_guide",
+   "chooseRewards",
+   "deviceInfo",
+   "chooseGeneral",
+   "powerRefreshCdTime",
+   "landId",
+   "chooseDragon",
+   "curPower",
+   "fightPower",
+   "state",
+   "endTime",
+   "needPower",
+   "needCrystal",
+   "exploreLv",
+   "armyType",
+   "isLandConfig"
+  ],
+  "params_sent": {}
+ },
+ "aw_formula.getData": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "conf_k3",
+   "conf_k5",
+   "queue"
+  ],
+  "params_sent": {}
+ },
+ "dragon.playoff.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "success"
+  ],
+  "params_sent": {}
+ },
+ "dragon.battle.info": {
+  "status": "ERR",
+  "errorCode": "102192",
+  "fields": [
+   "errorCode"
+  ],
+  "params_sent": {}
+ },
+ "contact.get.server.current": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "contactList"
+  ],
+  "params_sent": {}
+ },
+ "redPackets.rvd.id": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "records"
+  ],
+  "params_sent": {}
+ },
+ "chat.room.invitee": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "invitee"
+  ],
+  "params_sent": {
+   "allianceId": "58a613bf89754041b39c73d9b192ff49"
+  }
+ },
+ "chat.get.new.mails": {
+  "status": "ERR",
+  "errorCode": "E000000",
+  "fields": [
+   "errorCode"
+  ],
+  "params_sent": {
+   "updatemailtime": "1792592422672",
+   "params": ""
+  }
+ },
+ "heaven.task.info": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "tasks"
+  ],
+  "params_sent": {}
+ },
+ "al.task.record": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "freequeueTime",
+   "refreshCount",
+   "itemPublishCount",
+   "refreshTime",
+   "conditionTime",
+   "maxPublishRewardCount",
+   "maxPublishItemUseCount",
+   "acceptCount",
+   "freequeue",
+   "maxPublishCount",
+   "itemPublishUseCount",
+   "maxAcceptRewardCount",
+   "gold",
+   "maxAcceptCount",
+   "conditionPublishLevel",
+   "nextGold",
+   "publishCount",
+   "clearGoldCost",
+   "conditionAcceptLevel",
+   "freequeueStartTime",
+   "maxAllPublishCount",
+   "itemRefreshCount",
+   "refreshGoldCost",
+   "publishGoldCost"
+  ],
+  "params_sent": {}
+ },
+ "check.result": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "success"
+  ],
+  "params_sent": {
+   "sC": "02aad0f0e9c4323135bd50af79bcd20d",
+   "bS": "2-1-1-0-34-100-0.34|2-1-1-0-32-100-0.32|2-1-1-0-32-100-0.32|2-1-1-0-33-100-0.33|2-1-1-0-33",
+   "cP": "0"
+  }
+ },
+ "luckyday.effect": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "success"
+  ],
+  "params_sent": {}
+ }
+}

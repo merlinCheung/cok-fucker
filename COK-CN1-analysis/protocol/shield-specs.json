@@ -1,0 +1,70 @@
+{
+ "source": "database.local.xml goods 组(city_buff=1 & type2=1) + id-names.json",
+ "note": "onekeybuff.use 只传槽位号(type); 槽位内容由 onekeybuff.save 写入(statusList = '道具id;道具id')。持续秒数取 display_quantity 的第二段。",
+ "specs": [
+  {
+   "id": "212116",
+   "name": "霸主战争守护1小时",
+   "seconds": 3600,
+   "duration": "1 小时",
+   "lv": "1",
+   "cd_time": "1"
+  },
+  {
+   "id": "200410",
+   "name": "战争守护8小时",
+   "seconds": 28800,
+   "duration": "8 小时",
+   "lv": "1",
+   "cd_time": "1"
+  },
+  {
+   "id": "212146",
+   "name": "帝王战争守护8小时",
+   "seconds": 28800,
+   "duration": "8 小时",
+   "lv": "1",
+   "cd_time": "1"
+  },
+  {
+   "id": "200411",
+   "name": "战争守护24小时",
+   "seconds": 86400,
+   "duration": "24 小时",
+   "lv": "5",
+   "cd_time": "1"
+  },
+  {
+   "id": "200412",
+   "name": "战争守护3天",
+   "seconds": 259200,
+   "duration": "72 小时",
+   "lv": "8",
+   "cd_time": "1"
+  },
+  {
+   "id": "200408",
+   "name": "战争守护7天",
+   "seconds": 604800,
+   "duration": "168 小时",
+   "lv": "1",
+   "cd_time": "1"
+  },
+  {
+   "id": "36009790",
+   "name": "战争守护15天",
+   "seconds": 1296000,
+   "duration": "360 小时",
+   "lv": "10",
+   "cd_time": "1"
+  },
+  {
+   "id": "200413",
+   "name": "战争守护30天",
+   "seconds": 2592000,
+   "duration": "720 小时",
+   "lv": "10",
+   "cd_time": "1"
+  }
+ ]
+}

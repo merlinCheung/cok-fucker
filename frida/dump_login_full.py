@@ -1,0 +1,47 @@
+"""把登录响应明文全字段打出来(找背包/道具初始下发)。"""
+import json, sys, random
+PROTO="/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol"
+sys.path.insert(0,PROTO)
+import cok_client
+from cok_client import CokClient, TypedInt
+from cok_sfs import derive_login_fields
+import cok_account
+
+orig_login = CokClient.login
+def patched(self):
+    """复制 login 但保留完整响应对象"""
+    acc=self.account; t=int(time.time()); self.seq+=1
+    d=derive_login_fields(t, acc["gameUid"], acc["appVersion"], acc.get("signCode"), acc.get("buildCode"))
+    params={"appVersion":acc["appVersion"],"luaVersion":acc["luaVersion"],"pfId":acc["pfId"],
+        "gaid":acc["gaid"],"isHDLogin":acc["isHDLogin"],"pfchild":acc["pfchild"],
+        "signCode":d["signCode"],"buildCode":d["buildCode"],"deviceId":acc["deviceId"],
+        "isSmall":acc["isSmall"],"uuid":acc["uuid"],"serverId":acc["serverId"],
+        "phoneDevice":acc["phoneDevice"],"gmUid":acc["gmUid"],"packageName":acc["packageName"],
+        "lang":acc["lang"],"SecurityCode":d["SecurityCode"],"cc":d["cc"],
+        "fromCountry":acc["fromCountry"],"gmLogin":acc["gmLogin"],"cmdBaseTime":str(t),
+        "subscriberId":acc["subscriberId"],"gameUid":str(acc["gameUid"]),
+        "newbasekey":"%032x"%random.getrandbits(128),"afUID":acc["afUID"],
+        "googlePlay":acc["googlePlay"],"pfSign":acc["pfSign"],"platformToken":acc["platformToken"],
+        "device_info":acc["device_info"],"parseRegisterId":acc["parseRegisterId"],
+        "_cok_":"%06d%06d"%(self.cok_prefix,self.seq),"pf":acc["pf"],"channelSign":acc["channelSign"],
+        "baseActiveKey":acc["baseActiveKey"],"linkname":acc["linkname"],"region":acc["region"],
+        "instantAppCookie":acc["instantAppCookie"]}
+    env={"p":{"p":params,"zn":acc["zn"],"pw":acc["pw"],"un":str(acc["gameUid"])},
+         "a":TypedInt(1,0x03),"c":TypedInt(0,0x02)}
+    self._send_frame(env)
+    flags,obj,f=self._recv_frame()
+    lp=self._resp_params(obj)
+    self.LP=lp
+    id_str=lp.get("id")
+    self.key,self.key_id=cok_client.derive_session_key(id_str)
+    return self.key,self.key_id
+CokClient.login=patched
+import time
+acct=cok_account.load_account()
+c=CokClient(account=acct, timeout=60.0)
+c.connect(); c.login()
+lp=c.LP
+print("=== 登录响应字段 (%d) ===" % len(lp))
+for k,v in sorted(lp.items()):
+    s=json.dumps(v,ensure_ascii=False,default=str)
+    print("  %-26s %s"%(k, s[:220]))

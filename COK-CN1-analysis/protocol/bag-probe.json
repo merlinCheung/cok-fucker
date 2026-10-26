@@ -1,0 +1,44 @@
+{
+ "msg_refreash_tool_data": {
+  "error": "命令 msg_refreash_tool_data 无响应"
+ },
+ "msg_havetool": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "msg_tool_init_end": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "msg.tool.change": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "itemcollection.data": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "show.status.item": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "outland.item.list": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "hot.item.refresh": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "status.item.refresh": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "push.item.having": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "push.useritem": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "queue.tool": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "world.user.march": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ },
+ "cemetery.get.info": {
+  "error": "连接被服务端关闭（已收 0/3 字节）"
+ }
+}

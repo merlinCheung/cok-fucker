@@ -1,0 +1,1916 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COK 直连控制台</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --line:#30363d;
+    --fg:#e6edf3; --dim:#8b949e; --accent:#58a6ff;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --chip:#21262d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{position:sticky;top:0;z-index:10;background:rgba(13,17,23,.94);
+         backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+         padding:10px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+         background:var(--chip);font-size:12px;color:var(--dim);border:1px solid var(--line)}
+  .badge b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:0 0 auto}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.off{background:var(--err)}
+  .dot.wait{background:var(--warn)}
+  .spacer{flex:1}
+  .num{font-variant-numeric:tabular-nums;font-weight:600}
+  main{padding:16px 18px 44px;max-width:1440px;margin:0 auto}
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(258px,1fr))}
+  /* 打野怪卡占 2 列, 和"告警"并排填满第二行 */
+  .span2{grid-column:span 2}
+  @media (max-width:760px){ .span2{grid-column:1/-1} }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px;
+        display:flex;flex-direction:column;min-width:0}
+  .card h2{margin:0 0 9px;font-size:13px;font-weight:600;color:var(--fg);
+           display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .card h2 .sub{font-weight:400;color:var(--dim);font-size:11px}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;
+      border-bottom:1px dashed rgba(48,54,61,.5);font-size:13px}
+  .kv:last-child{border-bottom:0}
+  .kv .k{color:var(--dim);flex:0 0 auto}
+  .kv .v{text-align:right;word-break:break-all;font-variant-numeric:tabular-nums}
+  .tag{display:inline-block;padding:1px 7px;border-radius:5px;background:var(--chip);
+       color:var(--dim);font-size:11px;margin:2px 3px 2px 0;font-variant-numeric:tabular-nums;
+       max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tag.good{background:rgba(63,185,80,.14);color:var(--ok)}
+  .tag.warn{background:rgba(210,153,34,.15);color:var(--warn)}
+  .tag.bad{background:rgba(248,81,73,.14);color:var(--err)}
+  .tag.info{background:rgba(88,166,255,.14);color:var(--accent)}
+  button{background:#21262d;color:var(--fg);border:1px solid var(--line);border-radius:6px;
+         padding:6px 13px;font-size:13px;cursor:pointer;transition:.12s;font-family:inherit;
+         display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  button:hover:not(:disabled){background:#30363d;border-color:#484f58}
+  button:active:not(:disabled){transform:translateY(1px)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:#1f6feb;border-color:#388bfd;color:#fff}
+  button.primary:hover:not(:disabled){background:#388bfd}
+  button.danger{background:#3d1d1d;border-color:#6e2b2b;color:#ff7b72}
+  button.ghost{background:transparent}
+  button.on{background:rgba(63,185,80,.18);border-color:#2ea043;color:var(--ok)}
+  select,input{background:#0d1117;color:var(--fg);border:1px solid var(--line);
+               border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit;max-width:100%}
+  select:focus,input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(88,166,255,.2)}
+  input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;padding:0}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+  .row label{color:var(--dim);font-size:12px;min-width:44px}
+  .hint{color:var(--dim);font-size:11.5px;margin-top:6px;line-height:1.55}
+  /* 操作结果条: 持久显示, 不只是 toast */
+  .res{margin-top:8px;padding:5px 9px;border-radius:6px;font-size:12px;line-height:1.5;
+       background:rgba(48,54,61,.32);border-left:3px solid var(--line);color:var(--dim)}
+  .res.ok{border-left-color:var(--ok);color:#b9e6c4;background:rgba(63,185,80,.08)}
+  .res.err{border-left-color:var(--err);color:#ffb4ab;background:rgba(248,81,73,.08)}
+  .res.warn{border-left-color:var(--warn);color:#f0d59a;background:rgba(210,153,34,.08)}
+  .res .t{color:var(--dim);margin-right:6px;font-variant-numeric:tabular-nums}
+  .empty{color:var(--dim);font-size:12px;padding:6px 0}
+  /* 队伍进度表 */
+  .sqtable{width:100%;border-collapse:collapse;margin:6px 0;font-size:12px}
+  .sqtable th{text-align:left;color:var(--dim);font-weight:500;padding:3px 6px;
+               border-bottom:1px solid var(--line);font-size:11.5px}
+  .sqtable td{padding:3px 6px;border-bottom:1px solid rgba(48,54,61,.5);vertical-align:middle}
+  .sqtable tr:last-child td{border-bottom:none}
+  .sqrow{margin:2px 0}
+  .sqrow select,.sqrow input{font-size:12px}
+  /* 顶部横幅: 把"为什么没数据"直接摆出来, 不用往下翻 */
+  .banner{display:none;margin:10px 16px 0;padding:9px 13px;border-radius:8px;font-size:12.5px;line-height:1.6;
+          border-left:3px solid var(--warn);background:rgba(210,153,34,.10);color:#f0d59a}
+  .banner.show{display:block}
+  .banner.err{border-left-color:var(--err);background:rgba(248,81,73,.10);color:#ffb4ab}
+  .banner b{color:#fff}
+  .banner .x{float:right;cursor:pointer;opacity:.6;margin-left:12px}
+  .banner .x:hover{opacity:1}
+  .bar{height:10px;border-radius:5px;background:#1b2430;border:1px solid var(--line);overflow:hidden}
+  .bar .fill{height:100%;width:0;background:linear-gradient(90deg,#3fb950,#d29922);transition:width .35s}
+  .stamina{display:flex;align-items:center;gap:10px;margin:2px 0 8px}
+  .stamina .v{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;min-width:96px}
+  .stamina .bar{flex:1}
+  .logs{background:#0b0f14;border:1px solid var(--line);border-radius:8px;
+        height:280px;overflow:auto;padding:8px 10px;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .logs div{white-space:pre-wrap;word-break:break-all;border-bottom:1px solid rgba(48,54,61,.3);padding:2px 0}
+  .logs .t{color:var(--dim)}
+  .logs .k{color:var(--accent)}
+  .logs .e{color:var(--err)}
+  .logs .w{color:var(--warn)}
+  .logs .s{color:var(--ok)}
+  .toast{position:fixed;right:16px;bottom:16px;background:var(--panel2);border:1px solid var(--line);
+         border-left:3px solid var(--accent);border-radius:8px;padding:10px 14px;max-width:420px;
+         font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.45);opacity:0;transform:translateY(8px);
+         transition:.22s;pointer-events:none;z-index:30}
+  .toast.on{opacity:1;transform:none}
+  .toast.err{border-left-color:var(--err)}
+  .toast.ok{border-left-color:var(--ok)}
+  .toast.warn{border-left-color:var(--warn)}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--dim);
+        border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;flex:0 0 auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .sec{font-size:11px;letter-spacing:1.4px;color:var(--dim);text-transform:uppercase;
+       margin:22px 0 9px;font-weight:600;display:flex;align-items:center;gap:10px}
+  .sec:after{content:"";flex:1;height:1px;background:var(--line)}
+  .panel{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-top:8px}
+  .panel .ttl{font-size:11px;color:var(--dim);margin-bottom:5px;letter-spacing:.4px}
+  .mini{font-size:11.5px;color:var(--dim)}
+  .warnbox{border:1px solid rgba(210,153,34,.35);background:rgba(210,153,34,.08);
+           border-radius:8px;padding:7px 10px;font-size:12px;color:#f0d59a;margin-top:7px}
+  /* ============ 全局概览条: 一眼看清"现在该做什么" ============ */
+  .ovbar{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap;
+         margin:12px 0 0;padding:10px 12px;background:linear-gradient(180deg,#171d26,#141920);
+         border:1px solid var(--line);border-radius:12px}
+  .ov{flex:1 1 116px;min-width:104px;padding:7px 11px;border-radius:9px;background:var(--panel2);
+      border:1px solid transparent;cursor:pointer;transition:.14s;text-align:left;
+      display:flex;flex-direction:column;gap:2px;position:relative;overflow:hidden}
+  .ov:hover{background:#222a35;border-color:var(--line)}
+  .ov .lb{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:5px}
+  .ov .vl{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.25;
+          display:flex;align-items:baseline;gap:4px}
+  .ov .vl small{font-size:11px;font-weight:500;color:var(--dim)}
+  .ov.good .vl{color:var(--ok)} .ov.warn .vl{color:var(--warn)} .ov.err .vl{color:var(--err)}
+  .ov.info .vl{color:var(--accent)}
+  .ov.act{border-color:rgba(88,166,255,.75);background:rgba(88,166,255,.16)}
+  .ov.act::after{content:"";position:absolute;inset:0;border-radius:9px;
+                 box-shadow:inset 0 0 0 1px rgba(88,166,255,.45);pointer-events:none}
+  .ov .pip{position:absolute;top:7px;right:9px;min-width:17px;height:17px;padding:0 4px;
+           border-radius:9px;background:var(--err);color:#fff;font-size:10.5px;font-weight:700;
+           display:none;align-items:center;justify-content:center;line-height:17px}
+  .ov.has .pip{display:flex}
+  /* 概览条在窄屏上横向滚动, 不换行堆成一大坨 */
+  @media (max-width:900px){
+    .ovbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;padding:9px 10px}
+    .ov{flex:0 0 116px}
+  }
+  /* ============ 卡片折叠 ============ */
+  .card{position:relative}
+  .card>.fold{position:absolute;top:9px;right:9px;width:22px;height:22px;padding:0;
+              border-radius:6px;background:transparent;border:1px solid transparent;
+              color:var(--dim);font-size:12px;line-height:1;display:none;
+              align-items:center;justify-content:center;cursor:pointer}
+  .card:hover>.fold{display:flex}
+  .card>.fold:hover{background:var(--chip);color:var(--fg);border-color:var(--line)}
+  .card.collapsed>.fold{display:flex}
+  .card.collapsed>*:not(h2):not(.fold){display:none!important}
+  .card.collapsed{padding-bottom:11px}
+  .card.collapsed h2{margin-bottom:0}
+  .card.collapsed h2::after{content:"";font-size:10px;color:var(--dim);font-weight:400}
+  /* 折叠后标题右侧显示摘要, 不用展开就知道大概情况 */
+  .sumline{font-size:11.5px;color:var(--dim);font-weight:400;margin-left:auto;
+           text-align:right;max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* ============ 今日待办 ============ */
+  .todo{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+  .trow{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:8px;
+        background:var(--panel2);border:1px solid var(--line);font-size:12.5px}
+  .trow.done{opacity:.55}
+  .trow .ti{width:18px;height:18px;border-radius:50%;flex:0 0 18px;display:flex;
+            align-items:center;justify-content:center;font-size:11px;font-weight:700}
+  .trow .ti.y{background:rgba(210,153,34,.18);color:var(--warn)}
+  .trow .ti.n{background:rgba(63,185,80,.18);color:var(--ok)}
+  .trow .tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .trow .tx b{font-weight:600}
+  .trow .tx .mini{margin-left:6px}
+  .trow button{padding:3px 10px;font-size:12px}
+  .todo .none{padding:9px;text-align:center;color:var(--dim);font-size:12px;
+              background:rgba(63,185,80,.07);border:1px dashed rgba(63,185,80,.35);border-radius:8px}
+  /* ============ 事件区工具条 ============ */
+  .logbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:-4px 0 8px}
+  .logbar .chip{padding:2px 9px;border-radius:999px;background:var(--chip);border:1px solid var(--line);
+                color:var(--dim);font-size:11.5px;cursor:pointer;user-select:none}
+  .logbar .chip.on{background:rgba(88,166,255,.16);border-color:var(--accent);color:var(--accent)}
+  .logbar .chip:hover{color:var(--fg)}
+  .logbar .sp{flex:1}
+  /* 数字千分位 */
+  .num,.ov .vl,.stamina .v{font-variant-numeric:tabular-nums}
+  /* 键盘可达性 */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+  .kbd{display:inline-block;padding:0 4px;border-radius:4px;background:var(--chip);
+       border:1px solid var(--line);font:11px ui-monospace,Menlo,monospace;color:var(--dim)}
+  /* 快捷键提示 */
+  .kbar{position:fixed;right:14px;bottom:14px;z-index:29;background:var(--panel2);
+        border:1px solid var(--line);border-radius:10px;padding:10px 13px;font-size:12px;
+        box-shadow:0 8px 28px rgba(0,0,0,.5);display:none;max-width:260px}
+  .kbar.show{display:block}
+  .kbar .kr{display:flex;justify-content:space-between;gap:14px;padding:2px 0}
+  /* 移动端: 表格可横向滚动, 不撑破布局 */
+  @media (max-width:640px){
+    main{padding:12px 10px 40px}
+    header{padding:8px 10px;gap:6px}
+    h1{font-size:14px;width:100%}
+    .card{padding:11px 12px}
+    .ovbar{margin:8px 0 0}
+    .sqtable{display:block;overflow-x:auto;white-space:nowrap}
+    .sqtable th,.sqtable td{white-space:nowrap}
+    .kbar{left:10px;right:10px;max-width:none}
+    .sumline{max-width:45%}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>COK 直连控制台</h1>
+  <span class="badge"><span class="dot wait" id="connDot"></span><span id="connText">连接中…</span></span>
+  <span class="badge">最后刷新 <b id="sLast">-</b></span>
+  <span class="badge">服务器日期 <b id="sDate">-</b></span>
+  <span class="badge">金币 <b id="sGold">-</b></span>
+  <span class="badge" id="sMode" title="按需模式：每轮短暂连接后立即断开，不影响 App 在线">-</span>
+  <span class="spacer"></span>
+  <label class="badge" title="关闭后网页不再自动连接游戏服，完全不占用账号"><input type="checkbox" id="chkAuto" checked> 自动轮询</label>
+  <button id="btnRefresh">立即刷新</button>
+  <button id="btnReconnect" class="ghost">重连</button>
+  <button id="btnKeys" class="ghost" title="快捷键 (按 ? 也可打开)">快捷键</button>
+</header>
+
+<div id="banner" class="banner"></div>
+
+<!-- 全局概览: 一眼看清现在该做什么, 每个块可点直达 -->
+<div class="ovbar" id="ovbar">
+  <button class="ov" data-go="todo"><span class="lb">待办</span><span class="vl" id="ovTodo">-</span></button>
+  <button class="ov" data-go="daily"><span class="lb">今日签到</span><span class="vl" id="ovSign">-</span></button>
+  <button class="ov" data-go="hunt"><span class="lb">体力</span><span class="vl" id="ovStamina">-</span></button>
+  <button class="ov" data-go="hunt"><span class="lb">自动打怪</span><span class="vl" id="ovHunt">-</span></button>
+  <button class="ov" data-go="dock"><span class="lb">港口</span><span class="vl" id="ovDock">-</span></button>
+  <button class="ov" data-go="speed"><span class="lb">队列</span><span class="vl" id="ovQueue">-</span></button>
+  <button class="ov" data-go="shield"><span class="lb">保护罩</span><span class="vl" id="ovShield">-</span></button>
+  <button class="ov" data-go="tasks"><span class="lb">任务奖励</span><span class="vl" id="ovTask">-</span></button>
+  <button class="ov" data-go="locate"><span class="lb">查玩家</span><span class="vl" id="ovLocate">-</span></button>
+</div>
+
+<main>
+  <div class="sec">操作</div>
+  <div class="grid g2">
+
+    <div class="card span2" id="cardTodo">
+      <h2>今日待办 <span class="sub">按真实状态汇总, 点右侧按钮直接去做</span><span class="sumline" id="todoSum"></span><button class="fold" data-fold="cardTodo">－</button></h2>
+      <div class="todo" id="todoList"><div class="empty">正在读取状态…</div></div>
+    </div>
+
+    <div class="card" id="cardDaily">
+      <h2>日常 <span class="sub">签到 / 领奖</span><span class="sumline" id="sumDaily"></span><button class="fold" data-fold="cardDaily">－</button></h2>
+      <div class="row">
+        <button class="primary" id="btnSign">立即签到</button>
+        <button id="btnClaim">领取奖励</button>
+        <label style="margin-left:auto"><input type="checkbox" id="autoSign"> 自动签到</label>
+      </div>
+      <div class="hint">领奖会真实消耗奖励次数 / CD。服务端允许同一奖励重复发放，所以这里只做「有就领」，不做全量刷。</div>
+      <div class="res" id="resDaily">尚未操作</div>
+    </div>
+
+    <div class="card" id="cardSpeed">
+      <h2>建造 / 训练队列加速 <span class="sub">queue.ccd</span><span class="sumline" id="sumSpeed"></span><button class="fold" data-fold="cardSpeed">－</button></h2>
+      <div class="row">
+        <label>队列</label><select id="selQueue" style="flex:1 1 100%;min-width:200px"></select>
+      </div>
+      <div class="row">
+        <label>道具</label><select id="selItem" style="flex:1 1 190px;min-width:150px"></select>
+        <label style="min-width:auto">数量</label><input id="inpCount" type="number" value="1" min="1" style="width:58px;flex:0 0 58px">
+      </div>
+      <div class="hint" id="bagHint">背包数据加载中…</div>
+      <div class="row">
+        <button class="primary" id="btnSpeed">用道具加速</button>
+        <button class="danger" id="btnSpeedGold">用金币加速</button>
+      </div>
+      <div class="hint">加速会<strong>立即完成</strong>该队列并消耗道具；金币加速会实扣金币。</div>
+      <div class="res" id="resSpeed">尚未操作</div>
+    </div>
+
+    <div class="card" id="cardShield">
+      <h2>保护罩 <span class="sub">战争守护 / onekeybuff</span><span class="sumline" id="sumShield"></span><button class="fold" data-fold="cardShield">－</button></h2>
+      <div class="row">
+        <label>规格</label><select id="selShieldSpec" style="flex:1;min-width:170px"></select>
+        <label style="min-width:auto"><input type="checkbox" id="chkCover" checked> 覆盖旧罩</label>
+      </div>
+      <div class="row">
+        <label>槽位</label><select id="selSlot" style="flex:1;min-width:150px"></select>
+        <button id="btnSlots" style="flex:0 0 auto">刷新槽位</button>
+      </div>
+      <div class="row">
+        <button class="primary" id="btnShield">开启保护罩</button>
+        <label style="margin-left:auto"><input type="checkbox" id="chkAutoShield"> 被攻击自动开罩</label>
+      </div>
+      <div class="hint" id="shieldHint">当前状态: -</div>
+      <div class="hint" id="shieldAutoHint" style="display:none"></div>
+      <div class="res" id="resShield">尚未操作</div>
+    </div>
+
+    <div class="card" id="cardDock">
+      <h2>港口 <span class="sub">码头航海贸易 / newBoat</span><span class="sumline" id="sumDock"></span><button class="fold" data-fold="cardDock">－</button></h2>
+      <div class="row">
+        <button class="primary" id="btnDockReward">一键领取</button>
+        <button id="btnDockSend">一键分派</button>
+        <button id="btnDockRefresh">刷新港口</button>
+        <label style="margin-left:auto"><input type="checkbox" id="chkDockAutoReward"> 可领时自动领</label>
+        <label style="min-width:auto"><input type="checkbox" id="chkDockAutoSend"> 空闲时自动派</label>
+      </div>
+      <div id="dockList"></div>
+      <div id="dockResult"></div>
+      <div class="hint" id="dockHint">-</div>
+      <div class="res" id="resDock">尚未操作</div>
+    </div>
+
+    <div class="card" id="cardLocate">
+      <h2>玩家坐标 <span class="sub">按名字找人 / world.get</span><span class="sumline" id="sumLocate"></span><button class="fold" data-fold="cardLocate">－</button></h2>
+      <div class="row">
+        <label>玩家名字</label>
+        <input id="inpLocate" placeholder="输入领主名字" style="flex:1 1 180px;min-width:150px" autocomplete="off">
+        <button class="primary" id="btnLocate">查坐标</button>
+        <button id="btnLocateScan">扫描附近</button>
+        <button id="btnExport" title="把索引里的全部玩家导出成 Excel">导出 Excel</button>
+      </div>
+      <div class="row" style="margin-top:-2px">
+        <label style="min-width:auto"><input type="checkbox" id="chkExportReal" checked> 只导真实玩家</label>
+        <span class="mini">索引里混有 <b>Empire…#2223</b> 形式的 NPC/怪物城, 勾上可排除</span>
+      </div>
+      <div id="locateList"></div>
+      <div class="hint" id="locateIdx">索引: -</div>
+      <div class="hint">先用 <b>world.get</b> 扫地图建本地索引(零消耗、不占道具), 之后查名字就是本地搜索 —— 客户端滑动地图走的就是这个协议。「扫描附近」会把你周围 120×120 格扫一遍(约 100 次请求 / 20 秒)。</div>
+
+      <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px">
+        <button class="primary" id="btnScanAll" title="后台启动一次全图扫描(独立进程, 关掉网页也继续跑)">一键全图重扫</button>
+        <button id="btnScanStop" disabled>停止扫描</button>
+        <label style="min-width:auto">步长</label>
+        <select id="selScanStep" style="width:130px">
+          <option value="12" selected>12 (正确, 推荐)</option>
+          <option value="20">20 (快, 会漏)</option>
+          <option value="26">26 (更快, 漏更多)</option>
+        </select>
+        <span class="mini">world.get 的实际覆盖区只有 <b>±12 格</b>(实测), 步长必须 ≤ 覆盖直径, 否则玩家的城会被视野边界截断</span>
+      </div>
+      <div id="scanProgress"></div>
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;color:#9fb4c8;font-size:12px">扫描历史</summary>
+        <div id="scanHistory" class="mini" style="margin-top:6px">加载中…</div>
+      </details>
+
+      <div class="res" id="resLocate">尚未操作</div>
+    </div>
+
+    <div class="card" id="cardHook">
+      <h2>告警 <span class="sub">webhook</span><span class="sumline" id="sumHook"></span><button class="fold" data-fold="cardHook">－</button></h2>
+      <div class="row">
+        <label>类型</label>
+        <select id="selHookType" style="width:130px">
+          <option value="generic">通用 JSON</option>
+          <option value="wechat">企业微信</option>
+          <option value="dingtalk">钉钉</option>
+        </select>
+        <button id="btnTestHook">发送测试</button>
+      </div>
+      <div class="row"><label>URL</label><input id="inpHook" placeholder="https://..." style="flex:1"></div>
+      <div class="hint">开启的规则: <span id="hookRules">-</span></div>
+      <div class="res" id="resHook">尚未操作</div>
+    </div>
+
+    <div class="card span2" id="cardHunt">
+      <h2>打野怪 <span class="sub">体力 / 野怪等级 / 自建循环</span><span class="sumline" id="sumHunt"></span><button class="fold" data-fold="cardHunt">－</button></h2>
+      <div class="grid g2" style="gap:14px">
+        <div>
+          <div class="stamina">
+            <div class="v" id="staminaTxt">-</div>
+            <div class="bar"><div class="fill" id="staminaFill"></div></div>
+          </div>
+          <div class="row">
+            <label>野怪等级</label>
+            <select id="selMonster" style="flex:1 1 150px;min-width:150px"></select>
+            <button id="btnFind" style="flex:0 0 auto">找怪</button>
+          </div>
+          <div class="row">
+            <label>等级范围</label>
+            <input id="inpLvLow" type="number" min="1" max="30" value="1" style="width:58px;flex:0 0 58px">
+            <span class="mini">~</span>
+            <input id="inpLvHigh" type="number" min="1" max="30" value="1" style="width:58px;flex:0 0 58px">
+            <button id="btnLv" style="flex:0 0 auto">保存等级</button>
+          </div>
+          <div class="row">
+            <label>每兵种派出</label>
+            <input id="inpPerType" type="number" min="1" value="50" style="width:58px;flex:0 0 58px">
+            <button id="btnAutoFormat" style="flex:0 0 auto">按可用兵自动编成</button>
+          </div>
+          <div class="row">
+            <label>并行队伍</label>
+            <input id="inpSquads" type="number" min="1" max="8" value="4" style="width:58px;flex:0 0 58px">
+            <span class="mini">队(每队用不同兵种, 同时出征)</span>
+          </div>
+        </div>
+        <div>
+          <div class="panel">
+            <div class="ttl">队伍编成 <span class="mini">(每队一个兵种, 不用手填 id)</span></div>
+            <div id="squadRows"></div>
+            <div class="row">
+              <button id="btnArmyReload" style="flex:0 0 auto">刷新兵种</button>
+              <button id="btnFormat" class="primary" style="flex:0 0 auto">保存编成</button>
+            </div>
+            <div class="mini" id="armyHint">正在读取可用兵种…</div>
+          </div>
+          <div class="panel">
+            <div class="ttl">自建自动打怪循环 <span class="mini">(手动出征, 不需要周卡)</span></div>
+            <div class="row">
+              <button class="primary" id="btnAutoStart">开始自动打怪</button>
+              <button id="btnAutoStop" disabled>停止</button>
+              <label style="min-width:auto">最多</label>
+              <input id="inpHuntMax" type="number" min="0" value="0" style="width:58px;flex:0 0 58px"><span class="mini">只 (0=不限)</span>
+            </div>
+            <div id="squadProgress"></div>
+            <div class="mini" id="autoHint">未开启</div>
+          </div>
+        </div>
+      </div>
+      <div class="warnbox" id="huntWarn" style="display:none"></div>
+      <div class="res" id="resHunt">尚未操作</div>
+    </div>
+
+  </div>
+
+  <div class="sec">监控</div>
+  <div class="grid g3" id="cards"></div>
+
+  <div class="sec">事件</div>
+  <div class="logbar">
+    <span class="chip on" data-ev="all">全部</span>
+    <span class="chip" data-ev="error">异常</span>
+    <span class="chip" data-ev="warning">警告</span>
+    <span class="chip" data-ev="connected">连接</span>
+    <span class="chip" data-ev="state">状态</span>
+    <span class="sp"></span>
+    <span class="mini" id="logCount">0 条</span>
+    <button class="ghost" id="btnLogClear" style="padding:2px 9px;font-size:11.5px">清空</button>
+    <button class="ghost" id="btnLogSize" style="padding:2px 9px;font-size:11.5px" title="切换日志区高度">高度</button>
+  </div>
+  <div class="logs" id="logs"></div>
+</main>
+
+<div class="toast" id="toast"></div>
+<div class="kbar" id="kbar">
+  <div style="font-weight:600;margin-bottom:6px">快捷键</div>
+  <div class="kr"><span>立即刷新</span><span><span class="kbd">R</span></span></div>
+  <div class="kr"><span>签到</span><span><span class="kbd">S</span></span></div>
+  <div class="kr"><span>一键领奖</span><span><span class="kbd">C</span></span></div>
+  <div class="kr"><span>港口领取</span><span><span class="kbd">D</span></span></div>
+  <div class="kr"><span>查玩家坐标</span><span><span class="kbd">L</span></span></div>
+  <div class="kr"><span>开关本面板</span><span><span class="kbd">?</span></span></div>
+  <div class="kr" style="margin-top:6px"><span>折叠所有卡片</span><span><span class="kbd">F</span></span></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const TOKEN = (new URLSearchParams(location.search).get('t')) || localStorage.getItem('cokToken') || '';
+if (TOKEN) localStorage.setItem('cokToken', TOKEN);
+const S = {state:null, lastEvents:0, busy:false};
+/* 事件区筛选: 默认全部, 可只看异常/警告/连接/状态 */
+let EV_FILTER='all', EV_SIG='';
+
+/* ---------------- 工具 ---------------- */
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function clean(s){return String(s==null?'':s).replace(/\{\d+\}/g,'?');}
+/* 千分位: 大数字(金币/兵力/进度)读起来舒服很多 */
+function fmt(n){
+  if(n==null||n==='') return '-';
+  const v=Number(n);
+  if(!isFinite(v)) return String(n);
+  return Math.abs(v)>=1000 ? v.toLocaleString('zh-CN') : String(v);
+}
+function dur(ms){ if(!ms) return '-'; const m=Math.round(ms/60000); if(m<60) return m+' 分'; return Math.floor(m/60)+' 时 '+(m%60)+' 分'; }
+function ts(v){ if(!v) return '-'; const n=Number(v); if(!isFinite(n)||n<1e11) return String(v);
+  const d=new Date(n+8*3600*1000), p=x=>String(x).padStart(2,'0');
+  return d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate())+' '+p(d.getUTCHours())+':'+p(d.getUTCMinutes()); }
+function hhmmss(t){ if(!t) return '-'; const d=new Date(t*1000), p=x=>String(x).padStart(2,'0');
+  return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
+function ago(t){ if(!t) return '-'; const s=Math.max(0,Date.now()/1000-t); if(s<60) return Math.round(s)+' 秒前';
+  if(s<3600) return Math.round(s/60)+' 分钟前'; if(s<86400) return Math.round(s/3600)+' 小时前'; return Math.round(s/86400)+' 天前'; }
+
+let toastTimer=null;
+function toast(msg, kind){
+  const t=$('toast'); t.className='toast on'+(kind?' '+kind:''); t.innerHTML=esc(msg);
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>{t.className='toast'+(kind?' '+kind:'');},3800);
+}
+
+/* 持久化的操作结果: 每个区域都记住上次结果, 刷新页面也还在 */
+function setRes(id, msg, kind){
+  const el=$(id); if(!el) return;
+  el.className='res'+(kind?' '+kind:'');
+  el.innerHTML='<span class="t">'+hhmmss(Date.now()/1000)+'</span>'+esc(msg);
+}
+function loadRes(id, msg, kind){
+  const el=$(id); if(!el) return;
+  el.className='res'+(kind?' '+kind:'');
+  el.innerHTML='<span class="t">'+esc(msg.ts||'')+'</span>'+esc(msg.text||'');
+}
+
+/* ---------------- 设置持久化(存后端, 刷新/换浏览器都不丢) ---------------- */
+let SETTINGS = {};
+let SET_SEQ = 0;               // 写入序号: 挡掉并发 POST 的乱序覆盖
+const SET_DEBOUNCE = 350;      // 文本框输入防抖(ms)
+const SET_FIELDS = [
+  ['autoSign','chkAutoSign'],['autoShield','chkAutoShield'],['cover','chkCover'],
+  ['autoPoll','chkAuto'],['hookType','selHookType'],['hookURL','inpHook'],
+  ['lvLow','inpLvLow'],['lvHigh','inpLvHigh'],
+  ['perType','inpPerType'],['squads','inpSquads'],['huntMax','inpHuntMax'],
+  ['dockAutoReward','chkDockAutoReward'],['dockAutoSend','chkDockAutoSend'],
+];
+async function saveSetting(k,v){
+  SETTINGS[k]=v;
+  try{
+    const r=await api('/api/action',{action:'set-setting',key:k,value:v,seq:++SET_SEQ});
+    // 服务端会把等级范围归一化(下限<=上限), 把归一化后的值同步回输入框
+    if(r && r.ok && r.settings){
+      for(const [kk,id] of [['lvLow','inpLvLow'],['lvHigh','inpLvHigh']]){
+        const nv=r.settings[kk];
+        if(nv!==undefined && nv!==null && String(nv)!==String(SETTINGS[kk])){
+          SETTINGS[kk]=nv;
+          const el=$(id); if(el && document.activeElement!==el) el.value=nv;
+        }
+      }
+    }
+  }catch(e){ toast('设置保存失败: '+k,'err'); }
+}
+function applySettings(){
+  for(const [k,id] of SET_FIELDS){
+    const el=$(id); if(!el) continue;
+    if(el.type==='checkbox'){ if(k in SETTINGS) el.checked=!!SETTINGS[k]; }
+    else { if(SETTINGS[k]!==undefined && SETTINGS[k]!==null) el.value=SETTINGS[k]; }
+  }
+  renderSquadRows();
+}
+function bindSettings(){
+  for(const [k,id] of SET_FIELDS){
+    const el=$(id); if(!el) continue;
+    const instant=(el.type==='checkbox'||el.tagName==='SELECT');
+    let timer=null;
+    const fire=()=>saveSetting(k, el.type==='checkbox'?el.checked:el.value);
+    if(instant){
+      el.addEventListener('change', fire);
+    }else{
+      // 文本/数字输入: 防抖后再存, 避免每个按键都打一次后端
+      el.addEventListener('input', ()=>{
+        clearTimeout(timer);
+        timer=setTimeout(fire, SET_DEBOUNCE);
+      });
+      el.addEventListener('change', ()=>{ clearTimeout(timer); fire(); });
+    }
+  }
+}
+
+/* ---------------- API ---------------- */
+async function api(path, body){
+  const opt={headers:{'Content-Type':'application/json'}};
+  if(body){ opt.method='POST'; opt.body=JSON.stringify(body); }
+  const sep=path.includes('?')?'&':'?';
+  const url=path+(TOKEN?sep+'t='+encodeURIComponent(TOKEN):'');
+  const r=await fetch(url,opt);
+  const j=await r.json().catch(()=>({ok:false,error:'HTTP '+r.status}));
+  if(j.error==='unauthorized'){ $('connText').textContent='token 无效'; }
+  return j;
+}
+
+/* 统一按钮交互: 禁用 + spinner + 完成恢复
+   异常必须被吃掉并变成可见反馈 —— 否则点了没反应, 用户只能猜 */
+async function busy(btn, label, fn){
+  if(btn) btn.disabled=true;
+  const old=btn?btn.innerHTML:'';
+  if(btn) btn.innerHTML='<span class="spin"></span>'+esc(label||'处理中');
+  try{ return await fn(); }
+  catch(e){
+    const msg=(e&&e.message)?e.message:String(e);
+    toast('操作失败: '+msg,'err');
+    return {ok:false, error:msg};
+  }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML=old; } }
+}
+
+let NAMES={queue_types:{},overview_types:{},items:{},rewards:{}};
+function qtype(v){const n=NAMES.queue_types[String(v)];return n||('类型'+v);}
+function otype(v){const n=NAMES.overview_types[String(v)];return n||('类型'+v);}
+function kv(k,v){return `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`;}
+function tags(list,cls){return (list||[]).map(x=>`<span class="tag ${cls||''}">${esc(x)}</span>`).join('')||'<span class="dim">-</span>';}
+/* 可点击直达的标签: 点一下跳到能处理它的卡片 */
+function jumpTags(list,cls,target){
+  const base=tagsId(list,cls);
+  if(!list||!list.length) return base;
+  return base.replace(/<span /g,'<span data-jump="'+esc(target)+'" style="cursor:pointer" ');
+}
+document.addEventListener('click',(e)=>{
+  const j=e.target.closest && e.target.closest('[data-jump]');
+  if(j){ goTo(j.dataset.jump); return; }
+});
+function tagsId(list,cls){
+  return (list||[]).map(x=>{
+    if(x&&typeof x==='object'){ const nm=clean(x.name||x.id);
+      return `<span class="tag ${cls||''}" title="${esc(x.id)}">${esc(nm)}</span>`; }
+    return `<span class="tag ${cls||''}">${esc(x)}</span>`;
+  }).join('')||'<span class="dim">-</span>';
+}
+
+/* ---------------- 队伍编成(下拉选兵种, 不用手填 id) ---------------- */
+let ARMY_CHOICES = [];      // [{id,name,free,power,...}]
+let ARMY_LOADED = false;
+
+function squadSpec(){
+  // 从 DOM 读当前编成: [{army_id, num}]
+  const out=[];
+  document.querySelectorAll('#squadRows .sqrow').forEach(row=>{
+    const sel=row.querySelector('select'), num=row.querySelector('input');
+    if(!sel||!sel.value) return;
+    const n=parseInt(num&&num.value||'0',10);
+    if(!(n>0)) return;
+    out.push({army_id:sel.value, num:n});
+  });
+  return out;
+}
+
+function renderSquadRows(){
+  const box=$('squadRows');
+  if(!box) return;
+  const want=Math.max(1, Math.min(8, parseInt($('inpSquads')&&$('inpSquads').value||'4',10)||4));
+  let spec=[];
+  try{ spec=JSON.parse(SETTINGS.squadSpec||'[]'); }catch(e){ spec=[]; }
+  if(!Array.isArray(spec)) spec=[];
+  const cur=squadSpec();
+  if(cur.length) spec=cur;          // 用户正在编辑 → 以 DOM 为准
+  const opts=(sel)=>{
+    if(!ARMY_CHOICES.length) return '<option value="">（还没有兵种数据, 点「刷新兵种」）</option>';
+    return ARMY_CHOICES.map(a=>{
+      const sel2=(sel===a.id)?' selected':'';
+      return '<option value="'+esc(a.id)+'"'+sel2+'>'+esc(a.name||a.id)+' · 可用 '+esc(a.free)+'</option>';
+    }).join('');
+  };
+  let html='';
+  for(let i=0;i<want;i++){
+    const s=spec[i]||{};
+    // 默认按顺序给每队分配**不同**的兵种(各队独立判定部队是否回来, 不能同兵种)
+    const aid=s.army_id||(ARMY_CHOICES[i]?ARMY_CHOICES[i].id:'');
+    const ch=(ARMY_CHOICES||[]).find(a=>a.id===aid);
+    const free=ch?(ch.free||0):0;
+    const numVal=s.num||($('inpPerType')&&$('inpPerType').value||50);
+    // 数量超过可用兵数会被**静默截断**, 这里明确提示
+    const over=(ch&&free>0&&numVal>free)?('<span class="mini" style="color:#f0d59a">只有 '+esc(free)+'</span>'):'';
+    html+='<div class="row sqrow" data-slot="'+(i+1)+'">'
+      +'<label style="min-width:auto">队'+(i+1)+'</label>'
+      +'<select class="sqid" style="flex:1 1 150px;min-width:130px">'+opts(aid)+'</select>'
+      +'<span class="mini">×</span>'
+      +'<input class="sqnum" type="number" min="0" value="'+numVal+'" style="width:70px;flex:0 0 70px">'
+      +'<span class="mini">兵</span>'+over
+      +'</div>';
+  }
+  box.innerHTML=html;
+  const hint=$('armyHint');
+  if(hint){
+    hint.textContent = ARMY_CHOICES.length
+      ? ('可用标准兵种 '+ARMY_CHOICES.length+' 种(只列 107xxx 系列, 活动限定兵种不能混编)')
+      : '正在读取可用兵种…';
+  }
+}
+
+async function loadArmyChoices(){
+  const hint=$('armyHint');
+  if(hint) hint.textContent='正在读取可用兵种…';
+  const r=await api('/api/action',{action:'hunt',op:'army'});
+  if(r && r.ok && Array.isArray(r.army)){
+    ARMY_CHOICES=r.army;
+    ARMY_LOADED=true;
+  }else{
+    ARMY_CHOICES=[];
+  }
+  renderSquadRows();
+  return ARMY_CHOICES;
+}
+
+/* ---------------- 折叠(状态存 localStorage, 跨刷新保留) ---------------- */
+const FOLD_KEY='cokFolded';
+function foldedIds(){
+  try{ return new Set(JSON.parse(localStorage.getItem(FOLD_KEY)||'[]')); }
+  catch(e){ return new Set(); }
+}
+function setFolded(id, on){
+  const s=foldedIds();
+  if(on) s.add(id); else s.delete(id);
+  try{ localStorage.setItem(FOLD_KEY, JSON.stringify([...s])); }catch(e){}
+}
+function applyFold(){
+  const s=foldedIds();
+  document.querySelectorAll('.card[data-foldable], .card[id]').forEach(c=>{
+    if(!c.id) return;
+    const on=s.has(c.id);
+    c.classList.toggle('collapsed', on);
+    const b=c.querySelector('.fold');
+    if(b) b.textContent=on?'＋':'－';
+  });
+}
+document.addEventListener('click',(e)=>{
+  const b=e.target.closest && e.target.closest('.fold');
+  if(!b) return;
+  const c=b.closest('.card'); if(!c||!c.id) return;
+  const on=!c.classList.contains('collapsed');
+  c.classList.toggle('collapsed',on);
+  b.textContent=on?'＋':'－';
+  setFolded(c.id,on);
+});
+
+/* 概览条 / 待办 点击直达对应卡片 */
+function goTo(id){
+  const el=document.getElementById(id);
+  if(!el) return;
+  // 折叠状态下先展开, 否则点了看不到
+  if(el.classList.contains('collapsed')){
+    el.classList.remove('collapsed');
+    setFolded(el.id,false);
+    const b=el.querySelector('.fold'); if(b) b.textContent='－';
+  }
+  el.scrollIntoView({behavior:'smooth',block:'start'});
+  el.animate([{boxShadow:'0 0 0 3px rgba(88,166,255,.55)'},{boxShadow:'0 0 0 3px rgba(88,166,255,0)'}],
+             {duration:1100,easing:'ease-out'});
+}
+document.addEventListener('click',(e)=>{
+  const o=e.target.closest && e.target.closest('.ov');
+  if(!o) return;
+  const map={todo:'cardTodo',daily:'cardDaily',hunt:'cardHunt',dock:'cardDock',
+             speed:'cardSpeed',shield:'cardShield',tasks:'cardTodo',locate:'cardLocate'};
+  goTo(map[o.dataset.go]||'cardTodo');
+});
+
+/* ---------------- 概览条 + 今日待办 ---------------- */
+/* 汇总"现在该做什么": 只用真实状态, 不猜 */
+function collectTodos(st){
+  const S2=st.states||{};
+  const ds=S2.dailySign||{}, dq=S2.dailyQuest||{}, lt=S2.lordTask||{}, sk=S2.storyTask||{};
+  const dk=st.dock||{}, au=st.hunter||{}, h=st.hunt||{};
+  const out=[];
+  const push=(ok,text,sub,btn)=>out.push({ok,text,sub,btn});
+  // 签到
+  if(Object.keys(ds).length){
+    if(ds['今日已签']===true) push(true,'今日已签到',(ds['已签日期']||[]).length+' 天',null);
+    else push(false,'今日还没签到','点「立即签到」补上',{label:'去签到',fn:'sign'});
+  }
+  // 日常/周/领主 任务奖励
+  const dq2=(dq['可领日常任务']||[]).length;
+  const wk=(dq['周任务可领奖励']||[]).length;
+  const ld=(lt['可领奖励']||[]).length;
+  const taskN=dq2+wk+ld;
+  if(taskN>0) push(false,'有 '+taskN+' 个任务奖励可领',
+      [dq2&&('日常 '+dq2),wk&&('周 '+wk),ld&&('领主 '+ld)].filter(Boolean).join(' · '),
+      {label:'去领取',fn:'claim'});
+  else if(Object.keys(dq).length||Object.keys(lt).length) push(true,'任务奖励都领完了','',null);
+  // 港口
+  const rw=(dk.rewardable||0);
+  if(dk.family){
+    if(rw>0) push(false,'港口有 '+rw+' 条船的奖励没领','',{label:'去领取',fn:'dockReward'});
+    else push(true,'港口没有待领奖励',(dk.trading||0)+' 条在途',null);
+  }
+  // 加速队列
+  const running=(st.queues||[]).filter(q=>q.running);
+  if(running.length) push(false,running.length+' 个队列可以加速','用道具, 不花金币',{label:'去加速',fn:'goSpeed'});
+  // 保护罩
+  const sh=st.shield||{};
+  const shieldLeft=Math.max(0,(sh.end_ms||0)-Date.now());
+  if(shieldLeft>0) push(true,'保护罩还剩 '+dur(shieldLeft),'到期 '+ts(sh.end_ms),null);
+  else push(false,'当前没有保护罩','被攻击会掉兵',{label:'去开罩',fn:'goShield'});
+  // 体力
+  const stam=(au&&au.running&&au.stamina!=null)?au.stamina:(h.stamina||0);
+  if(stam<=10) push(false,'体力只剩 '+stam,stam<=0?'打不了怪':'建议等恢复或用体力道具',{label:'看打怪',fn:'goHunt'});
+  return out;
+}
+
+function renderOverview(st){
+  const S2=st.states||{};
+  const ds=S2.dailySign||{}, dq=S2.dailyQuest||{}, lt=S2.lordTask||{};
+  const dk=st.dock||{}, au=st.hunter||{}, h=st.hunt||{};
+  const sh=st.shield||{};
+  const set=(id,html,cls)=>{ const e=$(id); if(!e) return; e.innerHTML=html;
+    const p=e.parentElement; if(p){ p.classList.remove('good','warn','err','info');
+      if(cls) p.classList.add(cls); } };
+  // 待办
+  const todos=collectTodos(st);
+  const pend=todos.filter(t=>!t.ok).length;
+  set('ovTodo', pend?String(pend):'0', pend?(pend>3?'err':'warn'):'good');
+  // 有待办时整块高亮, 引导用户先处理
+  const ovTodoBox=$('ovTodo')&&$('ovTodo').parentElement;
+  if(ovTodoBox) ovTodoBox.classList.toggle('act', pend>0);
+  // 签到
+  const signed=ds['今日已签'];
+  set('ovSign', signed?'<span style="font-size:14px">已签</span>':'<span style="font-size:14px">未签</span>',
+      signed?'good':'warn');
+  // 体力
+  const stam=(au&&au.running&&au.stamina!=null)?au.stamina:(h.stamina||0);
+  const smax=(au&&au.running&&au.stamina_max)?au.stamina_max:(h.stamina_max||100);
+  set('ovStamina', fmt(stam)+'<small>/'+fmt(smax)+'</small>', stam<=10?'warn':'info');
+  // 自动打怪
+  set('ovHunt', au.running?'<span style="font-size:14px">运行中</span>':'<span style="font-size:14px">停止</span>',
+      au.running?'good':'');
+  // 港口: 有待领显示数量, 否则显示在途数(更有信息量)
+  const rw=(dk.rewardable||0);
+  set('ovDock', dk.family?((rw?rw+' 待领':((dk.trading||0)+' 在途'))):'<span style="font-size:14px">-</span>',
+      rw?'warn':(dk.family?'good':''));
+  // 队列
+  const running=(st.queues||[]).filter(q=>q.running);
+  set('ovQueue', running.length?String(running.length):'<span style="font-size:14px">空闲</span>',
+      running.length?'info':'good');
+  // 保护罩
+  const left=Math.max(0,(sh.end_ms||0)-Date.now());
+  set('ovShield', left?dur(left):'<span style="font-size:14px">无罩</span>', left?'good':'warn');
+  // 任务奖励
+  const tn=((dq['可领日常任务']||[]).length)+((dq['周任务可领奖励']||[]).length)+((lt['可领奖励']||[]).length);
+  set('ovTask', tn?String(tn):'<span style="font-size:14px">已清</span>', tn?'warn':'good');
+  // 查玩家: 显示**索引里有多少人**(这是能不能查到人的关键指标)
+  const mi=st.map_index||{};
+  const idxN=mi.count||0;
+  set('ovLocate', idxN?(String(idxN)+'<small> 人</small>')
+                          :'<span style="font-size:14px">未扫描</span>',
+      idxN?'info':'warn');
+  // 索引状态(扫描进度 + 时效)
+  // ⚠️ 索引是**扫描时刻的快照**。服务端会定时重排整张地图, 坐标会整体迁移 ——
+  // 实测 2026-10-25 19:39 扫的坐标, 当天 20:20 已全部失效(原位置站着别人)。
+  const li=$('locateIdx');
+  const ageH=(mi.age_h==null?null:Number(mi.age_h));
+  const stale=(ageH!=null && ageH>6);
+  if(li){
+    if(!idxN){
+      li.textContent='索引: 空 —— 点「扫描附近」开始建索引';
+    }else if(mi.scanning){
+      li.textContent='索引: '+idxN+' 人 · 扫描中 '+mi.requests_done+'/'+mi.requests_total
+        +' 次请求'+(mi.updated_at?(' · 更新于 '+ts(mi.updated_at*1000)):'');
+    }else{
+      li.textContent='索引: '+idxN+' 人'
+        +(mi.updated_at?(' · 更新于 '+ts(mi.updated_at*1000)):'');
+      if(ageH!=null){
+        li.textContent+=' · 快照 '+ageH.toFixed(1)+' 小时前';
+      }
+      li.textContent+=' · 点「导出 Excel」拿全表';
+    }
+    if(stale){
+      const w=document.createElement('div');
+      w.style.color='#e0a44a';
+      w.style.marginTop='4px';
+      w.textContent='⚠️ 坐标是 '+ageH.toFixed(1)+' 小时前的快照。服务端会定时重排地图, '
+        +'若坐标对不上请用「现场扫描」刷新(只扫查询点周围, 几秒)或重跑 scan_world.py。';
+      li.appendChild(w);
+    }
+  }
+  // 待办列表
+  const box=$('todoList');  if(box){
+    if(!todos.length){
+      box.innerHTML='<div class="none">还没有状态数据 —— 连上游戏服后这里会列出今天该做的事</div>';
+    }else{
+      box.innerHTML=todos.map((t,i)=>{
+        const act=t.btn?('<button data-todo="'+i+'">'+esc(t.btn.label)+'</button>'):'';
+        return '<div class="trow'+(t.ok?' done':'')+'">'
+          +'<span class="ti '+(t.ok?'n':'y')+'">'+(t.ok?'✓':'!')+'</span>'
+          +'<span class="tx"><b>'+esc(t.text)+'</b>'+(t.sub?('<span class="mini">'+esc(t.sub)+'</span>'):'')+'</span>'
+          +act+'</div>';
+      }).join('');
+    }
+    const sum=$('todoSum');
+    if(sum) sum.textContent = todos.length?('待办 '+pend+' / 共 '+todos.length+' 项'):'';
+  }
+}
+
+/* 待办项的直达动作 */
+const TODO_FNS={
+  sign:()=>$('btnSign').click(),
+  claim:()=>$('btnClaim').click(),
+  dockReward:()=>$('btnDockReward').click(),
+  goSpeed:()=>goTo('cardSpeed'),
+  goShield:()=>goTo('cardShield'),
+  goHunt:()=>goTo('cardHunt'),
+};
+document.addEventListener('click',(e)=>{
+  const b=e.target.closest && e.target.closest('[data-todo]');
+  if(!b) return;
+  const st=S.state; if(!st) return;
+  const todos=collectTodos(st);
+  const t=todos[parseInt(b.dataset.todo,10)];
+  if(t&&t.btn&&TODO_FNS[t.btn.fn]) TODO_FNS[t.btn.fn]();
+});
+
+/* 折叠后的标题摘要: 不展开也能看到大概情况 */
+function renderSummaries(st){
+  const S2=st.states||{};
+  const ds=S2.dailySign||{};
+  const put=(id,txt)=>{ const e=$(id); if(e) e.textContent=txt||''; };
+  put('sumDaily', ds['今日已签']===true?'今日已签':(ds['今日已签']===false?'今日未签':''));
+  const running=(st.queues||[]).filter(q=>q.running);
+  put('sumSpeed', running.length?(running.length+' 个进行中'):'');
+  const sh=st.shield||{};
+  const left=Math.max(0,(sh.end_ms||0)-Date.now());
+  put('sumShield', left?('还剩 '+dur(left)):'无罩');
+  const dk=st.dock||{};
+  put('sumDock', dk.family?((dk.rewardable||0)+' 待领 · '+(dk.trading||0)+' 在途'):'');
+  const au=st.hunter||{};
+  put('sumHunt', au.running?('运行中 · 已打 '+(au.kills||0)):'');
+  put('sumHook', $('hookRules')?$('hookRules').textContent:'');
+}
+
+/* ---------------- 渲染 ---------------- */
+function renderHeader(st){
+  const dot=$('connDot'), txt=$('connText');
+  let cls='wait', label='空闲';
+  if(st.account_error){ cls='off'; label='设备未连接'; }
+  // ⚠️ 自动打怪时账号被独占是**设计内**的(让路给打怪), 不是异常 ——
+  // 所以必须排在 st.error 前面, 否则会误报"连接异常"。
+  else if(st.hunter&&st.hunter.running){ cls='on'; label='自动打怪中'; }
+  else if(st.error){ cls='off'; label='连接异常'; }
+  else if(st.connected){ cls='on'; label='已连接'; }
+  // ondemand 模式轮完就断开, connected 会是 false —— 用"有数据"判定更准
+  else if(st.has_data){ cls='on'; label='已连接'; }
+  else if(st.app_yield){ cls='wait'; label='App 在线 · 已让出账号'; }
+  dot.className='dot '+cls; txt.textContent=label;
+  $('sLast').textContent = st.last_poll ? hhmmss(st.last_poll)+' ('+ago(st.last_poll)+')' : '未刷新';
+  $('sDate').textContent = st.server_date||'-';
+  $('sGold').textContent = st.gold==null?'-':fmt(st.gold);
+  $('sMode').textContent = st.persistent ? '常驻连接(App 会被踢)' : '按需短连接';
+  if(st.names) NAMES=st.names;
+  if(st.settings && !Object.keys(SETTINGS).length){
+    SETTINGS=st.settings||{}; applySettings();
+  }
+  if(st.webhook_type) $('selHookType').value=st.webhook_type;
+  // 规则显示中文名(后端已给), 没有中文名时退回原始代号
+  $('hookRules').textContent=(st.alert_rule_names||st.alert_rules||[]).join(' · ')||'-';
+  renderBanner(st);
+}
+
+/* 顶部横幅: 把"为什么没数据"直接摆出来, 不用往下翻 */
+let BANNER_KEY='', BANNER_HIDDEN=false;
+function renderBanner(st){
+  const bn=$('banner');
+  if(!bn) return;
+  const src=st.account_source||'';
+  const busy=st.account_busy;
+  const holder=(st.account_holder||'').trim();
+  // 打怪时账号被独占是设计内的让路, 不该报"连接异常"
+  const hunting=!!(st.hunter&&st.hunter.running);
+  const mi=(st.map_index||{});
+  // 扫描进程也独占账号 —— 但那是**正常的工作状态**, 不是故障
+  const scanning=!!mi.scanning || /scan-world/.test(holder);
+  const key = st.account_error ? ('acc:'+st.account_error)
+            : (busy ? ('busy:'+holder+':'+(mi.requests_done||0))
+            : (hunting ? ''
+            : (src.indexOf('内置')>=0 ? ('builtin:'+src) : (st.error ? ('err:'+st.error) : ''))));
+  if(key!==BANNER_KEY){ BANNER_KEY=key; BANNER_HIDDEN=false; }
+  if(!key || BANNER_HIDDEN){ bn.className='banner'; bn.innerHTML=''; return; }
+  if(st.account_error){
+    bn.className='banner show err';
+    bn.innerHTML='<span class="x" id="bannerX" title="隐藏">×</span><b>设备未连接</b> · '+esc(st.account_error)
+      +' · 设备连回来后点「立即刷新」即可恢复, 不用重启控制台';
+  }else if(busy && scanning){
+    bn.className='banner show';
+    bn.innerHTML='<span class="x" id="bannerX" title="隐藏">×</span><b>全图扫描中</b> · '
+      +'账号被扫描占用, 监控数据暂停刷新'
+      +(mi.requests_total?(' · 进度 '+esc(mi.requests_done)+'/'+esc(mi.requests_total)+' 次请求'):'')
+      +' · 扫完自动恢复, 也可以在「玩家坐标」卡点「停止扫描」';
+  }else if(busy){
+    bn.className='banner show';
+    bn.innerHTML='<span class="x" id="bannerX" title="隐藏">×</span><b>账号正被占用</b> · 同账号只允许一个连接'
+      +(holder?(' · 当前持有: '+esc(holder)):'')+' · 等它结束或把它停掉';
+  }else if(src.indexOf('内置')>=0){
+    bn.className='banner show';
+    bn.innerHTML='<span class="x" id="bannerX" title="隐藏">×</span><b>当前使用内置凭据</b> · 设备没连上, '
+      +'已改用从登录请求复原的凭据(signCode 由 APK 证书派生, 不依赖设备), 数据照常可用; '
+      +'设备连回来后点「立即刷新」会优先用设备里的最新账号';
+  }else{
+    bn.className='banner show';
+    bn.innerHTML='<span class="x" id="bannerX" title="隐藏">×</span><b>连接异常</b> · '+esc(st.error)
+      +' · 点「立即刷新」重试';
+  }
+}
+
+function renderHunt(st){
+  const h=st.hunt||{};
+  const au=st.hunter||{};
+  // 打怪时账号连接被 AutoHunter 独占, 轮询读不到体力 → 优先用 hunter 自己读的
+  const cur=(au&&au.running&&au.stamina!=null)?au.stamina:(h.stamina||0);
+  const mx=(au&&au.running&&au.stamina_max)?au.stamina_max:(h.stamina_max||100);
+  $('staminaFill').style.width=Math.max(0,Math.min(100,cur/mx*100))+'%';
+  const lv=h.lv_low||1;
+  const per=(st.monster_levels||[]).find(x=>x.level===lv);
+  const cost=per?per.usePower:10;
+  $('staminaTxt').textContent=h.error&&!(au&&au.running)?('读取失败'):(fmt(cur)+' / '+fmt(mx));
+  // 等级下拉
+  const sel=$('selMonster');
+  const sig=(st.monster_levels||[]).length+':'+h.max_level;
+  if(sel.dataset.sig!==sig){
+    sel.dataset.sig=sig;
+    sel.innerHTML=(st.monster_levels||[]).filter(x=>x.level<=(h.max_level||30))
+      .map(x=>`<option value="${x.level}">${x.level} 级 ${esc(x.name||'')} · 消耗 ${x.usePower} 体力</option>`).join('')
+      ||'<option value="1">1 级</option>';
+  }
+  if(document.activeElement!==sel && h.lv_low) sel.value=String(h.lv_low);
+  // 自动打怪进度
+  const ah=$('autoHint');
+  if(au.running){
+    const l=au.last||{};
+    ah.innerHTML='<span class="tag good">运行中</span> 已打 '+esc(au.kills||0)+' 只 · 体力 '+esc(au.stamina||0)+'/'+esc(au.stamina_max||100)
+      +'<br><span class="mini">'+(au.wait_for?esc(au.wait_for):(l.x?('目标 ('+esc(l.x)+','+esc(l.y)+') index '+esc(l.index)+' · '+esc(l.troop||'')+' x'+esc(l.num||0)):'正在找怪…'))
+      +(au.recover_per_min!=null?(' · 体力恢复约 '+esc(au.recover_per_min)+'/分钟'):'')+'</span>';
+  }else{
+    ah.innerHTML=(au.kills?('已停止 · 累计 '+esc(au.kills)+' 只'):'未开启')
+      +(au.note?(' · '+esc(au.note)):'');
+  }
+  renderSquadProgress(au);
+  // 按钮状态: 开了就变「已开启」并禁用, 没开时「停止」置灰
+  const bStart=$('btnAutoStart'), bStop=$('btnAutoStop');
+  if(bStart){
+    bStart.disabled=!!au.running;
+    bStart.textContent=au.running?'已开启':'开始自动打怪';
+    bStart.classList.toggle('primary', !au.running);
+  }
+  if(bStop) bStop.disabled=!au.running;
+  // 提示(不再有周卡面板, 只在运行时提示会占账号)
+  const warn=$('huntWarn');
+  if(au.running){
+    warn.style.display='';
+    warn.innerHTML='自建自动打怪正在占用账号连接，<b>网页轮询已自动暂停</b>，App 也会被顶下线。';
+  }else{ warn.style.display='none'; }
+}
+
+/* 每支队伍的打怪进度 */
+function renderSquadProgress(au){
+  const box=$('squadProgress');
+  if(!box) return;
+  const sqs=(au&&au.squads)||[];
+  if(!sqs.length){
+    box.innerHTML='<div class="mini">还没有队伍(点「开始自动打怪」后按编成分配)</div>';
+    return;
+  }
+  const stateText={idle:['待命',''], marching:['出征中','good'], done:['已回来','']};
+  box.innerHTML='<table class="sqtable"><thead><tr><th>队</th><th>兵种</th><th>数量</th><th>状态</th><th>目标</th><th>已打</th></tr></thead><tbody>'
+    + sqs.map(s=>{
+        const st=stateText[s.state]||['-',''];
+        const tgt=(s.x!=null)?('('+esc(s.x)+','+esc(s.y)+')'):'-';
+        const extra=(s.state==='marching'&&s.elapsed!=null)?(' <span class="mini">'+(s.elapsed||0)+'s</span>'):'';
+        return '<tr><td>'+esc(s.slot||'-')+'</td>'
+          +'<td>'+esc(s.name||s.army_id||'-')+'</td>'
+          +'<td>'+esc(s.num||0)+'</td>'
+          +'<td><span class="tag '+st[1]+'">'+st[0]+'</span>'+extra+'</td>'
+          +'<td class="mini">'+tgt+'</td>'
+          +'<td>'+esc(s.kills||0)+'</td></tr>';
+      }).join('')
+    + '</tbody></table>';
+}
+
+function renderCards(st){
+  const S2=st.states||{};
+  const c=[];
+  const empty=(why)=>'<div class="empty">'+esc(why)+'</div>';
+  // 卡片里只说结论, 完整原因在顶部横幅(避免同一句话刷 8 遍)
+  // ⚠️ 打怪占用连接时 st.error 是设计内的让路提示, 不是故障
+  const hunting=!!(st.hunter&&st.hunter.running);
+  const why = st.account_error ? '设备未连接 —— 详情见顶部横幅'
+              : (hunting ? '自动打怪占用账号连接，监控数据暂停刷新'
+              : (st.error ? ('连接异常: '+st.error) : (st.app_yield ? 'App 在线，账号已让出，稍后自动刷新'
+              : (st.last_poll?'':'等待首轮轮询…'))));
+
+  // 签到
+  const ds=S2.dailySign||{};
+  c.push('<div class="card"><h2>每日签到</h2>'
+    + (Object.keys(ds).length? kv('今日已签', ds['今日已签']===true?'<span class="tag good">已签</span>':'<span class="tag bad">未签</span>')
+        + kv('剩余补签次数', esc(ds['剩余补签次数']))
+        + kv('已签日期', tags((ds['已签日期']||[]).slice(-8)))
+      : empty(why))+'</div>');
+
+  // 周任务
+  const dq=S2.dailyQuest||{};
+  c.push('<div class="card"><h2>周任务</h2>'
+    + (Object.keys(dq).length? kv('周任务积分', esc(dq['周任务积分']))
+        + kv('可领周奖励', jumpTags(dq['周任务可领奖励'],'good','cardDaily'))
+        + kv('周结束时间', esc(ts(dq['周结束时间'])))
+      : empty(why))+'</div>');
+
+  // 日常任务
+  const dq2=(dq['可领日常任务']||[]);
+  c.push('<div class="card"><h2>可领日常任务 <span class="sub">'+dq2.length+' 项</span></h2>'
+    + (dq2.length? '<div>'+dq2.map(x=>'<span class="tag warn" title="'+esc(x.id)+'">'+esc(x['名称']||x.id)+' '+esc(x['进度']||'')+'</span>').join('')+'</div>'
+        + '<div class="mini" style="margin-top:6px">点下面「领取奖励」可一次领完</div>'
+      : (Object.keys(dq).length? empty('没有可领的日常任务') : empty(why)))+'</div>');
+
+  // 领主任务
+  const lt=S2.lordTask||{};
+  const un=lt['未完成']||[];
+  c.push('<div class="card"><h2>领主任务</h2>'
+    + (Object.keys(lt).length? kv('当前进度', esc(lt['当前进度']))
+        + kv('已领档位', esc(lt['已领档位数']))
+        + kv('可领奖励', jumpTags(lt['可领奖励'],'good','cardDaily'))
+        + (un.length? ('<div class="mini" style="margin-top:6px">未完成 '+un.length+' 项</div><div>'
+            + un.map(x=>'<span class="tag" title="'+esc(x.id)+'">'+esc(x['名称']||('任务 '+x.id))+' '+esc(x['进度']||'')+'</span>').join('')+'</div>')
+          : '<div class="mini" style="margin-top:6px">全部完成</div>')
+      : empty(why))+'</div>');
+
+  // 主线任务
+  const sk=S2.storyTask||{};
+  const tk=sk['任务']||[];
+  c.push('<div class="card"><h2>主线任务</h2>'
+    + (Object.keys(sk).length? kv('章节', esc(sk['章节名']||sk['章节']))
+        + kv('任务数', esc(sk['任务数']))
+        + (tk.length? ('<div style="margin-top:5px">'+tk.map(x=>'<span class="tag info" title="'+esc(x.id)+'">'+esc(x['名称']||x.id)+' '+esc(x['进度']||'')+'</span>').join('')+'</div>') : '')
+      : empty(why))+'</div>');
+
+  // 联盟 boss
+  const bs=(S2.boss||{}).boss||[];
+  c.push('<div class="card"><h2>联盟 Boss</h2>'
+    + (bs.length? bs.map(b=>kv('点 '+esc(b.pointId), (b['在位']?'<span class="tag good">在位</span>':'<span class="tag">不在</span>')+' 次数 '+esc(b.num))).join('')
+      : (Object.keys(S2.boss||{}).length? empty('暂无 Boss') : empty(why)))+'</div>');
+
+  // 进行中的队列
+  const running=(st.queues||[]).filter(q=>q.running);
+  c.push('<div class="card"><h2>进行中的队列 <span class="sub">'+(st.queues||[]).length+' 个槽位</span></h2>'
+    + (running.length? running.map(q=>kv(esc(q.type_name||qtype(q.type)), dur(q.totalTime)+(q.building_name?(' <span class="dim">'+esc(q.building_name)+'</span>'):''))).join('')
+      : ((st.queues||[]).length? empty('当前没有进行中的队列') : empty(why)))+'</div>');
+
+  // 功能概览
+  const ov=(S2.overview||{})['队列']||[];
+  const byType={};
+  ov.forEach(x=>{ const k=(x['类型']||otype(x.type)); (byType[k]=byType[k]||[]).push(x['进度']); });
+  c.push('<div class="card"><h2>功能概览</h2>'
+    + (Object.keys(byType).length? Object.keys(byType).map(k=>kv(esc(k), byType[k].map(esc).join(' · '))).join('')
+      : empty(why))+'</div>');
+
+  $('cards').innerHTML=c.join('');
+}
+
+/* 监控卡片: 每张卡可折叠 + 内容没变就不重绘(避免每 5 秒闪一下) */
+const CARD_SIG={};
+function renderCardsStable(st){
+  const S2=st.states||{};
+  const running=(st.queues||[]).filter(q=>q.running);
+  // 用关键状态做签名, 变了才重画整块
+  const sig=JSON.stringify([
+    S2.dailySign, S2.dailyQuest, S2.lordTask, S2.storyTask, S2.boss,
+    running.map(q=>[q.uuid,q.totalTime,q.type]), S2.overview
+  ]);
+  if(CARD_SIG.main===sig) return;
+  CARD_SIG.main=sig;
+  renderCards(st);
+  // 给每张监控卡挂上折叠按钮
+  document.querySelectorAll('#cards .card').forEach((c,i)=>{
+    if(c.querySelector('.fold')) return;
+    const id='cardMon'+i;
+    c.id=id;
+    const h=c.querySelector('h2');
+    if(!h) return;
+    const b=document.createElement('button');
+    b.className='fold'; b.dataset.fold=id; b.textContent='－'; b.title='折叠/展开';
+    h.appendChild(b);
+  });
+  applyFold();
+  applyMonSummaries(st);
+}
+
+/* 监控卡的折叠摘要: 折叠后也能看到关键数字 */
+function applyMonSummaries(st){
+  const S2=st.states||{};
+  const ds=S2.dailySign||{}, dq=S2.dailyQuest||{}, lt=S2.lordTask||{};
+  const summaries=[
+    ()=> ds['今日已签']===true?'已签':(ds['今日已签']===false?'未签':''),
+    ()=> ((dq['周任务可领奖励']||[]).length)?((dq['周任务可领奖励']||[]).length+' 个周奖励可领'):'',
+    ()=> ((dq['可领日常任务']||[]).length)?((dq['可领日常任务']||[]).length+' 个日常可领'):'',
+    ()=> ((lt['可领奖励']||[]).length)?((lt['可领奖励']||[]).length+' 个可领'):'',
+    ()=> (S2.storyTask&&S2.storyTask['章节名'])?S2.storyTask['章节名']:'',
+    ()=> (((S2.boss||{}).boss||[]).length)?(((S2.boss||{}).boss||[]).length+' 个 Boss'):'',
+    ()=> { const r=(st.queues||[]).filter(q=>q.running).length; return r?(r+' 个进行中'):''; },
+    ()=> { const ov=(S2.overview||{})['队列']||[]; return ov.length?(ov.length+' 类'):''; },
+  ];
+  document.querySelectorAll('#cards .card').forEach((c,i)=>{
+    const h=c.querySelector('h2');
+    if(!h) return;
+    let s=h.querySelector('.sumline');
+    if(!s){ s=document.createElement('span'); s.className='sumline';
+             h.insertBefore(s,h.querySelector('.fold')); }
+    s.textContent=(summaries[i]?summaries[i]():'');
+  });
+}
+
+function renderQueues(st){
+  const sel=$('selQueue'), cur=sel.value;
+  const run=(st.queues||[]).filter(q=>q.running);
+  const list=run.length?run:(st.queues||[]);
+  sel.innerHTML=list.map(q=>`<option value="${esc(q.uuid)}">${esc(q.type_name||qtype(q.type))} · ${dur(q.totalTime)}${q.building_name?' · '+esc(q.building_name):''}</option>`).join('')
+    ||'<option value="">（无队列）</option>';
+  if(cur) sel.value=cur;
+}
+
+function renderItems(st){
+  const sel=$('selItem'), cur=sel.value;
+  const its=st.items||[];
+  sel.innerHTML=its.map(x=>`<option value="${esc(x.uuid)}" data-cnt="${esc(x.count)}">${esc(x.name||x.itemId)} · x${esc(x.count)}${x.label?(' · '+esc(x.label)):''}</option>`).join('')
+    ||'<option value="">（背包为空）</option>';
+  if(cur) sel.value=cur;
+  const cnt=$('inpCount');
+  if(cnt && sel.selectedElement){
+    const d=sel.selectedElement.dataset.cnt;
+    if(d) cnt.max=Math.max(1,Number(d));
+  }
+  // 背包数据来源/时间: 让人知道这是实时读的还是快照
+  const bs=st.bag_source||{};
+  const hint=$('bagHint');
+  if(hint){
+    hint.textContent = bs.file
+      ? ('背包数据来源: '+bs.label+(bs.detail?(' · '+bs.detail):'')+' · 共 '+its.length+' 种')
+      : '背包数据不可用(需要手机连上后用 dump_bag.py 采集)';
+  }
+}
+
+function renderShield(st){
+  const sh=st.shield||{};
+  const end=sh.end_ms||0;
+  const now=Date.now();
+  const left=Math.max(0,end-now);
+  const untilTxt=end?(' · 到期 '+ts(end)):'';
+  $('shieldHint').innerHTML='当前状态: '+(left>0?('<span class="tag good">罩中 · 还剩 '+dur(left)+'</span>'):'<span class="tag">当前无罩</span>')
+    +untilTxt+' · 自动开罩 '+(sh.autoshield?'<span class="tag good">开</span>':'<span class="tag">关</span>');
+  // 规格下拉: 可选的保护罩规格(名称自带时长)
+  const specSel=$('selShieldSpec');
+  const specs=sh.specs||[];
+  if(specSel && specSel.dataset.sig!==specs.length+':'+specs.map(x=>x.id).join(',')){
+    specSel.dataset.sig=specs.length+':'+specs.map(x=>x.id).join(',');
+    const cur=specSel.value;
+    specSel.innerHTML=specs.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}${x.duration?(' · '+esc(x.duration)):''}</option>`).join('')
+      ||'<option value="">（没有可用规格）</option>';
+    if(cur) specSel.value=cur;
+  }
+  // 槽位下拉: 显示槽里放了什么 + 时长
+  const sel=$('selSlot');
+  if(sel){
+    const sig=(sh.slots||[]).map(s=>s.type+':'+(s.items||[]).map(i=>i.id).join(',')).join('|');
+    if(sel.dataset.sig!==sig){
+      sel.dataset.sig=sig;
+      const cur=sel.value;
+      sel.innerHTML=(sh.slots||[]).map(s=>{
+        const its=(s.items||[]);
+        const desc=its.length
+          ? its.map(i=>esc(i.name)+(i.duration?('('+esc(i.duration)+')'):'')+(i.num?(' ×'+esc(i.num)):'')).join(' + ')
+          : '（空 · 开罩会无效）';
+        return `<option value="${esc(s.type)}">槽位 ${esc(s.type)} · ${desc}</option>`;
+      }).join('')||'<option value="1">槽位 1</option>';
+      if(cur) sel.value=cur;
+    }
+  }
+  // 自动开罩的代价说明: 它靠服务端推送, 必须常驻连接
+  const ah=$('shieldAutoHint');
+  if(ah){
+    if(sh.autoshield){
+      ah.style.display='';
+      ah.innerHTML='自动开罩已开: 网页会<b>保持常驻连接</b>来接收「被攻击」推送，'
+        +'所以 App 会被顶下线、网页轮询也会变慢 —— 这是收推送的必要代价。';
+    }else{
+      ah.style.display='none';
+    }
+  }
+}
+
+/* 港口(码头航海贸易) */
+function renderDock(st){
+  const dk=st.dock||{};
+  const box=$('dockList');
+  if(!box) return;
+  const ships=dk.ships||[];
+  if(dk.disabled){
+    box.innerHTML='<div class="empty">'+esc(dk.note||'港口功能未开启')
+      +' —— 服务端还没开放这个功能</div>';
+  }else if(dk.error){
+    box.innerHTML='<div class="empty">读取港口失败: '+esc(dk.error)+'</div>';
+  }else if(!ships.length){
+    box.innerHTML='<div class="empty">没有船只(可能港口还没解锁, 或账号没有贸易港)</div>';
+  }else{
+    const cls={0:'',1:'',2:'warn',3:'good'};
+    box.innerHTML='<table class="sqtable"><thead><tr><th>#</th><th>状态</th><th>载货</th><th>加速</th></tr></thead><tbody>'
+      + ships.map((s,i)=>{
+          const left=(s.endTime&&s.endTime>1e12)?Math.max(0,s.endTime-Date.now()):0;
+          const t=(s.state===2)?(' <span class="mini">'+(left?dur(left):'—')+'</span>'):'';
+          // state=3 = 有奖励但还没领
+          const tag=(s.state===3)?' <span class="mini">(未领取)</span>':'';
+          const cargo=esc(s.cargo_text||s.itemId||'空载');
+          return '<tr><td>'+(i+1)+'</td>'
+            +'<td><span class="tag '+(cls[s.state]||'')+'">'+esc(s.state_text||'未知')+'</span>'+t+tag+'</td>'
+            +'<td class="mini">'+cargo+'</td>'
+            +'<td class="mini">'+esc(s.speedTimes?('加速 '+s.speedTimes):'-')+'</td></tr>';
+        }).join('')
+      + '</tbody></table>';
+  }
+  // 上次领取明细: 领了多少 / 哪些没领到(刷新页面后仍在)
+  const rbox=$('dockResult');
+  if(rbox){
+    const lr=dk.last_reward;
+    if(lr){
+      const got=(lr.rewards||[]).map(g=>'<li>领到: '+esc(g.name||g.itemId)
+        +(g.addNum?(' ×'+esc(String(g.addNum))):'')+'</li>').join('');
+      const miss=(lr.unclaimed||[]).map(u=>'<li>未领取: '+esc((u.state_text||'可领奖')+' · '+(u.uuid||'').slice(0,8))+'</li>').join('');
+      rbox.innerHTML='<div class="mini">上次领取 @'+esc(ts(lr.at))+' · 本次可领 '+(lr.pending||0)
+        +' 条 · 实领 '+(lr.count||0)+' 条</div>'
+        +(got?'<ul class="mini">'+got+'</ul>':'')
+        +(miss?'<ul class="mini">'+miss+'</ul>':'')
+        +((!got&&!miss)?'<div class="mini">没有可领取的奖励</div>':'');
+    }else{
+      rbox.innerHTML='';
+    }
+  }
+  const hint=$('dockHint');
+  if(hint){
+    if(dk.disabled){
+      hint.textContent='港口功能未开启 —— 自动领取/自动分派已自动停用(每轮空转没有意义)';
+    }else{
+      hint.textContent=(dk.family?('命令族 '+dk.family+' · '):'')
+        +'空闲 '+(dk.idle||0)+' 条 · 贸易中 '+(dk.trading||0)+' 条 · '
+        +'可领奖 '+(dk.rewardable||0)+' 条(未领取)'
+        +(dk.shipLimit?(' · 船位上限 '+dk.shipLimit):'')
+        +(dk.last_auto?(' · '+dk.last_auto):'')
+        +(dk.autoReward||dk.autoSend?(' · 自动: 领='+(dk.autoReward?'开':'关')+' 派='+(dk.autoSend?'开':'关')):'');
+    }
+  }
+  // 有可领的就把按钮点亮提示
+  const rb=$('btnDockReward');
+  if(rb){
+    const n=dk.rewardable||0;
+    rb.classList.toggle('primary', n>0);
+    rb.textContent = n>0 ? ('一键领取 ('+n+')') : '一键领取';
+  }
+}
+
+function renderEvents(st){
+  const evs=st.events||[];
+  const box=$('logs');
+  if(!box) return;
+  const filter=EV_FILTER;
+  const shown=filter==='all'?evs:evs.filter(e=>e.kind===filter);
+  const sig=shown.length+':'+(shown.length?shown[shown.length-1].ts:'')+':'+filter;
+  if(sig===EV_SIG) return;
+  EV_SIG=sig;
+  const cnt=$('logCount');
+  if(cnt) cnt.textContent=shown.length+' 条'+(filter==='all'?'':' / 共 '+evs.length);
+  if(!shown.length){
+    box.innerHTML='<div class="empty">'+(evs.length?'当前筛选下没有事件':'还没有事件。连上游戏服后, 签到/领奖/开罩/被打等情况会实时出现在这里。')+'</div>';
+    return;
+  }
+  const cls={connected:'s',error:'e',warning:'w',state:'k'};
+  box.innerHTML=shown.slice(-200).map(e=>{
+    const c=cls[e.kind]||'';
+    let d=e.data;
+    if(typeof d==='object'){ try{ d=JSON.stringify(d); }catch(_){ d=String(d); } }
+    return '<div><span class="t">'+esc(e.ts)+'</span> <span class="'+c+'">'+esc(e.kind)+'</span> '+esc(String(d).slice(0,400))+'</div>';
+  }).join('');
+  box.scrollTop=box.scrollHeight;
+}
+
+/* ---------------- 主刷新 ---------------- */
+async function refresh(silent){
+  let st=null;
+  try{ st=await api('/api/state'); }
+  catch(e){
+    const dot=$('connDot'), txt=$('connText');
+    if(dot){ dot.className='dot off'; txt.textContent='控制台无响应'; }
+    if(!silent) toast('控制台无响应: '+(e&&e.message?e.message:e),'err');
+    return null;
+  }
+  if(!st) return null;
+  if(st.error==='unauthorized'){ $('connText').textContent='token 无效'; return null; }
+  S.state=st;
+  renderHeader(st); renderCardsStable(st); renderQueues(st); renderItems(st);
+  renderShield(st); renderEvents(st); renderHunt(st); renderDock(st);
+  renderOverview(st); renderSummaries(st); renderScan(st);
+  if(!silent) $('sLast').title='页面读取时间';
+  return st;
+}
+
+/* ---------------- 操作 ---------------- */
+$('btnRefresh').onclick=async()=>{
+  await busy($('btnRefresh'),'连接游戏服…',async()=>{
+    const r=await api('/api/action',{action:'refresh-now'});
+    if(r.ok){ toast('已刷新 · '+(r.note||''),'ok'); }
+    else { toast(r.note||'刷新失败','warn'); }
+    await refresh(true);
+  });
+};
+$('btnReconnect').onclick=async()=>{
+  await busy($('btnReconnect'),'重连…',async()=>{
+    const r=await api('/api/action',{action:'reconnect'});
+    toast(r.ok?'已重连':(r.error||'重连失败'), r.ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnSign').onclick=async()=>{
+  await busy($('btnSign'),'签到中…',async()=>{
+    const r=await api('/api/action',{action:'sign'});
+    const ok=r.ok!==false;
+    setRes('resDaily', ok?('已触发签到: '+(r.note||'')):('签到失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?'已触发签到':'签到失败: '+(r.error||''), ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnClaim').onclick=async()=>{
+  await busy($('btnClaim'),'领奖中…',async()=>{
+    const r=await api('/api/action',{action:'claim'});
+    const ok=r.ok!==false;
+    setRes('resDaily', ok?('已触发领奖: '+(r.note||'')):('领奖失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?'已触发领奖':'领奖失败: '+(r.error||''), ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnSpeed').onclick=async()=>{
+  const q=$('selQueue').value, it=$('selItem').value, c=parseInt($('inpCount').value||'1',10);
+  if(!q||!it){ toast('需要选择队列和道具','err'); setRes('resSpeed','需要先选队列和道具','err'); return; }
+  if(!confirm('确认用道具加速该队列？\n会立即完成队列并消耗道具。')) return;
+  await busy($('btnSpeed'),'加速中…',async()=>{
+    const r=await api('/api/action',{action:'speedup',uuid:q,itemUuid:it,count:c});
+    const ok=r.ok!==false;
+    setRes('resSpeed', ok?('加速成功 · '+($('selItem').selectedOptions[0]?$('selItem').selectedOptions[0].text:'')):('失败: '+(r.error||JSON.stringify(r.result||'').slice(0,120))), ok?'ok':'err');
+    toast(ok?'加速成功':'加速失败', ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnSpeedGold').onclick=async()=>{
+  const q=$('selQueue').value;
+  if(!q){ toast('需要选择队列','err'); setRes('resSpeed','需要先选队列','err'); return; }
+  if(!confirm('确认用金币加速？\n会实扣金币。')) return;
+  await busy($('btnSpeedGold'),'加速中…',async()=>{
+    const r=await api('/api/action',{action:'speedup',uuid:q,gold:true,qtype:1});
+    const ok=r.ok!==false;
+    setRes('resSpeed', ok?'金币加速成功':('失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?'金币加速成功':'金币加速失败', ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnShield').onclick=async()=>{
+  const slot=parseInt($('selSlot').value||'1',10), cover=$('chkCover').checked?1:0;
+  const spec=$('selShieldSpec').value||'';
+  if(!spec){ toast('先选保护罩规格','err'); setRes('resShield','需要先选保护罩规格','err'); return; }
+  if(!confirm('确认开保护罩？\n规格: '+(($('selShieldSpec').selectedOptions[0]||{}).text||spec)
+    +'\n槽位 '+slot+'\n会真实消耗 1 个保护罩道具。')) return;
+  await busy($('btnShield'),'开罩中…',async()=>{
+    const r=await api('/api/action',{action:'shield',slot:slot,coverOld:cover,spec:spec});
+    const ok=r.ok!==false;
+    const note=(r.notes&&r.notes.length)?(' · '+r.notes.join(' · ')):'';
+    setRes('resShield', ok?('保护罩已开启(槽位 '+slot+')'+note+(r.shieldEndTime?(' · 到期 '+ts(r.shieldEndTime)):''))
+                          :('失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?'保护罩已开启':'开罩失败', ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnSlots').onclick=async()=>{
+  await busy($('btnSlots'),'查询中…',async()=>{
+    const r=await api('/api/action',{action:'shieldslots'});
+    const n=(r.slots||[]).length;
+    setRes('resShield', n?('已取到 '+n+' 个槽位'):('取槽位失败: '+(r.error||'')), n?'ok':'err');
+    toast(n?('已取到 '+n+' 个槽位'):'取槽位失败', n?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnDockReward').onclick=async()=>{
+  await busy($('btnDockReward'),'领取中…',async()=>{
+    const r=await api('/api/action',{action:'dock',op:'reward'});
+    const ok=r.ok!==false;
+    const box=$('dockResult');
+    if(ok){
+      const rw=r.rewards||[];
+      const un=r.unclaimed||[];
+      if(!rw.length && !un.length){
+        setRes('resDock','没有可领取的奖励(可能没有船在等待)','warn');
+        toast('没有可领取的奖励','warn');
+        if(box) box.innerHTML='<div class="mini">上次领取: 没有可领取的奖励</div>';
+      }else{
+        let msg='已领取 '+(r.count||rw.length)+' 条';
+        if(un.length) msg+=' · 仍有 '+un.length+' 条未领取';
+        setRes('resDock', msg, 'ok');
+        toast(msg, 'ok');
+        if(box){
+          const got=rw.map(g=>'<li>领到: <b>'+esc(g.name||g.itemId)+'</b> ×'+esc(g.addNum)+'</li>').join('');
+          const miss=un.map(s=>'<li>未领取: '+esc(s.uuid||'?')+' ('+esc(s.state_text||'')+')</li>').join('');
+          box.innerHTML='<div class="mini" style="margin-top:6px"><b>上次领取</b>'
+            +(got?'<ul style="margin:3px 0 0 16px;padding:0">'+got+'</ul>':'')
+            +(miss?'<ul style="margin:3px 0 0 16px;padding:0">'+miss+'</ul>':'')
+            +'</div>';
+        }
+      }
+    }else{
+      const why=r.errorText||r.errorCode||r.error||'未知错误';
+      setRes('resDock','领取失败: '+why,'err');
+      toast('领取失败: '+why,'err');
+      if(box) box.innerHTML='<div class="mini" style="margin-top:6px;color:#f0d59a">上次领取失败: '+esc(why)+'</div>';
+    }    await refresh(true);
+  });
+};
+$('btnDockSend').onclick=async()=>{
+  if(!confirm('确认一键分派船只？\n会**派出空闲的船**(消耗载货/资源)。')) return;
+  await busy($('btnDockSend'),'分派中…',async()=>{
+    const r=await api('/api/action',{action:'dock',op:'send'});
+    const ok=r.ok!==false;
+    const n=r.count||0;
+    setRes('resDock', ok?('已一键分派'+(n?(' '+n+' 条'):'')):('分派失败: '+(r.errorText||r.errorCode||r.error||'')), ok?'ok':'err');
+    toast(ok?'已分派':'分派失败', ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnDockRefresh').onclick=async()=>{
+  await busy($('btnDockRefresh'),'读取中…',async()=>{
+    const r=await api('/api/action',{action:'dock',op:'read'});
+    const ok=r.ok!==false;
+    setRes('resDock', ok?('港口: 空闲 '+(r.idle||0)+' · 贸易中 '+(r.trading||0)+' · 可领 '+(r.rewardable||0))
+                        :('读取失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?'港口已刷新':'读取失败', ok?'ok':'err');
+    await refresh(true);
+  });
+};
+
+$('btnTestHook').onclick=async()=>{
+  const type=$('selHookType').value, url=$('inpHook').value.trim();
+  if(!url){ toast('先填 Webhook URL','err'); setRes('resHook','需要先填 Webhook URL','err'); return; }
+  await busy($('btnTestHook'),'发送中…',async()=>{
+    const r=await api('/api/action',{action:'hook-test',type:type,url:url});
+    const ok=r.ok!==false;
+    setRes('resHook', ok?('测试已发送: '+type):('发送失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?'测试已发送':'发送失败', ok?'ok':'err');
+  });
+};
+$('btnFind').onclick=async()=>{
+  const lv=parseInt($('selMonster').value||'1',10);
+  await busy($('btnFind'),'搜索中…',async()=>{
+    const r=await api('/api/action',{action:'hunt',op:'find',level:lv});
+    const ok=!!r.ok;
+    setRes('resHunt', ok?('找到 '+lv+' 级'+(r.name?(' '+r.name):'')+' 坐标 '+r.x+','+r.y):('没找到: '+(r.errorCode||'无结果')), ok?'ok':'warn');
+    toast(ok?('坐标 '+r.x+','+r.y):'没找到该等级野怪', ok?'ok':'warn');
+  });
+};
+$('btnLv').onclick=async()=>{
+  const lo=parseInt($('inpLvLow').value||'1',10), hi=parseInt($('inpLvHigh').value||'1',10);
+  if(lo>hi){ toast('下限不能大于上限','err'); setRes('resHunt','下限不能大于上限(现在是 '+lo+' - '+hi+')','err'); return; }
+  await busy($('btnLv'),'保存中…',async()=>{
+    const r=await api('/api/action',{action:'hunt',op:'set-level',low:lo,high:hi});
+    const ok=!!r.ok;
+    setRes('resHunt', ok?('等级范围已设为 '+r.lv):('失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?('等级范围 '+r.lv):'保存失败', ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnArmyReload').onclick=async()=>{
+  await busy($('btnArmyReload'),'读取中…',async()=>{
+    const list=await loadArmyChoices();
+    setRes('resHunt', list.length?('已读取 '+list.length+' 种可用兵种'):'没读到可用兵种', list.length?'ok':'warn');
+    toast(list.length?('可用兵种 '+list.length+' 种'):'没读到可用兵种', list.length?'ok':'warn');
+  });
+};
+$('btnFormat').onclick=async()=>{
+  const spec=squadSpec();
+  if(!spec.length){ toast('至少选一支队伍','err'); setRes('resHunt','需要至少选一支队伍(兵种+数量)','err'); return; }
+  const ids=spec.map(s=>s.army_id);
+  if(new Set(ids).size!==ids.length){
+    toast('每队要用不同兵种','err');
+    setRes('resHunt','每队必须用不同兵种(各队独立判定部队是否回来)','err');
+    return;
+  }
+  await busy($('btnFormat'),'保存中…',async()=>{
+    // 1) 存本地设置(跨刷新不丢, 跨浏览器通用)
+    SETTINGS.squadSpec=JSON.stringify(spec);
+    await api('/api/action',{action:'set-setting',key:'squadSpec',value:SETTINGS.squadSpec,seq:++SET_SEQ});
+    // 2) 同时写服务端编成(保持两边一致)
+    const fmt=spec.map(s=>s.army_id+','+s.num).join('|');
+    const r=await api('/api/action',{action:'hunt',op:'set-format',format:fmt});
+    const ok=(r&&r.ok!==false);
+    setRes('resHunt', ok?('已保存 '+spec.length+' 队编成: '+fmt):('编成已存本地, 但写服务端失败: '+(r.error||'')), ok?'ok':'warn');
+    toast(ok?('已保存 '+spec.length+' 队编成'):'保存失败', ok?'ok':'warn');
+    await refresh(true);
+  });
+};
+$('btnAutoFormat').onclick=async()=>{
+  const pt=parseInt($('inpPerType').value||'50',10);
+  await busy($('btnAutoFormat'),'生成中…',async()=>{
+    if(!ARMY_CHOICES.length) await loadArmyChoices();
+    const want=Math.max(1, Math.min(8, parseInt($('inpSquads').value||'4',10)||4));
+    const spec=ARMY_CHOICES.slice(0,want).map(a=>({army_id:a.id, num:Math.min(pt, a.free||pt)}));
+    if(!spec.length){ setRes('resHunt','没有可用兵种','warn'); toast('没有可用兵种','warn'); return; }
+    SETTINGS.squadSpec=JSON.stringify(spec);
+    await api('/api/action',{action:'set-setting',key:'squadSpec',value:SETTINGS.squadSpec,seq:++SET_SEQ});
+    renderSquadRows();
+    setRes('resHunt','已按可用兵自动编成 '+spec.length+' 队: '+spec.map(s=>s.army_id+'×'+s.num).join(' '),'ok');
+    toast('已自动编成 '+spec.length+' 队','ok');
+    await refresh(true);
+  });
+};
+$('btnAutoStart').onclick=async()=>{
+  const lv=parseInt($('selMonster').value||'1',10);
+  const mx=parseInt($('inpHuntMax').value||'0',10);
+  const want=Math.max(1, Math.min(8, parseInt($('inpSquads').value||'4',10)||4));
+  if(!ARMY_CHOICES.length) await loadArmyChoices();
+  const spec=squadSpec();
+  const ids=spec.map(s=>s.army_id);
+  if(new Set(ids).size!==ids.length){
+    toast('每队要用不同兵种','err');
+    setRes('resHunt','每队必须用不同兵种(各队独立判定部队是否回来)','err');
+    return;
+  }
+  if(!confirm('确认开始自动打怪？\n最多 '+want+' 队同时出征打 '+lv+' 级野怪，真实消耗士兵与体力。\n开启期间网页会占用账号连接，App 会被踢下线。')) return;
+  await busy($('btnAutoStart'),'启动中…',async()=>{
+    const r=await api('/api/action',{action:'hunt',op:'auto-start',level:lv,
+      num:parseInt($('inpPerType').value||'50',10), maxKills:mx,
+      squads:want, squadSpec:spec});
+    const ok=!!r.ok;
+    setRes('resHunt', ok?(r.note||'已开始自动打怪'):('启动失败: '+(r.note||r.error||'')), ok?'ok':'err');
+    toast(ok?(r.note||'已开始自动打怪'):(r.note||'启动失败'), ok?'ok':'err');
+    await refresh(true);
+  });
+};
+$('btnAutoStop').onclick=async()=>{
+  await busy($('btnAutoStop'),'停止中…',async()=>{
+    const r=await api('/api/action',{action:'hunt',op:'auto-stop'});
+    const ok=!!r.ok;
+    setRes('resHunt', ok?(r.note||'已停止'):('失败: '+(r.error||'')), ok?'ok':'warn');
+    toast(ok?(r.note||'已停止'):'停止失败', ok?'ok':'err');
+    await refresh(true);
+  });
+};
+
+/* 玩家坐标查询 */
+let LOCATE_CANDS=[];
+let LAST_LOCATE=null;      // 上次查到的坐标, 给概览条显示
+function renderLocate(res){
+  const box=$('locateList');
+  if(!box) return;
+  if(!res){ box.innerHTML=''; return; }
+  if(res.ok){
+    const srcTxt={index:'本地索引',scan:'现场扫描',item:'道具查询',
+                  'index+verified':'本地索引 + 服务端实时校验'}[res.source]||'';
+    const ps=(res.players||[]);
+    let extra='';
+    if(ps.length>1){
+      extra='<div class="mini" style="margin-top:5px">同名 '+ps.length+' 个, 点名字切换:</div>'
+        +'<div>'+ps.map(p=>'<span class="tag info" data-locate-uid="'+esc(p.uid||'')+'" '
+          +'style="cursor:pointer" title="'+esc(p.uid||'')+'">'+esc(p.name||p.uid||'?')
+          +' ('+esc(p.x)+','+esc(p.y)+')</span>').join('')+'</div>';
+    }
+    box.innerHTML=ps.map(p=>
+      '<div class="trow done" style="margin-top:4px">'
+      +'<span class="ti n">✓</span>'
+      +'<span class="tx"><b>'+esc(p.name||'(无名)')+'</b>'
+      +'<span class="mini">坐标 X '+esc(p.x)+' · Y '+esc(p.y)
+      +(p.level!=null?(' · 等级 '+esc(p.level)):'')+'</span></span>'
+      +'<button data-copy="'+esc(p.x)+','+esc(p.y)+'" style="padding:3px 10px;font-size:12px">复制坐标</button>'
+      +'</div>').join('')
+      +'<div class="mini" style="margin-top:5px">来源: '+esc(srcTxt)
+      +(res.index_total?(' · 索引共 '+esc(res.index_total)+' 人'):'')
+      +(res.index_updated?(' · 更新于 '+esc(ts(res.index_updated*1000))):'')
+      +(res.scan?(' · 扫描 '+esc(res.scan.requests)+' 次请求'):'')
+      +(res.stale?(' · <span style="color:#e0a44a">索引坐标已过期(服务端重排过地图), 本次为现场扫描结果</span>'):'')
+      +'</div>'+extra;
+    const p0=ps[0];
+    if(p0){
+      LAST_LOCATE={name:p0.name, x:p0.x, y:p0.y};
+      const sum=$('sumLocate');
+      if(sum) sum.textContent=(p0.name||'')+' · '+p0.x+','+p0.y;
+      if(S.state) renderOverview(S.state);
+    }
+  }else{
+    // 优先显示人话提示(后端已给), 其次是错误码中文
+    const why=res.error||res.errorText||res.errorCode||'查询失败';
+    box.innerHTML='<div class="empty">'+esc(why)
+      +(res.errorText&&res.error&&res.errorText!==res.error?(' ('+esc(res.errorText)+')'):'')
+      +'<br><span class="mini">索引里没有这个人。可以点「扫描附近」用 world.get 扫一片区域建索引(不消耗任何道具)。</span></div>';
+    const sum=$('sumLocate');
+    if(sum) sum.textContent='';
+  }
+}
+document.addEventListener('click',(e)=>{
+  const cp=e.target.closest && e.target.closest('[data-copy]');
+  if(cp){
+    const txt=cp.getAttribute('data-copy');
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(()=>toast('已复制 '+txt,'ok'),
+                                            ()=>toast('复制失败: '+txt,'warn'));
+    }else{ toast('坐标: '+txt); }
+    return;
+  }
+  const t=e.target.closest && e.target.closest('[data-locate-uid]');
+  if(!t) return;
+  const uid=t.getAttribute('data-locate-uid');
+  const name=$('inpLocate').value.trim();
+  if(!name) return;
+  busy(null,'',async()=>{
+    const r=await api('/api/action',{action:'locate',name:name,uid:uid});
+    if(r.ok!==false){
+      setRes('resLocate','已查到坐标','ok');
+      toast('已查到坐标','ok');
+    }else{
+      setRes('resLocate','查询失败: '+(r.error||r.errorText||'未知错误'),'err');
+      toast('查询失败: '+(r.error||r.errorText||''),'err');
+    }
+    renderLocate(r);
+  });
+});
+$('btnLocate').onclick=async()=>{
+  const name=$('inpLocate').value.trim();
+  if(!name){ toast('先输入玩家名字','err'); setRes('resLocate','需要先输入玩家名字','err'); return; }
+  await busy($('btnLocate'),'查询中…',async()=>{
+    const r=await api('/api/action',{action:'locate',name:name});
+    if(r.ok!==false){
+      const ps=r.players||[];
+      setRes('resLocate','已查到 '+(ps.length||1)+' 个匹配玩家的坐标','ok');
+      toast('已查到坐标','ok');
+    }else{
+      setRes('resLocate','查询失败: '+(r.error||r.errorText||'未知错误'),'err');
+      toast('查询失败: '+(r.error||r.errorText||''),'err');
+    }
+    renderLocate(r);
+  });
+};
+$('btnLocateScan').onclick=async()=>{
+  await busy($('btnLocateScan'),'扫描中…',async()=>{
+    const r=await api('/api/action',{action:'locate',name:$('inpLocate').value.trim()||'',op:'scan'});
+    if(r.ok!==false){
+      const sc=r.scan||{};
+      setRes('resLocate','扫描完成: '+sc.requests+' 次请求 · '+sc.tiles+' 地块 · 新增 '+sc.new+' 名玩家','ok');
+      toast('索引共 '+(r.index_total||0)+' 人','ok');
+    }else{
+      setRes('resLocate','扫描失败: '+(r.error||'未知错误'),'err');
+    }
+    renderLocate(r);
+  });
+};
+$('inpLocate').addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ $('btnLocate').click(); e.preventDefault(); } });
+$('btnExport').onclick=async()=>{
+  const onlyReal=$('chkExportReal')&&$('chkExportReal').checked;
+  await busy($('btnExport'),'导出中…',async()=>{
+    try{
+      const url='/api/export?t='+encodeURIComponent(TOKEN)+(onlyReal?'&players=1':'');
+      const r=await fetch(url);
+      if(!r.ok){
+        let msg='HTTP '+r.status;
+        try{ const j=await r.json(); msg=j.error||msg; }catch(e){}
+        toast('导出失败: '+msg,'err');
+        setRes('resLocate','导出失败: '+msg,'err');
+        return;
+      }
+      const blob=await r.blob();
+      const url2=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url2; a.download=onlyReal?'cok-players-real.xlsx':'cok-players.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url2), 5000);
+      const kb=Math.round(blob.size/1024);
+      setRes('resLocate','已导出 Excel ('+kb+' KB'+(onlyReal?', 仅真实玩家':'')+')','ok');
+      toast('已导出 '+kb+' KB','ok');
+    }catch(e){
+      toast('导出失败: '+(e&&e.message?e.message:e),'err');
+    }
+  });
+};
+
+/* ---------------- 全图扫描(独立进程) ---------------- */
+function renderScan(st){
+  const mi=(st&&st.map_index)||{};
+  const running=!!mi.scanning;
+  const bA=$('btnScanAll'), bS=$('btnScanStop');
+  if(bA){ bA.disabled=running; bA.textContent=running?'扫描中…':'一键全图重扫'; }
+  if(bS){ bS.disabled=!running; }
+  const box=$('scanProgress');
+  if(!box) return;
+  if(running){
+    const d=mi.requests_done||0, t=mi.requests_total||0;
+    const pct=t?Math.min(100,Math.round(100*d/t)):0;
+    box.innerHTML='<div style="margin-top:8px">'
+      +'<div style="display:flex;justify-content:space-between;font-size:12px;color:#9fb4c8">'
+      +'<span>扫描中 '+d+'/'+t+' 次请求</span><span>'+pct+'%</span></div>'
+      +'<div style="height:6px;background:#1b2733;border-radius:3px;margin-top:4px;overflow:hidden">'
+      +'<div style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,#2f7fd6,#38bdf8)"></div>'
+      +'</div></div>';
+  }else{
+    const h=[];
+    if(mi.mismatched) h.push('错位丢弃 '+mi.mismatched);
+    if(mi.dropped) h.push('越界剔除 '+mi.dropped);
+    if(mi.errors) h.push('失败 '+mi.errors);
+    box.innerHTML=h.length?('<div class="mini" style="margin-top:6px;color:#e0a44a">上次扫描健康指标: '
+      +esc(h.join(' · '))+'</div>'):'';
+  }
+}
+
+async function loadScanHistory(){
+  const box=$('scanHistory'); if(!box) return;
+  try{
+    const d=await api('/api/scan/history');
+    const runs=(d&&d.runs)||[];
+    if(!runs.length){ box.textContent='还没有扫描记录'; return; }
+    const rows=runs.map(r=>{
+      const stt={running:'运行中',completed:'已完成',interrupted:'已中断'}[r.status]||(r.status||'-');
+      const cls=r.status==='completed'?'good':(r.status==='running'?'info':'warn');
+      const t0=r.started_at?hhmmss(r.started_at*1000):'-';
+      const dur=(r.finished_at&&r.started_at)?(Math.round(r.finished_at-r.started_at)+'s'):'-';
+      const hl=[];
+      if(r.mismatched_responses) hl.push('错位 '+r.mismatched_responses);
+      if(r.dropped_out_of_range) hl.push('越界 '+r.dropped_out_of_range);
+      if(r.errors) hl.push('失败 '+r.errors);
+      const sp=(r.self_point&&r.self_point.x!=null)?(' · 自('+r.self_point.x+','+r.self_point.y+')'):'';
+      return '<tr><td>'+esc(t0)+'</td>'
+        +'<td><span class="tag '+cls+'">'+esc(stt)+'</span></td>'
+        +'<td>'+esc((r.requests_done||0)+'/'+(r.requests_total||0))+'</td>'
+        +'<td>'+esc(r.players||0)+' <span class="mini">('+esc(r.real_players||0)+' 真人)</span></td>'
+        +'<td>'+esc(hl.join(' · ')||'-')+esc(sp)+'</td>'
+        +'<td>'+esc(dur)+'</td></tr>';
+    }).join('');
+    box.innerHTML='<table style="width:100%;border-collapse:collapse">'
+      +'<tr style="color:#8fa6bd;text-align:left"><th>开始</th><th>状态</th><th>请求</th>'
+      +'<th>玩家</th><th>健康</th><th>耗时</th></tr>'+rows+'</table>';
+  }catch(e){ box.textContent='读取失败: '+(e&&e.message?e.message:e); }
+}
+
+$('btnScanAll').onclick=async()=>{
+  const step=Number($('selScanStep').value||20);
+  await busy($('btnScanAll'),'启动中…',async()=>{
+    const r=await api('/api/scan/start',{step});
+    if(r&&r.ok){
+      toast(r.note||'扫描已启动','ok');
+      setRes('resLocate',(r.note||'扫描已启动')+(r.resumed?'(从上次断点继续)':''),'ok');
+    }else{
+      const msg=(r&&r.error)||'未知错误';
+      toast('启动失败: '+msg,'err');
+      setRes('resLocate','启动失败: '+msg,'err');
+    }
+    setTimeout(loadScanHistory,1500);
+  });
+};
+$('btnScanStop').onclick=async()=>{
+  await busy($('btnScanStop'),'停止中…',async()=>{
+    const r=await api('/api/scan/stop',{});
+    if(r&&r.ok){ toast(r.note||'已停止','ok'); setRes('resLocate',r.note||'已停止','ok'); }
+    else{ toast('停止失败: '+((r&&r.error)||'未知'),'err'); }
+    setTimeout(loadScanHistory,1200);
+  });
+};
+
+/* ---------------- 事件区工具条 ---------------- */
+document.querySelectorAll('.logbar .chip[data-ev]').forEach(c=>{
+  c.addEventListener('click',()=>{
+    EV_FILTER=c.dataset.ev;
+    document.querySelectorAll('.logbar .chip[data-ev]').forEach(x=>x.classList.toggle('on',x===c));
+    EV_SIG='';           // 强制重绘
+    if(S.state) renderEvents(S.state);
+  });
+});
+$('btnLogClear').onclick=()=>{
+  const box=$('logs');
+  if(box) box.innerHTML='<div class="empty">已清空显示(后端的历史事件还在, 下一轮会重新出现)</div>';
+  EV_SIG='';
+};
+const LOG_H=[280,420,620];
+let LOG_HI=0;
+$('btnLogSize').onclick=()=>{
+  LOG_HI=(LOG_HI+1)%LOG_H.length;
+  $('logs').style.height=LOG_H[LOG_HI]+'px';
+  toast('日志区高度 '+LOG_H[LOG_HI]+'px');
+};
+
+/* ---------------- 快捷键 ---------------- */
+$('btnKeys').onclick=()=>{ $('kbar').classList.toggle('show'); };
+document.addEventListener('keydown',(e)=>{
+  // 输入框/下拉里不劫持按键
+  const tag=(e.target&&e.target.tagName)||'';
+  if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return;
+  if(e.metaKey||e.ctrlKey||e.altKey) return;
+  const k=(e.key||'').toUpperCase();
+  if(k==='?'){ $('kbar').classList.toggle('show'); e.preventDefault(); return; }
+  if(k==='ESC'){ $('kbar').classList.remove('show'); return; }
+  if(k==='R'){ $('btnRefresh').click(); e.preventDefault(); return; }
+  if(k==='S'){ $('btnSign').click(); e.preventDefault(); return; }
+  if(k==='C'){ $('btnClaim').click(); e.preventDefault(); return; }
+  if(k==='D'){ $('btnDockReward').click(); e.preventDefault(); return; }
+  if(k==='L'){ goTo('cardLocate'); $('inpLocate').focus(); e.preventDefault(); return; }
+  if(k==='F'){
+    // 折叠/展开所有操作卡
+    const cards=[...document.querySelectorAll('main .card')].filter(c=>c.id&&c.querySelector('.fold'));
+    const anyOpen=cards.some(c=>!c.classList.contains('collapsed'));
+    cards.forEach(c=>{
+      c.classList.toggle('collapsed',anyOpen);
+      const b=c.querySelector('.fold'); if(b) b.textContent=anyOpen?'＋':'－';
+      setFolded(c.id,anyOpen);
+    });
+    toast(anyOpen?'已折叠全部卡片':'已展开全部卡片');
+    e.preventDefault();
+  }
+});
+
+/* ---------------- 启动 ---------------- */
+bindSettings();
+applyFold();
+$('banner').addEventListener('click',(e)=>{
+  if(e.target && e.target.id==='bannerX'){ BANNER_HIDDEN=true; $('banner').className='banner'; $('banner').innerHTML=''; }
+});
+$('inpSquads').addEventListener('change',()=>{ saveSetting('squads',$('inpSquads').value); renderSquadRows(); });
+(async function init(){
+  const st=await refresh(true);
+  // 设置回填后, 若后端有已保存的编成/等级, 同步到输入框
+  if(st && st.settings){ SETTINGS=st.settings||{}; applySettings(); }
+  // 读取可用兵种(下拉数据)
+  await loadArmyChoices();
+  // 扫描历史(展开「扫描历史」时也会刷新)
+  loadScanHistory();
+  const histBox=$('scanHistory');
+  if(histBox && histBox.closest('details')){
+    histBox.closest('details').addEventListener('toggle',()=>{ if(histBox.closest('details').open) loadScanHistory(); });
+  }
+  setTimeout(()=>refresh(true),1200);
+  setInterval(()=>refresh(true),5000);
+  // 扫描历史每 30 秒刷一次(扫描进行中时进度靠 state, 这里只刷历史)
+  setInterval(()=>{ const d=$('scanHistory'); if(d && d.closest('details') && d.closest('details').open) loadScanHistory(); },30000);
+})();
+</script>
+</body>
+</html>

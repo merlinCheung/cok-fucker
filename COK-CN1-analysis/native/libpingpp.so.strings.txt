@@ -1,0 +1,10 @@
+### libpingpp.so
+## SHA-256
+7fb82f5f67260b366b63060d6dd44ad892587b1aab7daeb4c9f3bcd82c4d39ae
+## size
+5984
+## URLs
+https://android.googlesource.com/toolchain/clang
+https://android.googlesource.com/toolchain/llvm
+## host-like
+android.googlesource.com

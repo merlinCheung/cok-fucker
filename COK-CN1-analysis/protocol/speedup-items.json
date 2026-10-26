@@ -1,0 +1,3554 @@
+{
+ "source": "/data/data/com.hcg.cok.nearme.gamecenter/files/database.local.xml (服务端下发的道具配置, adb pull 权限拒绝, 需 su -c cat)",
+ "menu_source": "apktool/assets/lua_static/game/utility/gameConst.lua :: ItemSpdMenu",
+ "rule": "type=2 即 ITEM_TYPE_SPD 加速道具; type2=ItemSpdMenu_* 决定适用场景; 时长 = para 第 3 段(秒), 缺失时取 display_quantity 第 2 段",
+ "important": "type2=1 (ItemSpdMenu_ALL) 是**通用**加速道具, 对城建/造兵/科技/陷阱/治疗都适用; queue.ccd 的 queueType 只区分建造(1)/造兵(2), 具体功能由 qUUID 唯一确定; 道具是否适用由服务端按道具 type2 校验",
+ "how_to_choose": "主城建造队列(queueType=1) => type2 ∈ {7 城建专用, 1 通用}; 造兵队列(queueType=2) => type2 ∈ {3 造兵专用, 1 通用}; type2=1 通用道具在两类队列都可用, 是最省心的选择",
+ "queue_type_legend": "1=建造队列, 2=造兵队列, not-queue=不走队列(行军加速等用别的命令), unknown=ItemSpdMenu 未定义(非加速场景道具)",
+ "generated_at": "2026-10-23T17:47:39",
+ "total": 471,
+ "groups": {
+  "0": {
+   "key": "BuildingRemove",
+   "label": "拆除加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 2200701,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000050"
+    },
+    {
+     "id": 2200702,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000050"
+    },
+    {
+     "id": 2200703,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000050"
+    },
+    {
+     "id": 2200704,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000050"
+    },
+    {
+     "id": 2200705,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000050"
+    }
+   ]
+  },
+  "1": {
+   "key": "ALL",
+   "label": "通用(城建/造兵/科技/陷阱/治疗 全适用)",
+   "queue_type": "1,2",
+   "items": [
+    {
+     "id": 200224,
+     "seconds": 60,
+     "icon": "item200",
+     "color": "0",
+     "name": "9200330|9200318"
+    },
+    {
+     "id": 200201,
+     "seconds": 300,
+     "icon": "item200",
+     "color": "1",
+     "name": "9200330|9200319"
+    },
+    {
+     "id": 200222,
+     "seconds": 300,
+     "icon": "item206",
+     "color": "1",
+     "name": "9200339|9200319"
+    },
+    {
+     "id": 200235,
+     "seconds": 600,
+     "icon": "item200",
+     "color": "1",
+     "name": "9200330|9200320"
+    },
+    {
+     "id": 200236,
+     "seconds": 900,
+     "icon": "item200",
+     "color": "2",
+     "name": "9200330|9200321"
+    },
+    {
+     "id": 200200,
+     "seconds": 3600,
+     "icon": "item200",
+     "color": "2",
+     "name": "9200330|9200322"
+    },
+    {
+     "id": 200223,
+     "seconds": 3600,
+     "icon": "item206",
+     "color": "2",
+     "name": "9200339|9200322"
+    },
+    {
+     "id": 209200,
+     "seconds": 3600,
+     "icon": "item787",
+     "color": "2",
+     "name": "9200330|9200322"
+    },
+    {
+     "id": 200202,
+     "seconds": 28800,
+     "icon": "item200",
+     "color": "3",
+     "name": "9200330|9200324"
+    },
+    {
+     "id": 200231,
+     "seconds": 43200,
+     "icon": "item200",
+     "color": "4",
+     "name": "9200330|9200325"
+    },
+    {
+     "id": 200237,
+     "seconds": 43200,
+     "icon": "item200",
+     "color": "4",
+     "name": "9200330|9200325"
+    },
+    {
+     "id": 200232,
+     "seconds": 57600,
+     "icon": "item200",
+     "color": "4",
+     "name": "9200330|9200580"
+    },
+    {
+     "id": 200233,
+     "seconds": 86400,
+     "icon": "item200",
+     "color": "5",
+     "name": "9200330|9200326"
+    },
+    {
+     "id": 200238,
+     "seconds": 86400,
+     "icon": "item200",
+     "color": "5",
+     "name": "9200330|9200326"
+    },
+    {
+     "id": 200234,
+     "seconds": 115200,
+     "icon": "item200",
+     "color": "5",
+     "name": "9200330|9200581"
+    },
+    {
+     "id": 211511,
+     "seconds": 259200,
+     "icon": "item200",
+     "color": "5",
+     "name": "9200330|9200327"
+    },
+    {
+     "id": 211512,
+     "seconds": 604800,
+     "icon": "item200",
+     "color": "5",
+     "name": "9200330|9200328"
+    },
+    {
+     "id": 211513,
+     "seconds": 1296000,
+     "icon": "item200",
+     "color": "5",
+     "name": "9200330|9200329"
+    }
+   ]
+  },
+  "2": {
+   "key": "Troop",
+   "label": "行军加速",
+   "queue_type": "not-queue",
+   "items": [
+    {
+     "id": 200220,
+     "seconds": null,
+     "icon": "item201",
+     "color": "2",
+     "name": "104040"
+    },
+    {
+     "id": 200221,
+     "seconds": null,
+     "icon": "item201",
+     "color": "4",
+     "name": "104041"
+    },
+    {
+     "id": 2202102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000068"
+    },
+    {
+     "id": 2202103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000068"
+    },
+    {
+     "id": 2202201,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000069"
+    },
+    {
+     "id": 2202202,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000069"
+    },
+    {
+     "id": 2202203,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000069"
+    },
+    {
+     "id": 2202301,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000070"
+    },
+    {
+     "id": 2202302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000070"
+    },
+    {
+     "id": 2202303,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000070"
+    },
+    {
+     "id": 2202401,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000071"
+    },
+    {
+     "id": 2202402,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000071"
+    },
+    {
+     "id": 2202403,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000071"
+    },
+    {
+     "id": 2202501,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000072"
+    },
+    {
+     "id": 2202502,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000072"
+    },
+    {
+     "id": 2202503,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000072"
+    },
+    {
+     "id": 2202601,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000073"
+    },
+    {
+     "id": 2202602,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000073"
+    },
+    {
+     "id": 2202603,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000073"
+    },
+    {
+     "id": 2202701,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000074"
+    },
+    {
+     "id": 2202702,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000074"
+    },
+    {
+     "id": 2202703,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000074"
+    },
+    {
+     "id": 2202801,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000075"
+    },
+    {
+     "id": 2202802,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000075"
+    },
+    {
+     "id": 2202803,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000075"
+    },
+    {
+     "id": 2202901,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000076"
+    },
+    {
+     "id": 2202902,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000076"
+    },
+    {
+     "id": 2202903,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000076"
+    },
+    {
+     "id": 2203001,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000077"
+    },
+    {
+     "id": 2203002,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000077"
+    },
+    {
+     "id": 2203003,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000077"
+    },
+    {
+     "id": 2203102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000078"
+    },
+    {
+     "id": 2203103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000078"
+    },
+    {
+     "id": 2203201,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000079"
+    },
+    {
+     "id": 2203202,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000079"
+    },
+    {
+     "id": 2203203,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000079"
+    },
+    {
+     "id": 2203301,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000080"
+    },
+    {
+     "id": 2203302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000080"
+    },
+    {
+     "id": 2203303,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000080"
+    },
+    {
+     "id": 2203401,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000081"
+    },
+    {
+     "id": 2203402,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000081"
+    },
+    {
+     "id": 2203403,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000081"
+    },
+    {
+     "id": 2203501,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000082"
+    },
+    {
+     "id": 2203502,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000082"
+    },
+    {
+     "id": 2203503,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000082"
+    },
+    {
+     "id": 2203601,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000083"
+    },
+    {
+     "id": 2203602,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000083"
+    },
+    {
+     "id": 2203603,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000083"
+    },
+    {
+     "id": 2203701,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000084"
+    },
+    {
+     "id": 2203702,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000084"
+    },
+    {
+     "id": 2203703,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000084"
+    },
+    {
+     "id": 2203801,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000085"
+    },
+    {
+     "id": 2203802,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000085"
+    },
+    {
+     "id": 2203803,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000085"
+    },
+    {
+     "id": 2203901,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000086"
+    },
+    {
+     "id": 2203902,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000086"
+    },
+    {
+     "id": 2203903,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000086"
+    },
+    {
+     "id": 2204001,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000087"
+    },
+    {
+     "id": 2204002,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000087"
+    },
+    {
+     "id": 2204003,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000087"
+    },
+    {
+     "id": 2204101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000088"
+    },
+    {
+     "id": 2204102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000088"
+    },
+    {
+     "id": 2204103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000088"
+    },
+    {
+     "id": 2204201,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000089"
+    },
+    {
+     "id": 2204202,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000089"
+    },
+    {
+     "id": 2204203,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000089"
+    },
+    {
+     "id": 2204301,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000090"
+    },
+    {
+     "id": 2204302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000090"
+    },
+    {
+     "id": 2204303,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000090"
+    },
+    {
+     "id": 2204401,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000091"
+    },
+    {
+     "id": 2204402,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000091"
+    },
+    {
+     "id": 2204403,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000091"
+    },
+    {
+     "id": 2204501,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000092"
+    },
+    {
+     "id": 2204502,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000092"
+    },
+    {
+     "id": 2204503,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000092"
+    },
+    {
+     "id": 2204601,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000093"
+    },
+    {
+     "id": 2204602,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000093"
+    },
+    {
+     "id": 2204603,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000093"
+    },
+    {
+     "id": 2204701,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000094"
+    },
+    {
+     "id": 2204702,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000094"
+    },
+    {
+     "id": 2204703,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000094"
+    },
+    {
+     "id": 2204801,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000095"
+    },
+    {
+     "id": 2204802,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000095"
+    },
+    {
+     "id": 2204803,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000095"
+    },
+    {
+     "id": 2204901,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000096"
+    },
+    {
+     "id": 2204902,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000096"
+    },
+    {
+     "id": 2204903,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000096"
+    },
+    {
+     "id": 2205001,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000097"
+    },
+    {
+     "id": 2205002,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000097"
+    },
+    {
+     "id": 2205003,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000097"
+    },
+    {
+     "id": 2205101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000098"
+    },
+    {
+     "id": 2205102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000098"
+    },
+    {
+     "id": 2205103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000098"
+    },
+    {
+     "id": 2205201,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000099"
+    },
+    {
+     "id": 2205202,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000099"
+    },
+    {
+     "id": 2205203,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000099"
+    },
+    {
+     "id": 2205301,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000100"
+    },
+    {
+     "id": 2205302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000100"
+    },
+    {
+     "id": 2205303,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000100"
+    },
+    {
+     "id": 2205401,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000101"
+    },
+    {
+     "id": 2205402,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000101"
+    },
+    {
+     "id": 2205403,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000101"
+    },
+    {
+     "id": 2205501,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000102"
+    },
+    {
+     "id": 2205502,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000102"
+    },
+    {
+     "id": 2205503,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000102"
+    },
+    {
+     "id": 2205601,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000103"
+    },
+    {
+     "id": 2205602,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000103"
+    },
+    {
+     "id": 2205603,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000103"
+    },
+    {
+     "id": 2205701,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000104"
+    },
+    {
+     "id": 2205702,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000104"
+    },
+    {
+     "id": 2205703,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000104"
+    },
+    {
+     "id": 2205801,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000105"
+    },
+    {
+     "id": 2205802,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000105"
+    },
+    {
+     "id": 2205803,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000105"
+    },
+    {
+     "id": 2205901,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000106"
+    },
+    {
+     "id": 2205902,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000106"
+    },
+    {
+     "id": 2205903,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000106"
+    },
+    {
+     "id": 2206001,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000107"
+    },
+    {
+     "id": 2206002,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000107"
+    },
+    {
+     "id": 2206003,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000107"
+    }
+   ]
+  },
+  "3": {
+   "key": "Soldier",
+   "label": "造兵加速",
+   "queue_type": "2",
+   "items": [
+    {
+     "id": 200227,
+     "seconds": 60,
+     "icon": "item205",
+     "color": "0",
+     "name": "9200333|9200318"
+    },
+    {
+     "id": 200207,
+     "seconds": 300,
+     "icon": "item205",
+     "color": "1",
+     "name": "9200333|9200319"
+    },
+    {
+     "id": 200247,
+     "seconds": 600,
+     "icon": "item205",
+     "color": "1",
+     "name": "9200333|9200320"
+    },
+    {
+     "id": 200248,
+     "seconds": 900,
+     "icon": "item205",
+     "color": "2",
+     "name": "9200333|9200321"
+    },
+    {
+     "id": 200208,
+     "seconds": 7200,
+     "icon": "item205",
+     "color": "2",
+     "name": "9200333|9200323"
+    },
+    {
+     "id": 200249,
+     "seconds": 43200,
+     "icon": "item205",
+     "color": "4",
+     "name": "9200333|9200325"
+    },
+    {
+     "id": 200250,
+     "seconds": 86400,
+     "icon": "item205",
+     "color": "5",
+     "name": "9200333|9200326"
+    },
+    {
+     "id": 211520,
+     "seconds": 259200,
+     "icon": "item205",
+     "color": "5",
+     "name": "9200333|9200327"
+    },
+    {
+     "id": 211521,
+     "seconds": 604800,
+     "icon": "item205",
+     "color": "5",
+     "name": "9200333|9200328"
+    },
+    {
+     "id": 211522,
+     "seconds": 1296000,
+     "icon": "item205",
+     "color": "5",
+     "name": "9200333|9200329"
+    },
+    {
+     "id": 2102101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000020"
+    },
+    {
+     "id": 2102104,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000020"
+    },
+    {
+     "id": 2102105,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000020"
+    },
+    {
+     "id": 2102106,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000020"
+    },
+    {
+     "id": 2102107,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000020"
+    },
+    {
+     "id": 2102108,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000020"
+    },
+    {
+     "id": 2102201,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000021"
+    },
+    {
+     "id": 2102204,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000021"
+    },
+    {
+     "id": 2102205,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000021"
+    },
+    {
+     "id": 2102206,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000021"
+    },
+    {
+     "id": 2102207,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000021"
+    },
+    {
+     "id": 2102208,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000021"
+    },
+    {
+     "id": 2102301,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000022"
+    },
+    {
+     "id": 2102302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000022"
+    },
+    {
+     "id": 2102303,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000022"
+    },
+    {
+     "id": 2102304,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000022"
+    },
+    {
+     "id": 2102305,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000022"
+    },
+    {
+     "id": 2102306,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000022"
+    },
+    {
+     "id": 2102307,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000022"
+    },
+    {
+     "id": 2102308,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000022"
+    },
+    {
+     "id": 2102401,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000023"
+    },
+    {
+     "id": 2102402,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000023"
+    },
+    {
+     "id": 2102403,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000023"
+    },
+    {
+     "id": 2102404,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000023"
+    },
+    {
+     "id": 2102405,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000023"
+    },
+    {
+     "id": 2102406,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000023"
+    },
+    {
+     "id": 2102407,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000023"
+    },
+    {
+     "id": 2102408,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000023"
+    }
+   ]
+  },
+  "4": {
+   "key": "Heal",
+   "label": "伤兵治疗加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 200225,
+     "seconds": 60,
+     "icon": "item203",
+     "color": "0",
+     "name": "9200331|9200318"
+    },
+    {
+     "id": 200203,
+     "seconds": 300,
+     "icon": "item203",
+     "color": "1",
+     "name": "9200331|9200319"
+    },
+    {
+     "id": 200239,
+     "seconds": 600,
+     "icon": "item203",
+     "color": "1",
+     "name": "9200331|9200320"
+    },
+    {
+     "id": 200240,
+     "seconds": 900,
+     "icon": "item203",
+     "color": "2",
+     "name": "9200331|9200321"
+    },
+    {
+     "id": 200204,
+     "seconds": 7200,
+     "icon": "item203",
+     "color": "2",
+     "name": "9200331|9200323"
+    },
+    {
+     "id": 200241,
+     "seconds": 43200,
+     "icon": "item203",
+     "color": "4",
+     "name": "9200331|9200325"
+    },
+    {
+     "id": 200242,
+     "seconds": 86400,
+     "icon": "item203",
+     "color": "5",
+     "name": "9200331|9200326"
+    },
+    {
+     "id": 211514,
+     "seconds": 259200,
+     "icon": "item203",
+     "color": "5",
+     "name": "9200331|101479"
+    },
+    {
+     "id": 211515,
+     "seconds": 604800,
+     "icon": "item203",
+     "color": "5",
+     "name": "9200331|101480"
+    },
+    {
+     "id": 211516,
+     "seconds": 1296000,
+     "icon": "item203",
+     "color": "5",
+     "name": "9200331|9200329"
+    },
+    {
+     "id": 2302201,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302202,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302203,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302204,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302205,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302206,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302207,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302208,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302209,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302210,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302211,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    },
+    {
+     "id": 2302212,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000126"
+    }
+   ]
+  },
+  "5": {
+   "key": "Trap",
+   "label": "造陷阱加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 200230,
+     "seconds": 60,
+     "icon": "item208",
+     "color": "0",
+     "name": "9200338|9200318"
+    },
+    {
+     "id": 200217,
+     "seconds": 300,
+     "icon": "item208",
+     "color": "1",
+     "name": "9200338|9200319"
+    },
+    {
+     "id": 200255,
+     "seconds": 600,
+     "icon": "item208",
+     "color": "1",
+     "name": "9200338|9200320"
+    },
+    {
+     "id": 200256,
+     "seconds": 900,
+     "icon": "item208",
+     "color": "2",
+     "name": "9200338|9200321"
+    },
+    {
+     "id": 200218,
+     "seconds": 7200,
+     "icon": "item208",
+     "color": "2",
+     "name": "9200338|9200323"
+    },
+    {
+     "id": 200257,
+     "seconds": 43200,
+     "icon": "item208",
+     "color": "4",
+     "name": "9200338|9200325"
+    },
+    {
+     "id": 200258,
+     "seconds": 86400,
+     "icon": "item208",
+     "color": "5",
+     "name": "9200338|9200326"
+    },
+    {
+     "id": 211526,
+     "seconds": 259200,
+     "icon": "item208",
+     "color": "5",
+     "name": "9200335|9200327"
+    },
+    {
+     "id": 211527,
+     "seconds": 604800,
+     "icon": "item208",
+     "color": "5",
+     "name": "9200338|9200328"
+    },
+    {
+     "id": 211528,
+     "seconds": 1296000,
+     "icon": "item208",
+     "color": "5",
+     "name": "9200338|9200329"
+    },
+    {
+     "id": 2302101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302104,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302105,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302106,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302107,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302108,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302109,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    },
+    {
+     "id": 2302110,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000124"
+    }
+   ]
+  },
+  "6": {
+   "key": "Science",
+   "label": "科技加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 200226,
+     "seconds": 60,
+     "icon": "item204",
+     "color": "0",
+     "name": "9200332|9200318"
+    },
+    {
+     "id": 200205,
+     "seconds": 300,
+     "icon": "item204",
+     "color": "1",
+     "name": "9200332|9200319"
+    },
+    {
+     "id": 200243,
+     "seconds": 600,
+     "icon": "item204",
+     "color": "1",
+     "name": "9200332|9200320"
+    },
+    {
+     "id": 200244,
+     "seconds": 900,
+     "icon": "item204",
+     "color": "2",
+     "name": "9200332|9200321"
+    },
+    {
+     "id": 200206,
+     "seconds": 7200,
+     "icon": "item204",
+     "color": "2",
+     "name": "9200332|9200323"
+    },
+    {
+     "id": 200245,
+     "seconds": 43200,
+     "icon": "item204",
+     "color": "4",
+     "name": "9200332|9200325"
+    },
+    {
+     "id": 200246,
+     "seconds": 86400,
+     "icon": "item204",
+     "color": "5",
+     "name": "9200332|9200326"
+    },
+    {
+     "id": 211517,
+     "seconds": 259200,
+     "icon": "item204",
+     "color": "5",
+     "name": "9200332|9200327"
+    },
+    {
+     "id": 211518,
+     "seconds": 604800,
+     "icon": "item204",
+     "color": "5",
+     "name": "9200332|9200328"
+    },
+    {
+     "id": 211519,
+     "seconds": 1296000,
+     "icon": "item204",
+     "color": "5",
+     "name": "9200332|9200329"
+    }
+   ]
+  },
+  "7": {
+   "key": "City",
+   "label": "城建(主城建造)加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 200229,
+     "seconds": 60,
+     "icon": "item207",
+     "color": "0",
+     "name": "9200335|9200318"
+    },
+    {
+     "id": 200215,
+     "seconds": 300,
+     "icon": "item207",
+     "color": "1",
+     "name": "9200335|9200319"
+    },
+    {
+     "id": 200251,
+     "seconds": 600,
+     "icon": "item207",
+     "color": "1",
+     "name": "9200335|9200320"
+    },
+    {
+     "id": 200252,
+     "seconds": 900,
+     "icon": "item207",
+     "color": "2",
+     "name": "9200335|9200321"
+    },
+    {
+     "id": 200216,
+     "seconds": 7200,
+     "icon": "item207",
+     "color": "2",
+     "name": "9200335|9200323"
+    },
+    {
+     "id": 200253,
+     "seconds": 43200,
+     "icon": "item207",
+     "color": "4",
+     "name": "9200335|9200325"
+    },
+    {
+     "id": 200254,
+     "seconds": 86400,
+     "icon": "item207",
+     "color": "5",
+     "name": "9200335|9200326"
+    },
+    {
+     "id": 211523,
+     "seconds": 259200,
+     "icon": "item207",
+     "color": "5",
+     "name": "9200335|9200327"
+    },
+    {
+     "id": 211524,
+     "seconds": 604800,
+     "icon": "item207",
+     "color": "5",
+     "name": "9200335|9200328"
+    },
+    {
+     "id": 211525,
+     "seconds": 1296000,
+     "icon": "item207",
+     "color": "5",
+     "name": "9200335|9200329"
+    }
+   ]
+  },
+  "8": {
+   "key": "DuanZao",
+   "label": "锻造加速",
+   "queue_type": "not-queue",
+   "items": [
+    {
+     "id": 200228,
+     "seconds": 60,
+     "icon": "item206",
+     "color": "0",
+     "name": "9200337|9200318"
+    },
+    {
+     "id": 200213,
+     "seconds": 300,
+     "icon": "item206",
+     "color": "1",
+     "name": "9200337|9200319"
+    },
+    {
+     "id": 200214,
+     "seconds": 7200,
+     "icon": "item206",
+     "color": "2",
+     "name": "9200337|9200323"
+    },
+    {
+     "id": 211532,
+     "seconds": 259200,
+     "icon": "item206",
+     "color": "5",
+     "name": "9200337|9200327"
+    },
+    {
+     "id": 211533,
+     "seconds": 604800,
+     "icon": "item206",
+     "color": "5",
+     "name": "9200337|9200328"
+    },
+    {
+     "id": 211534,
+     "seconds": 1296000,
+     "icon": "item206",
+     "color": "5",
+     "name": "9200337|9200329"
+    },
+    {
+     "id": 2102701,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000026"
+    },
+    {
+     "id": 2102801,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000027"
+    }
+   ]
+  },
+  "9": {
+   "key": "Alliance",
+   "label": "联盟加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 2104101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000151"
+    },
+    {
+     "id": 4900009,
+     "seconds": null,
+     "icon": "alliance_quest_wood",
+     "color": null,
+     "name": "164222"
+    },
+    {
+     "id": 4900010,
+     "seconds": null,
+     "icon": "alliance_quest_wood",
+     "color": null,
+     "name": "164222"
+    },
+    {
+     "id": 4900011,
+     "seconds": null,
+     "icon": "alliance_quest_wood",
+     "color": null,
+     "name": "164222"
+    },
+    {
+     "id": 4900012,
+     "seconds": null,
+     "icon": "alliance_quest_wood",
+     "color": null,
+     "name": "164222"
+    },
+    {
+     "id": 4900013,
+     "seconds": null,
+     "icon": "alliance_quest_wood",
+     "color": null,
+     "name": "164222"
+    },
+    {
+     "id": 4900014,
+     "seconds": null,
+     "icon": "alliance_queset_food",
+     "color": null,
+     "name": "164220"
+    },
+    {
+     "id": 4900015,
+     "seconds": null,
+     "icon": "alliance_queset_food",
+     "color": null,
+     "name": "164220"
+    },
+    {
+     "id": 4900016,
+     "seconds": null,
+     "icon": "alliance_queset_food",
+     "color": null,
+     "name": "164220"
+    },
+    {
+     "id": 4900017,
+     "seconds": null,
+     "icon": "alliance_queset_food",
+     "color": null,
+     "name": "164220"
+    },
+    {
+     "id": 4900018,
+     "seconds": null,
+     "icon": "alliance_queset_food",
+     "color": null,
+     "name": "164220"
+    },
+    {
+     "id": 4900019,
+     "seconds": null,
+     "icon": "alliance_quest_silver",
+     "color": null,
+     "name": "164226"
+    },
+    {
+     "id": 4900020,
+     "seconds": null,
+     "icon": "alliance_quest_silver",
+     "color": null,
+     "name": "164226"
+    },
+    {
+     "id": 4900021,
+     "seconds": null,
+     "icon": "alliance_quest_silver",
+     "color": null,
+     "name": "164226"
+    },
+    {
+     "id": 4900022,
+     "seconds": null,
+     "icon": "alliance_quest_silver",
+     "color": null,
+     "name": "164226"
+    },
+    {
+     "id": 4900023,
+     "seconds": null,
+     "icon": "alliance_quest_silver",
+     "color": null,
+     "name": "164226"
+    },
+    {
+     "id": 4900024,
+     "seconds": null,
+     "icon": "alliance_quest_iron",
+     "color": null,
+     "name": "164224"
+    },
+    {
+     "id": 4900025,
+     "seconds": null,
+     "icon": "alliance_quest_iron",
+     "color": null,
+     "name": "164224"
+    },
+    {
+     "id": 4900026,
+     "seconds": null,
+     "icon": "alliance_quest_iron",
+     "color": null,
+     "name": "164224"
+    },
+    {
+     "id": 4900027,
+     "seconds": null,
+     "icon": "alliance_quest_iron",
+     "color": null,
+     "name": "164224"
+    },
+    {
+     "id": 4900028,
+     "seconds": null,
+     "icon": "alliance_quest_iron",
+     "color": null,
+     "name": "164224"
+    }
+   ]
+  },
+  "11": {
+   "key": "HighTech",
+   "label": "新科技加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 36013712,
+     "seconds": 60,
+     "icon": "xianzhe_speedup",
+     "color": "0",
+     "name": "9200336|9200318"
+    },
+    {
+     "id": 200259,
+     "seconds": 300,
+     "icon": "xianzhe_speedup",
+     "color": "0",
+     "name": "9200336|9200319"
+    },
+    {
+     "id": 200260,
+     "seconds": 600,
+     "icon": "xianzhe_speedup",
+     "color": "1",
+     "name": "9200336|9200320"
+    },
+    {
+     "id": 200261,
+     "seconds": 900,
+     "icon": "xianzhe_speedup",
+     "color": "2",
+     "name": "9200336|9200321"
+    },
+    {
+     "id": 200262,
+     "seconds": 7200,
+     "icon": "xianzhe_speedup",
+     "color": "3",
+     "name": "9200336|9200323"
+    },
+    {
+     "id": 200263,
+     "seconds": 43200,
+     "icon": "xianzhe_speedup",
+     "color": "4",
+     "name": "9200336|9200325"
+    },
+    {
+     "id": 200264,
+     "seconds": 86400,
+     "icon": "xianzhe_speedup",
+     "color": "5",
+     "name": "9200336|9200326"
+    },
+    {
+     "id": 211529,
+     "seconds": 259200,
+     "icon": "xianzhe_speedup",
+     "color": "5",
+     "name": "9200336|9200327"
+    },
+    {
+     "id": 211530,
+     "seconds": 604800,
+     "icon": "xianzhe_speedup",
+     "color": "5",
+     "name": "9200336|9200328"
+    },
+    {
+     "id": 211531,
+     "seconds": 1296000,
+     "icon": "xianzhe_speedup",
+     "color": "5",
+     "name": "9200336|9200329"
+    }
+   ]
+  },
+  "12": {
+   "key": "JieLv",
+   "label": "戒律大厅加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 212216,
+     "seconds": 60,
+     "icon": "item208",
+     "color": "0",
+     "name": "9200338|9200318"
+    },
+    {
+     "id": 212214,
+     "seconds": 300,
+     "icon": "item208",
+     "color": "1",
+     "name": "9200338|9200319"
+    },
+    {
+     "id": 212217,
+     "seconds": 600,
+     "icon": "item208",
+     "color": "1",
+     "name": "9200338|9200320"
+    },
+    {
+     "id": 212218,
+     "seconds": 900,
+     "icon": "item208",
+     "color": "2",
+     "name": "9200338|9200321"
+    },
+    {
+     "id": 212215,
+     "seconds": 7200,
+     "icon": "item208",
+     "color": "2",
+     "name": "9200338|9200323"
+    },
+    {
+     "id": 212219,
+     "seconds": 43200,
+     "icon": "item208",
+     "color": "4",
+     "name": "9200338|9200325"
+    },
+    {
+     "id": 212220,
+     "seconds": 86400,
+     "icon": "item208",
+     "color": "5",
+     "name": "9200338|9200326"
+    }
+   ]
+  },
+  "13": {
+   "key": "Civ_City",
+   "label": "文明堡垒分城城建加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 2302301,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000128"
+    },
+    {
+     "id": 2302302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000129"
+    },
+    {
+     "id": 2302303,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000129"
+    },
+    {
+     "id": 2302304,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000129"
+    },
+    {
+     "id": 2302305,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000129"
+    },
+    {
+     "id": 2302306,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000129"
+    },
+    {
+     "id": 2302307,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000129"
+    },
+    {
+     "id": 2302308,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000129"
+    },
+    {
+     "id": 2302309,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000129"
+    }
+   ]
+  },
+  "14": {
+   "key": "Tactical",
+   "label": "阵法研习加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 2402101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402104,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402105,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402106,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402107,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402108,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402109,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402110,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402111,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402112,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402113,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402114,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402115,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402116,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 2402117,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000135"
+    },
+    {
+     "id": 4900044,
+     "seconds": null,
+     "icon": "alliance_quest_keji",
+     "color": null,
+     "name": "164232"
+    },
+    {
+     "id": 4900045,
+     "seconds": null,
+     "icon": "alliance_quest_keji",
+     "color": null,
+     "name": "164232"
+    },
+    {
+     "id": 4900046,
+     "seconds": null,
+     "icon": "alliance_quest_keji",
+     "color": null,
+     "name": "164232"
+    },
+    {
+     "id": 4900047,
+     "seconds": null,
+     "icon": "alliance_quest_keji",
+     "color": null,
+     "name": "164232"
+    },
+    {
+     "id": 4900048,
+     "seconds": null,
+     "icon": "alliance_quest_keji",
+     "color": null,
+     "name": "164232"
+    }
+   ]
+  },
+  "15": {
+   "key": "?",
+   "label": "未知(15)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2103102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000028"
+    },
+    {
+     "id": 2103103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000028"
+    },
+    {
+     "id": 2103104,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000028"
+    }
+   ]
+  },
+  "16": {
+   "key": "?",
+   "label": "未知(16)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2206701,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206702,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206703,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206704,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206705,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206706,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206707,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206708,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206709,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    },
+    {
+     "id": 2206710,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000116"
+    }
+   ]
+  },
+  "17": {
+   "key": "?",
+   "label": "未知(17)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2206601,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206602,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206603,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206604,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206605,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206606,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206607,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206608,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206609,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    },
+    {
+     "id": 2206610,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000114"
+    }
+   ]
+  },
+  "19": {
+   "key": "RaceScience",
+   "label": "先祖之魂加速(与队列类型一致)",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 36004268,
+     "seconds": 60,
+     "icon": "icon_acc_ancestry",
+     "color": "0",
+     "name": "624548|9200318"
+    },
+    {
+     "id": 36004269,
+     "seconds": 300,
+     "icon": "icon_acc_ancestry",
+     "color": "1",
+     "name": "624548|9200319"
+    },
+    {
+     "id": 36004270,
+     "seconds": 600,
+     "icon": "icon_acc_ancestry",
+     "color": "1",
+     "name": "624548|9200320"
+    },
+    {
+     "id": 36004271,
+     "seconds": 900,
+     "icon": "icon_acc_ancestry",
+     "color": "2",
+     "name": "624548|9200321"
+    },
+    {
+     "id": 36004272,
+     "seconds": 3600,
+     "icon": "icon_acc_ancestry",
+     "color": "2",
+     "name": "624548|9200322"
+    },
+    {
+     "id": 36004273,
+     "seconds": 7200,
+     "icon": "icon_acc_ancestry",
+     "color": "2",
+     "name": "624548|9200323"
+    },
+    {
+     "id": 36004274,
+     "seconds": 28800,
+     "icon": "icon_acc_ancestry",
+     "color": "3",
+     "name": "624548|9200324"
+    },
+    {
+     "id": 36004275,
+     "seconds": 43200,
+     "icon": "icon_acc_ancestry",
+     "color": "4",
+     "name": "624548|9200325"
+    },
+    {
+     "id": 36004276,
+     "seconds": 86400,
+     "icon": "icon_acc_ancestry",
+     "color": "5",
+     "name": "624548|9200326"
+    },
+    {
+     "id": 36004277,
+     "seconds": 259200,
+     "icon": "icon_acc_ancestry",
+     "color": "5",
+     "name": "624548|9200327"
+    },
+    {
+     "id": 36004278,
+     "seconds": 604800,
+     "icon": "icon_acc_ancestry",
+     "color": "5",
+     "name": "624548|9200328"
+    },
+    {
+     "id": 36004279,
+     "seconds": 1296000,
+     "icon": "icon_acc_ancestry",
+     "color": "5",
+     "name": "624548|9200329"
+    }
+   ]
+  },
+  "21": {
+   "key": "Armament",
+   "label": "军械库加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 4900039,
+     "seconds": null,
+     "icon": "alliance_quest_armpower",
+     "color": null,
+     "name": "164230"
+    },
+    {
+     "id": 4900040,
+     "seconds": null,
+     "icon": "alliance_quest_armpower",
+     "color": null,
+     "name": "164230"
+    },
+    {
+     "id": 4900041,
+     "seconds": null,
+     "icon": "alliance_quest_armpower",
+     "color": null,
+     "name": "164230"
+    },
+    {
+     "id": 4900042,
+     "seconds": null,
+     "icon": "alliance_quest_armpower",
+     "color": null,
+     "name": "164230"
+    },
+    {
+     "id": 4900043,
+     "seconds": null,
+     "icon": "alliance_quest_armpower",
+     "color": null,
+     "name": "164230"
+    }
+   ]
+  },
+  "22": {
+   "key": "ArmyReform",
+   "label": "士兵改造加速",
+   "queue_type": "1",
+   "items": [
+    {
+     "id": 2206101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000112"
+    },
+    {
+     "id": 2206102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000112"
+    },
+    {
+     "id": 2206103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000112"
+    },
+    {
+     "id": 2206104,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000112"
+    },
+    {
+     "id": 2206105,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000112"
+    },
+    {
+     "id": 2206106,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000112"
+    },
+    {
+     "id": 2206107,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000112"
+    },
+    {
+     "id": 2206108,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000112"
+    }
+   ]
+  },
+  "25": {
+   "key": "?",
+   "label": "未知(25)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2206802,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206803,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206804,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206805,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206806,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206807,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206808,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206809,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206810,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206811,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206812,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206813,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206814,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 2206815,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000142"
+    },
+    {
+     "id": 4900004,
+     "seconds": null,
+     "icon": "alliance_quest_killmonster",
+     "color": null,
+     "name": "164216"
+    },
+    {
+     "id": 4900005,
+     "seconds": null,
+     "icon": "alliance_quest_killmonster",
+     "color": null,
+     "name": "164216"
+    },
+    {
+     "id": 4900006,
+     "seconds": null,
+     "icon": "alliance_quest_killmonster",
+     "color": null,
+     "name": "164216"
+    },
+    {
+     "id": 4900007,
+     "seconds": null,
+     "icon": "alliance_quest_killmonster",
+     "color": null,
+     "name": "164216"
+    },
+    {
+     "id": 4900008,
+     "seconds": null,
+     "icon": "alliance_quest_killmonster",
+     "color": null,
+     "name": "164216"
+    }
+   ]
+  },
+  "26": {
+   "key": "?",
+   "label": "未知(26)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2207202,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000143"
+    },
+    {
+     "id": 2207302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000143"
+    }
+   ]
+  },
+  "28": {
+   "key": "?",
+   "label": "未知(28)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2206901,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000147"
+    },
+    {
+     "id": 2207001,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000148"
+    },
+    {
+     "id": 2207101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000149"
+    },
+    {
+     "id": 2207102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000185"
+    },
+    {
+     "id": 2207103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000186"
+    },
+    {
+     "id": 2207104,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000187"
+    },
+    {
+     "id": 2207105,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000188"
+    },
+    {
+     "id": 2207106,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000189"
+    },
+    {
+     "id": 2207107,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000190"
+    },
+    {
+     "id": 2207108,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000191"
+    },
+    {
+     "id": 2207109,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000192"
+    },
+    {
+     "id": 2207110,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000193"
+    },
+    {
+     "id": 2207111,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000194"
+    },
+    {
+     "id": 2207112,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000195"
+    },
+    {
+     "id": 2207113,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000196"
+    },
+    {
+     "id": 2207114,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000197"
+    },
+    {
+     "id": 2207115,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000198"
+    },
+    {
+     "id": 2207116,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000199"
+    },
+    {
+     "id": 2207117,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000200"
+    },
+    {
+     "id": 2207118,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000201"
+    },
+    {
+     "id": 2207119,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000202"
+    },
+    {
+     "id": 2207120,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000203"
+    },
+    {
+     "id": 2207121,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000204"
+    },
+    {
+     "id": 2207122,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000205"
+    },
+    {
+     "id": 2207123,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000206"
+    },
+    {
+     "id": 2207124,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000207"
+    },
+    {
+     "id": 2207125,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000208"
+    },
+    {
+     "id": 2207126,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000209"
+    },
+    {
+     "id": 2207127,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000210"
+    },
+    {
+     "id": 2207128,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000211"
+    }
+   ]
+  },
+  "30": {
+   "key": "?",
+   "label": "未知(30)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 4900034,
+     "seconds": null,
+     "icon": "alliance_quest_zhanli",
+     "color": null,
+     "name": "164228"
+    },
+    {
+     "id": 4900035,
+     "seconds": null,
+     "icon": "alliance_quest_zhanli",
+     "color": null,
+     "name": "164228"
+    },
+    {
+     "id": 4900036,
+     "seconds": null,
+     "icon": "alliance_quest_zhanli",
+     "color": null,
+     "name": "164228"
+    },
+    {
+     "id": 4900037,
+     "seconds": null,
+     "icon": "alliance_quest_zhanli",
+     "color": null,
+     "name": "164228"
+    },
+    {
+     "id": 4900038,
+     "seconds": null,
+     "icon": "alliance_quest_zhanli",
+     "color": null,
+     "name": "164228"
+    }
+   ]
+  },
+  "32": {
+   "key": "?",
+   "label": "未知(32)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2900101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000212"
+    },
+    {
+     "id": 2900102,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000285"
+    }
+   ]
+  },
+  "33": {
+   "key": "?",
+   "label": "未知(33)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2900103,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000275"
+    }
+   ]
+  },
+  "34": {
+   "key": "?",
+   "label": "未知(34)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2900104,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000281"
+    }
+   ]
+  },
+  "37": {
+   "key": "?",
+   "label": "未知(37)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2403101,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000287"
+    }
+   ]
+  },
+  "38": {
+   "key": "?",
+   "label": "未知(38)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2403201,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000289"
+    }
+   ]
+  },
+  "39": {
+   "key": "?",
+   "label": "未知(39)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2403301,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000292"
+    },
+    {
+     "id": 2403302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000292"
+    },
+    {
+     "id": 2403303,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2000292"
+    }
+   ]
+  },
+  "50": {
+   "key": "?",
+   "label": "未知(50)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 4900029,
+     "seconds": null,
+     "icon": "alliance_quest_kill",
+     "color": null,
+     "name": "164218"
+    },
+    {
+     "id": 4900030,
+     "seconds": null,
+     "icon": "alliance_quest_kill",
+     "color": null,
+     "name": "164218"
+    },
+    {
+     "id": 4900031,
+     "seconds": null,
+     "icon": "alliance_quest_kill",
+     "color": null,
+     "name": "164218"
+    },
+    {
+     "id": 4900032,
+     "seconds": null,
+     "icon": "alliance_quest_kill",
+     "color": null,
+     "name": "164218"
+    },
+    {
+     "id": 4900033,
+     "seconds": null,
+     "icon": "alliance_quest_kill",
+     "color": null,
+     "name": "164218"
+    }
+   ]
+  },
+  "58": {
+   "key": "?",
+   "label": "未知(58)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2600005,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001004"
+    },
+    {
+     "id": 2600006,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001005"
+    },
+    {
+     "id": 2600008,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001007"
+    },
+    {
+     "id": 2600009,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001008"
+    },
+    {
+     "id": 2600010,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001009"
+    },
+    {
+     "id": 2600011,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001010"
+    },
+    {
+     "id": 2600012,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001011"
+    },
+    {
+     "id": 2600014,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001013"
+    },
+    {
+     "id": 2600015,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001014"
+    },
+    {
+     "id": 2600016,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001015"
+    },
+    {
+     "id": 2600017,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001016"
+    },
+    {
+     "id": 2600018,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001017"
+    },
+    {
+     "id": 2600020,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001019"
+    },
+    {
+     "id": 2600021,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001020"
+    },
+    {
+     "id": 2600022,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001021"
+    },
+    {
+     "id": 2600023,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001022"
+    },
+    {
+     "id": 2600024,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001023"
+    }
+   ]
+  },
+  "61": {
+   "key": "?",
+   "label": "未知(61)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 2600300,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001027"
+    },
+    {
+     "id": 2600301,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001027"
+    },
+    {
+     "id": 2600302,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001027"
+    },
+    {
+     "id": 2600303,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001028"
+    },
+    {
+     "id": 2600304,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001028"
+    },
+    {
+     "id": 2600305,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001028"
+    },
+    {
+     "id": 2600306,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001029"
+    },
+    {
+     "id": 2600307,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001029"
+    },
+    {
+     "id": 2600308,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001029"
+    },
+    {
+     "id": 2600309,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001029"
+    },
+    {
+     "id": 2600310,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001030"
+    },
+    {
+     "id": 2600311,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001030"
+    },
+    {
+     "id": 2600312,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001030"
+    },
+    {
+     "id": 2600313,
+     "seconds": null,
+     "icon": null,
+     "color": null,
+     "name": "2001030"
+    }
+   ]
+  },
+  "98": {
+   "key": "?",
+   "label": "未知(98)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 212147,
+     "seconds": null,
+     "icon": "overlord002",
+     "color": "5",
+     "name": "138468"
+    }
+   ]
+  },
+  "99": {
+   "key": "?",
+   "label": "未知(99)",
+   "queue_type": "unknown",
+   "items": [
+    {
+     "id": 212120,
+     "seconds": null,
+     "icon": "overlord002",
+     "color": "5",
+     "name": "138418"
+    }
+   ]
+  }
+ }
+}

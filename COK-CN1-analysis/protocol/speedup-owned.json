@@ -1,0 +1,89 @@
+{
+ "source": "dump_bag.py / frida Lua (2026-10-24 实时)",
+ "items": {
+  "200200": {
+   "itemId": "200200",
+   "uuid": "3eafa25ee0fc4c0f937b868a715af2c8",
+   "count": 6680,
+   "type": "t2"
+  },
+  "200201": {
+   "itemId": "200201",
+   "uuid": "4600cedc8e8a43aeaa5aefba97b7bfa7",
+   "count": 43471,
+   "type": "t2"
+  },
+  "200202": {
+   "itemId": "200202",
+   "uuid": "3eddd04c854544008b37a6fc7a753b52",
+   "count": 148,
+   "type": "t2"
+  },
+  "200204": {
+   "itemId": "200204",
+   "uuid": "870536f09e654ae9b2ffaad0bce66073",
+   "count": 116,
+   "type": "t2"
+  },
+  "200206": {
+   "itemId": "200206",
+   "uuid": "154b650077f44140a9690674cb986d71",
+   "count": 75,
+   "type": "t2"
+  },
+  "200207": {
+   "itemId": "200207",
+   "uuid": "7c13ddbce380428995be360901cced77",
+   "count": 3185,
+   "type": "t2"
+  },
+  "200208": {
+   "itemId": "200208",
+   "uuid": "3757a02129df4a5ba8c25e59f3495678",
+   "count": 3680,
+   "type": "t2"
+  },
+  "200214": {
+   "itemId": "200214",
+   "uuid": "22c8854cc8be4074849f9757395e7a9c",
+   "count": 200,
+   "type": "t2"
+  },
+  "200215": {
+   "itemId": "200215",
+   "uuid": "982b49d9c0fb4e8295f3beaa9843f982",
+   "count": 7321,
+   "type": "t2"
+  },
+  "200216": {
+   "itemId": "200216",
+   "uuid": "817b4b526f6f4244a27e10f59b318826",
+   "count": 4225,
+   "type": "t2"
+  },
+  "200220": {
+   "itemId": "200220",
+   "uuid": "5876b58cac284f5aaaa4074c6d4d385c",
+   "count": 164,
+   "type": "t2"
+  },
+  "200221": {
+   "itemId": "200221",
+   "uuid": "cf3a68ab4c194e098f084c4a1f55398b",
+   "count": 3,
+   "type": "t2"
+  },
+  "200247": {
+   "itemId": "200247",
+   "uuid": "1de38e919ce743c1ad69fdebb45a11ba",
+   "count": 3453,
+   "type": "t2"
+  },
+  "200262": {
+   "itemId": "200262",
+   "uuid": "f2b786ab5bb745f987e42c3f62d76b56",
+   "count": 183,
+   "type": "t2"
+  }
+ }
+}

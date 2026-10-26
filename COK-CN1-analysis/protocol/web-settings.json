@@ -1,0 +1,18 @@
+{
+ "autoSign": false,
+ "autoShield": true,
+ "cover": false,
+ "autoPoll": true,
+ "hookType": "generic",
+ "hookURL": "",
+ "lvLow": 15,
+ "lvHigh": 16,
+ "perType": "5000",
+ "squads": 4,
+ "huntMax": "30000",
+ "dockAutoReward": true,
+ "dockAutoSend": true,
+ "format": "",
+ "huntNum": "10000",
+ "squadSpec": "[{\"army_id\":\"107012\",\"num\":20000},{\"army_id\":\"107111\",\"num\":20000},{\"army_id\":\"107009\",\"num\":8900},{\"army_id\":\"107110\",\"num\":30000}]"
+}

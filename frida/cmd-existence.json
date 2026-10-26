@@ -1,0 +1,58 @@
+{
+ "build.upgrade": {
+  "status": "unknown",
+  "detail": "命令 build.upgrade 无响应"
+ },
+ "build.create": {
+  "status": "unknown",
+  "detail": "命令 build.create 无响应"
+ },
+ "build.info": {
+  "status": "unknown",
+  "detail": "命令 build.info 无响应"
+ },
+ "build.destroy": {
+  "status": "unknown",
+  "detail": "命令 build.destroy 无响应"
+ },
+ "build.move": {
+  "status": "unknown",
+  "detail": "等待命令 build.move 的响应超时(最后收到 cmd=push.world.march.wi"
+ },
+ "building.addOutPut": {
+  "status": "unknown",
+  "detail": "等待命令 building.addOutPut 的响应超时(最后收到 cmd=push.allian"
+ },
+ "territory.build.create": {
+  "status": "unknown",
+  "detail": "命令 territory.build.create 无响应"
+ },
+ "territory.build.cancel": {
+  "status": "unknown",
+  "detail": "命令 territory.build.cancel 无响应"
+ },
+ "territory.levelup.speedup": {
+  "status": "unknown",
+  "detail": "命令 territory.levelup.speedup 无响应"
+ },
+ "civilizationQueue.speedQueue": {
+  "status": "unknown",
+  "detail": "等待命令 civilizationQueue.speedQueue 的响应超时(最后收到 cmd=p"
+ },
+ "civilizationQueue.finishQueue": {
+  "status": "unknown",
+  "detail": "命令 civilizationQueue.finishQueue 无响应"
+ },
+ "queue.finish": {
+  "status": "unknown",
+  "detail": "命令 queue.finish 无响应"
+ },
+ "speed.change.time.use.item": {
+  "status": "unknown",
+  "detail": "命令 speed.change.time.use.item 无响应"
+ },
+ "speed.change.time.view": {
+  "status": "unknown",
+  "detail": "命令 speed.change.time.view 无响应"
+ }
+}

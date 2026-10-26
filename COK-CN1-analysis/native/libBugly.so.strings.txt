@@ -1,0 +1,8 @@
+### libBugly.so
+## SHA-256
+2e5e711b0fde31eef21cba3feffda7b5e97c226ba8d40e737b9297b4741b4ab4
+## size
+186560
+## URLs
+## host-like
+bugly.qq.com

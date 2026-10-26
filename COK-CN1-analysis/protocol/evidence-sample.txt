@@ -1,0 +1,1791 @@
+COK 游戏服协议 · 同会话抓包双向解码证据
+会话 XOR 密钥(32 字节 ASCII) = 54b32b2e56a8cfddb2a5a17faa27aded
+包头 = [flags:1][length:2 大端]  flags: 0x80=大端 0x40=BlueBoxed 0x20=zlib压缩 0x10=加密
+载荷 = SFSObject: [0x12][count:2][(keyLen:2)(key)(value)]*   0x11 SFS_ARRAY 的 count 为 2 字节
+params: 请求 = XOR(key);  响应 = XOR(key) + zlib
+
+==========================================================================
+REQ (客户端→服务器)
+==========================================================================
+--- cmd=cmd.ping                       wire=162B
+      _cok_                    = 641015000001
+      cmdBaseTime              = 1792641028
+      newbasekey               = 95c0fd45bdd9c73d069a6fb60e99480a
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=login.dataconfig               wire=170B
+      _cok_                    = 641015000002
+      cmdBaseTime              = 1792641028
+      newbasekey               = 9b270ec2e24371a65bfb1bbdd7704930
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=login.other                    wire=182B
+      _cok_                    = 641015000003
+      cmdBaseTime              = 1792641028
+      newbasekey               = 5e2bf269f9ddf0e50bf51073d0910981
+      config                   = config
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=kingdomtask_new.data           wire=174B
+      _cok_                    = 641015000004
+      cmdBaseTime              = 1792641030
+      newbasekey               = e0e7b1785d286338b60a6c5aa3f70124
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=save.phone.device              wire=311B
+      phoneDevice              = default
+      batteryStates            = 2-1-1-0-34-100-0.34|2-1-1-0-32-100-0.32|2-1-1-0-32-100-0.32|2-1-1-0-33-100-0.33|2-1-1-0-33
+      _cok_                    = 641015000005
+      cmdBaseTime              = 1792641030
+      newbasekey               = 38f2681615df68de3bbbd3c5ab646277
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=castleLevelUp.getLevel         wire=176B
+      _cok_                    = 641015000006
+      cmdBaseTime              = 1792641030
+      newbasekey               = 1a548122976e022db3d815f566144e68
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=cemetery.get.info              wire=171B
+      _cok_                    = 641015000007
+      cmdBaseTime              = 1792641030
+      newbasekey               = f07ae14a599bcc9a5f85a3cacf8398be
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=daily.quest.ls                 wire=168B
+      _cok_                    = 641015000011
+      cmdBaseTime              = 1792641034
+      newbasekey               = 301081deacd287d25f7eb49ba42c5a4d
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=civilization.prestige.info     wire=180B
+      _cok_                    = 641015000012
+      cmdBaseTime              = 1792641034
+      newbasekey               = b6dcbefc4c36ecb61f599f5307b5a2a3
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=hero.introduction              wire=171B
+      _cok_                    = 641015000014
+      cmdBaseTime              = 1792641034
+      newbasekey               = cce12cdea2baf6b231fa69d4738df56d
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=cok.proto                      wire=177B
+      pb                       = 0a0308f54e
+      _cok_                    = 641015000015
+      cmdBaseTime              = 1792641034
+      newbasekey               = 30544d4d9cf72123fdc486d4774799dd
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=allianceBoss.enter             wire=172B
+      _cok_                    = 641015000016
+      cmdBaseTime              = 1792641035
+      newbasekey               = c993db7169b4acb6668c49e61d47ca15
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=oneKeyLoad.data                wire=169B
+      _cok_                    = 641015000017
+      cmdBaseTime              = 1792641035
+      newbasekey               = 631a92d154646447436f91dea2d65e89
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=alquick.data                   wire=166B
+      _cok_                    = 641015000018
+      cmdBaseTime              = 1792641035
+      newbasekey               = 8235a14cb9fcd2ef75bf2882b9613678
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=buidlingextension.resEffect    wire=181B
+      _cok_                    = 641015000019
+      cmdBaseTime              = 1792641035
+      newbasekey               = 863d2dd3efb2e8ac59a298b6632223aa
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=strengthen.info                wire=169B
+      _cok_                    = 641015000020
+      cmdBaseTime              = 1792641035
+      newbasekey               = 549b3225fbe3cfd262b23fca0303d5c0
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=kingdomBiography.info          wire=175B
+      _cok_                    = 641015000021
+      cmdBaseTime              = 1792641035
+      newbasekey               = 39dd14d1398adb65f286ece2cc2b21cb
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=treasuremap.info               wire=170B
+      _cok_                    = 641015000022
+      cmdBaseTime              = 1792641035
+      newbasekey               = a2738a2a5a05bd7f06d96a0d97b67c81
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=worldboss                      wire=183B
+      op                       = 0
+      _cok_                    = 641015000023
+      cmdBaseTime              = 1792641035
+      newbasekey               = c1a35ed86c00fbe2bc3e8e0cc1895fad
+      type                     = 16
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=soldierHelp.info               wire=170B
+      _cok_                    = 641015000028
+      cmdBaseTime              = 1792641035
+      newbasekey               = 81ce237365f620f44b43493a28604e13
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=accountLock.getUnlockView      wire=263B
+      password                 = nil
+      _cok_                    = 641015000029
+      emailAddr                = nil
+      cmdBaseTime              = 1792641036
+      newbasekey               = fa941b164a462276741bc3e8f2e43466
+      password2                = nil
+      password1                = nil
+      verifCode                = nil
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=permitCommandInfo              wire=171B
+      _cok_                    = 641015000030
+      cmdBaseTime              = 1792641036
+      newbasekey               = 7787113c60c87602595e4db61809abca
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=magic.effectList               wire=170B
+      _cok_                    = 641015000031
+      cmdBaseTime              = 1792641036
+      newbasekey               = ae4c65656896339d75c4cde2b5e5d509
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=science.data.init              wire=171B
+      _cok_                    = 641015000032
+      cmdBaseTime              = 1792641036
+      newbasekey               = 0beb57490fc40fe39bb84abace5c772c
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=score.login                    wire=165B
+      _cok_                    = 641015000033
+      cmdBaseTime              = 1792641036
+      newbasekey               = 9470abd81c4d4b1ff951e5fa74b8d2cd
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=al.rank                        wire=208B
+      allianceId               = 58a613bf89754041b39c73d9b192ff49
+      _cok_                    = 641015000034
+      cmdBaseTime              = 1792641036
+      newbasekey               = 07d059aa90c9ce341ad24db329e3a48c
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=userpayreward.newinfo          wire=175B
+      _cok_                    = 641015000035
+      cmdBaseTime              = 1792641036
+      newbasekey               = d5de25523278567bacf0199cb8070d47
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=branchcity.enter               wire=170B
+      _cok_                    = 641015000036
+      cmdBaseTime              = 1792641036
+      newbasekey               = 2202dd2525b1b8a3472c9f2c0c7e040c
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=featureStateChange.data        wire=177B
+      _cok_                    = 641015000037
+      cmdBaseTime              = 1792641036
+      newbasekey               = 51f356f9cd85b943bb5db44bbec917f2
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=scanctuary.data                wire=169B
+      _cok_                    = 641015000038
+      cmdBaseTime              = 1792641036
+      newbasekey               = 4dd952149005a5c90f3f8a920bcc4380
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=newBoat.data                   wire=166B
+      _cok_                    = 641015000039
+      cmdBaseTime              = 1792641036
+      newbasekey               = faf414960cd5f2f5b25334d84575d77d
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=stat.tt                        wire=169B
+      _cok_                    = 641015000040
+      cmdBaseTime              = 1792641036
+      newbasekey               = 3333222132acef8250236164e9cf3f48
+      id                       = 5
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=exchange.refresh               wire=170B
+      _cok_                    = 641015000041
+      cmdBaseTime              = 1792641037
+      newbasekey               = f3fdb900fe0aeb3cd844511a3e8a6ccf
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=science.data.cond              wire=207B
+      _cok_                    = 641015000042
+      cmdBaseTime              = 1792641037
+      scienceIds               = 53698010;0|53698020;0
+      newbasekey               = c3c950893b522e80ebcaa774b46a2cd3
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=auction.getView                wire=169B
+      _cok_                    = 641015000043
+      cmdBaseTime              = 1792641037
+      newbasekey               = 95b6d2ba6d2cc4eb338a3b21595c7106
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=resource.client.reward.getmulti wire=261B
+      _cok_                    = 641015000044
+      cmdBaseTime              = 1792641037
+      rewardIds                = 43003368;43003370;43003367;43003371;43003366;43003369;43003365
+      newbasekey               = 6facd4fba382e503c17ca8937e6b9f6a
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=itemcollection.data            wire=188B
+      itemType                 = 1
+      _cok_                    = 641015000045
+      cmdBaseTime              = 1792641038
+      newbasekey               = 1d4ce80397ead161c62c96853ffb8a3d
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=miraclestone.data              wire=171B
+      _cok_                    = 641015000046
+      cmdBaseTime              = 1792641038
+      newbasekey               = d95b19882bc1139e9f578c5a61990ed3
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=exchangeshow.ready             wire=172B
+      _cok_                    = 641015000047
+      cmdBaseTime              = 1792641038
+      newbasekey               = 0d2cc5093b1d094580f1e849c3fbf5b9
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=effectCenter.all               wire=170B
+      _cok_                    = 641015000048
+      cmdBaseTime              = 1792641039
+      newbasekey               = c17088828372255ac88cc8fd582f3200
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=festivalview.data              wire=191B
+      activityId               = 57753
+      _cok_                    = 641015000049
+      cmdBaseTime              = 1792641039
+      newbasekey               = d480ed0f1de1ead048f895e18f3e997c
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=generalBP.data                 wire=188B
+      activityId               = 57607
+      _cok_                    = 641015000050
+      cmdBaseTime              = 1792641039
+      newbasekey               = ad9d91e4e731ae2243e13253873220dc
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=open_server_way.ui             wire=172B
+      _cok_                    = 641015000052
+      cmdBaseTime              = 1792641039
+      newbasekey               = d2cdcf72d8623c580e829d416abef778
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=newServerPower.info            wire=173B
+      _cok_                    = 641015000053
+      cmdBaseTime              = 1792641039
+      newbasekey               = ef4d2af904b36d056cb76a5928b7f830
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=allianceNewBoss.bossMainInfo   wire=182B
+      _cok_                    = 641015000054
+      cmdBaseTime              = 1792641039
+      newbasekey               = d67b7a14961f71582d21a2cdeeef1328
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=shadowDragon.data              wire=171B
+      _cok_                    = 641015000055
+      cmdBaseTime              = 1792641039
+      newbasekey               = ac880a799f093545339376833357b1a1
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=everydayexchange.data          wire=175B
+      _cok_                    = 641015000056
+      cmdBaseTime              = 1792641039
+      newbasekey               = 420bd9e5179d5194e526ae154e977ab4
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=trigger.activity               wire=199B
+      request_flag             = 2
+      _cok_                    = 641015000057
+      cmdBaseTime              = 1792641039
+      newbasekey               = 6860f3f3f3363977741b27852d6f66bb
+      type                     = 53
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=convoy.login                   wire=166B
+      _cok_                    = 641015000058
+      cmdBaseTime              = 1792641039
+      newbasekey               = 01f43df01abbc5569f1374825cef6c5d
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=convoy.activityData            wire=173B
+      _cok_                    = 641015000059
+      cmdBaseTime              = 1792641039
+      newbasekey               = ecf24631e27f075cf70446ea08c8a833
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=monthfund.rewardinfo           wire=174B
+      _cok_                    = 641015000060
+      cmdBaseTime              = 1792641039
+      newbasekey               = a7e9a55991063c14130255995740118a
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=monthlySign.info               wire=170B
+      _cok_                    = 641015000061
+      cmdBaseTime              = 1792641039
+      newbasekey               = 5e921aa959d6233416f3775f4d7e2a5c
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=dailyQuest2025.data            wire=173B
+      _cok_                    = 641015000062
+      cmdBaseTime              = 1792641039
+      newbasekey               = 753ab0cf7896048a844ff727b5fdcfb1
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=resource.client.reward.get     wire=201B
+      rewardId                 = 43011278
+      _cok_                    = 641015000063
+      cmdBaseTime              = 1792641039
+      newbasekey               = 97ecbbc70e6e06dbf7dfa34467794125
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=cmd.finishinit                 wire=168B
+      _cok_                    = 641015000069
+      cmdBaseTime              = 1792641039
+      newbasekey               = cd7c75f454750b45c79f4ef505b875e0
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=invest.open.ui                 wire=168B
+      _cok_                    = 641015000073
+      cmdBaseTime              = 1792641039
+      newbasekey               = 1766f563a26038bd37ee6a0ac3279a7c
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=story.task.info                wire=169B
+      _cok_                    = 641015000076
+      cmdBaseTime              = 1792641039
+      newbasekey               = 2faf0c6ba0352dea7fb58f5af9e5c14a
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=civilizationCastle.info        wire=177B
+      _cok_                    = 641015000077
+      cmdBaseTime              = 1792641039
+      newbasekey               = 152ec6a96fb62ba6a89f3f6c6c5b8463
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=userfeedback.info              wire=171B
+      _cok_                    = 641015000078
+      cmdBaseTime              = 1792641039
+      newbasekey               = f5f5de4223a9142c2ae2e42928ef2830
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=formation.getData              wire=171B
+      _cok_                    = 641015000080
+      cmdBaseTime              = 1792641039
+      newbasekey               = 2f59ff118eaeecb20489e3a75fba7d9d
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=skin.introduction              wire=171B
+      _cok_                    = 641015000081
+      cmdBaseTime              = 1792641039
+      newbasekey               = 4a44c8dc9dff449228b80cefb09906f0
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=skill.state.get                wire=169B
+      _cok_                    = 641015000082
+      cmdBaseTime              = 1792641039
+      newbasekey               = 92164cb8b27d2b627ee0b6360a383b7b
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=general_choice.data            wire=173B
+      _cok_                    = 641015000083
+      cmdBaseTime              = 1792641039
+      newbasekey               = 1128605594486c3fca661d3a512faabe
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=castle.data                    wire=165B
+      _cok_                    = 641015000084
+      cmdBaseTime              = 1792641039
+      newbasekey               = 4c2cd14f0892e95067f0433bdfd6bfbf
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=formationTrain.bag             wire=185B
+      _cok_                    = 641015000085
+      pageNo                   = 1
+      cmdBaseTime              = 1792641040
+      newbasekey               = 2975c1139e2a54bdb388789fac0cddb4
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=heroBadge.badgeList            wire=173B
+      _cok_                    = 641015000087
+      cmdBaseTime              = 1792641040
+      newbasekey               = 5f070b704988ccb4a51f29e8709b7da0
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=nightPet.list                  wire=167B
+      _cok_                    = 641015000088
+      cmdBaseTime              = 1792641040
+      newbasekey               = c16b5dd50df0ebba7abd23180e62c704
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=matchAct.info                  wire=167B
+      _cok_                    = 641015000089
+      cmdBaseTime              = 1792641040
+      newbasekey               = cccfaa0c517a528b5eac0adce75450b6
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=relic.getRelicList             wire=172B
+      _cok_                    = 641015000090
+      cmdBaseTime              = 1792641040
+      newbasekey               = 7642a147badecff46e999d8dd3b48e9a
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=get.clash.server.list          wire=175B
+      _cok_                    = 641015000091
+      cmdBaseTime              = 1792641040
+      newbasekey               = fe59f6804b39d47612b789f7f703eaa6
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=tactics.getData                wire=169B
+      _cok_                    = 641015000092
+      cmdBaseTime              = 1792641040
+      newbasekey               = 5adf86acde08c5e1aef1e1c9eed8d384
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=skin.effect_new                wire=169B
+      _cok_                    = 641015000093
+      cmdBaseTime              = 1792641040
+      newbasekey               = 364ce6bd368c428ddbb5d66212d9e51c
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=magic_weapon.data              wire=171B
+      _cok_                    = 641015000094
+      cmdBaseTime              = 1792641040
+      newbasekey               = 2a031a7e39e4fbba8bb17ac9a4d6cfaa
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=godGift.info                   wire=166B
+      _cok_                    = 641015000095
+      cmdBaseTime              = 1792641040
+      newbasekey               = 438d052510b4f232d1545ab74ac345d5
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=directUpgrade.data             wire=172B
+      _cok_                    = 641015000096
+      cmdBaseTime              = 1792641040
+      newbasekey               = 1023943dcefdd669ec0e41e4efb39718
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=lordTask.data                  wire=167B
+      _cok_                    = 641015000097
+      cmdBaseTime              = 1792641040
+      newbasekey               = 51319173c505f43a038b3f9de9799da5
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=overview_new.data              wire=171B
+      _cok_                    = 641015000098
+      cmdBaseTime              = 1792641040
+      newbasekey               = dc9249cbdf4d299962266135047f89d4
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=gem.getDigView                 wire=182B
+      isLogin                  = 1
+      _cok_                    = 641015000099
+      cmdBaseTime              = 1792641040
+      newbasekey               = 9db401224ad3f9888a0949f8df749e15
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=act.ls                         wire=160B
+      _cok_                    = 641015000101
+      cmdBaseTime              = 1792641040
+      newbasekey               = 054224861b381065b92aa7468303c8b0
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=crossthrone.time               wire=170B
+      _cok_                    = 641015000102
+      cmdBaseTime              = 1792641040
+      newbasekey               = 2184d21686d2cc2e56789ab53e795663
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=show.status.item               wire=170B
+      _cok_                    = 641015000103
+      cmdBaseTime              = 1792641040
+      newbasekey               = 5de1757225ea1c4cb9ea474573ef5e9a
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=achieve.ls                     wire=164B
+      _cok_                    = 641015000104
+      cmdBaseTime              = 1792641040
+      newbasekey               = 59e2c958435096e766acd8bde96ec092
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=medal.list                     wire=164B
+      _cok_                    = 641015000105
+      cmdBaseTime              = 1792641040
+      newbasekey               = 1e05742a537ad68465d69debe36b3792
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=mall.info                      wire=163B
+      _cok_                    = 641015000106
+      cmdBaseTime              = 1792641040
+      newbasekey               = 5ac96bba35a4d21e9ec1c16a21c2c6c6
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=drawNew.info                   wire=166B
+      _cok_                    = 641015000107
+      cmdBaseTime              = 1792641040
+      newbasekey               = 661fd3564c5efac6a369193280fc635d
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=nfight.data                    wire=165B
+      _cok_                    = 641015000108
+      cmdBaseTime              = 1792641041
+      newbasekey               = 0a8d5a7fe24078f795d76524c547bf3f
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=newHeaven.info                 wire=168B
+      _cok_                    = 641015000112
+      cmdBaseTime              = 1792641042
+      newbasekey               = 8fd3d21f43d8fb06d03eeb9a2926b665
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=aw_formula.getData             wire=172B
+      _cok_                    = 641015000113
+      cmdBaseTime              = 1792641042
+      newbasekey               = bbb5309b64065cc5fe111fccd3ad1f88
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=kingdom.officers               wire=185B
+      _cok_                    = 641015000114
+      cmdBaseTime              = 1792641042
+      newbasekey               = 9a4515337cf2d128275f0c2739650eb9
+      serverId                 = 2223
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=dragon.playoff.info            wire=173B
+      _cok_                    = 641015000115
+      cmdBaseTime              = 1792641042
+      newbasekey               = 01bd496fffc4d72f63c019a27fa13a4c
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=dragon.battle.info             wire=172B
+      _cok_                    = 641015000116
+      cmdBaseTime              = 1792641042
+      newbasekey               = 8388561437687495c86abd7f90b2fb11
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=contact.get.server.current     wire=180B
+      _cok_                    = 641015000117
+      cmdBaseTime              = 1792641042
+      newbasekey               = 4f308bb717dc5ae4e01be01771a2fcca
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=redPackets.rvd.id              wire=171B
+      _cok_                    = 641015000118
+      cmdBaseTime              = 1792641042
+      newbasekey               = c9baf5a30ee2b73f2116c4da70139123
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=chat.get.system.mails          wire=255B
+      _cok_                    = 641015000119
+      clientseq                = e058ea557fb742eab65acad2e5442c73
+      cmdBaseTime              = 1792641042
+      count                    = 50
+      newbasekey               = a2aa6a9b34c4d183e21cdac943c3c1d0
+      time                     = 1792637322542
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=chat.room.invitee              wire=218B
+      allianceId               = 58a613bf89754041b39c73d9b192ff49
+      _cok_                    = 641015000120
+      cmdBaseTime              = 1792641042
+      newbasekey               = daae4af24c8414fd9edff426851e42ab
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=chat.get.new.mails             wire=215B
+      _cok_                    = 641015000121
+      cmdBaseTime              = 1792641043
+      updatemailtime           = 1792592422672
+      newbasekey               = 813ed9c86ebb90bd25f8188d417604ec
+      params                   = 
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=heaven.task.info               wire=170B
+      _cok_                    = 641015000122
+      cmdBaseTime              = 1792641043
+      newbasekey               = 3f25ee7499fdf2b3c4267bbb8f932130
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=al.task.record                 wire=168B
+      _cok_                    = 641015000123
+      cmdBaseTime              = 1792641044
+      newbasekey               = 06aa2d5d3f5ec14ff7b7dbafbc69ba0b
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=check.result                   wire=320B
+      sC                       = 02aad0f0e9c4323135bd50af79bcd20d
+      bS                       = 2-1-1-0-34-100-0.34|2-1-1-0-32-100-0.32|2-1-1-0-32-100-0.32|2-1-1-0-33-100-0.33|2-1-1-0-33
+      _cok_                    = 641015000124
+      cmdBaseTime              = 1792641044
+      newbasekey               = 176f2f3ec6a139e16dc3e0e4aa35e432
+      cP                       = 0
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=get.user.info.multi            wire=231B
+      uids                     = ['23145760002223', '6109796002223']
+      _cok_                    = 641015000126
+      cmdBaseTime              = 1792641053
+      newbasekey               = 966869354caa9b6926c83e1c459bc5a5
+      allservers               = 1
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+--- cmd=luckyday.effect                wire=169B
+      _cok_                    = 641015000131
+      cmdBaseTime              = 1792641096
+      newbasekey               = ab63dd8652d447d9a01b68dcce22d73d
+    p.r                      = -1
+    a                        = 13
+    c                        = 1
+
+==========================================================================
+RSP (服务器→客户端)
+==========================================================================
+--- cmd=push.server.action             wire=110B
+      type                     = 3
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=cmd.ping                       wire=67B
+    p.p.serverNowTime        = 1792641030334
+    a                        = 13
+    c                        = 1
+--- cmd=save.phone.device              wire=98B
+      success                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=castleLevelUp.getLevel         wire=129B
+      _cok_                    = 641015000006
+      castlelevel              = 30
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=cemetery.get.info              wire=528B
+      kingdomCemetery.kingblessingtime = 0
+      kingdomCemetery.cemeterystat = 2
+      kingdomCemetery.ministerblessinterval = 1440
+      kingdomCemetery.totalcontribution = 0
+      kingdomCemetery.needcontributionsum = 0
+      kingdomCemetery.totaldead = 0
+      kingdomCemetery.revivestat = 3
+      kingdomCemetery.ministerblessingtime = 0
+      kingdomCemetery.cemeteryId = 4
+      kingdomCemetery.kingblessinterval = 1440
+      beforeDead               = []
+      activity.st              = 1792371600
+      activity.opt             = 1792371660
+      activity.t               = 8
+      activity.et              = 1792544400
+      userCemetery.sumpower    = 0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=login.other                    wire=152B
+      task                     = []
+      _cok_                    = 641015000010
+      ckfTask                  = []
+      exchange_gift            = []
+      taskCompleteNum          = 0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=daily.quest.ls                 wire=124B
+      _cok_                    = 641015000011
+      errorCode                = 102192
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=civilization.prestige.info     wire=278B
+      civilization_prestige_max = 1078293700
+      _cok_                    = 641015000012
+      prestigeLev              = 10
+      prestigeExp              = 0
+      civilizationValueLimit   = 0
+      civilization_score       = 193730
+      prestiges                = [{'civilization_type': 1, 'civilization_prestige': 0, 'actionLimits': '', 'periodic_limit'
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=hero.introduction              wire=127B
+      _cok_                    = 641015000014
+      errorCode                = 102192
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=cok.proto                      wire=126B
+      result                   = 0a0308f64e1a0618a09c012006
+      _cok_                    = 641015000015
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=allianceBoss.enter             wire=128B
+      _cok_                    = 641015000016
+      errorCode                = 102192
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=oneKeyLoad.data                wire=303B
+      cost                     = [0, 0, 0, 10000, 100000, 300000, 600000, 900000, 1200000]
+      _cok_                    = 641015000017
+      loadData                 = [{'subData': {}, 'index': 1, 'comment': '', 'uuid': 'f3059135b9b342fea66d594ff516e116', 'i
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=alquick.data                   wire=128B
+      nextCallHelpTime         = 18000000
+      _cok_                    = 641015000018
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=buidlingextension.resEffect    wire=132B
+      _cok_                    = 641015000019
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=strengthen.info                wire=3112B
+      blessCost                = 0
+      transfer.transferExp     = 160000
+      transfer.needItemNum     = 1000
+      transfer.needSourceSkillLevel = 50
+      transfer.needItemId      = 213759
+      blessBuffId              = 39100001
+      blessCount               = 999
+      _cok_                    = 641015000020
+      count                    = 0
+      blessTotal               = 999
+      skillInfos               = [{'uid': '136063574002223', 'skillId': '2955000', 'level': 1, 'effectLv': 0, 'armyId': '10
+      blessBuffValue           = 5
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=worldboss                      wire=119B
+      _cok_                    = 641015000026
+      errorCode                = 103864
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=soldierHelp.info               wire=117B
+      _cok_                    = 641015000028
+      state                    = 0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=accountLock.getUnlockView      wire=127B
+      _cok_                    = 641015000029
+      locked                   = 0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=permitCommandInfo              wire=98B
+      success                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=magic.effectList               wire=351B
+      magicEffectCdTime        = []
+      magicEffectList          = [{'id': 1011, 'value': 0.10000000149011612}, {'id': 1012, 'value': 0.10000000149011612}]
+      skillList                = [{'skillId': '186000', 'star': 1, 'level': 1, 'wear': 1, 'awaken': 0, 'exp': 0, 'uuid': 'e
+      magicAtlasEffectList     = []
+      magicStarEffectList      = []
+      magicWearInfo            = [{'magicId': '186000', 'index': 1, 'unLock': 1}, {'magicId': '', 'index': 2, 'unLock': 0}]
+      _cok_                    = 641015000031
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=scanctuary.data                wire=185B
+      haveUserData             = False
+      subState                 = 0
+      _cok_                    = 641015000038
+      mainState                = 0
+      mainBeginTime            = -2147483648
+      mainEndTime              = -2147483648
+      season                   = 1784678400000
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=newBoat.data                   wire=406B
+      ships                    = [{'itemId': '', 'configId': '59887301', 'count': 0, 'cTime': 1792121558944, 'endTime': 0, 
+      _cok_                    = 641015000039
+      shipLimit                = 4
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=stat.tt                        wire=108B
+      _cok_                    = 641015000040
+      success                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=science.data.cond              wire=173B
+      _cok_                    = 641015000042
+      arrays                   = [{'scienceId': 53698020, 'lv': 0, 'building_cond': '461702'}, {'scienceId': 53698010, 'lv'
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=auction.getView                wire=175B
+      gold                     = 0
+      diamond                  = 0
+      _cok_                    = 641015000043
+      inActivity               = 1
+      endTime                  = 1792972800000
+      list                     = []
+      globalList               = []
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=resource.client.reward.getmulti wire=474B
+      _cok_                    = 641015000044
+      rewardsObj.43003366.rewardId = 43003366
+      rewardsObj.43003366.award = [{'type': 7, 'value': {'num': 150, 'id': '212961'}}, {'type': 7, 'value': {'num': 4, 'id':
+      rewardsObj.43003366.reward_list.item = 212961|212962|212587
+      rewardsObj.43003366.reward_list.rate = 100|100|100
+      rewardsObj.43003366.reward_list.num = 150|4|20
+      rewardsObj.43003365.rewardId = 43003365
+      rewardsObj.43003365.award = [{'type': 7, 'value': {'num': 100, 'id': '212961'}}, {'type': 7, 'value': {'num': 2, 'id':
+      rewardsObj.43003365.reward_list.item = 212961|212962|200251
+      rewardsObj.43003365.reward_list.rate = 100|100|100
+      rewardsObj.43003365.reward_list.num = 100|2|450
+      rewardsObj.43003371.rewardId = 43003371
+      rewardsObj.43003371.award = [{'type': 7, 'value': {'num': 450, 'id': '212961'}}, {'type': 7, 'value': {'num': 14, 'id'
+      rewardsObj.43003371.reward_list.item = 212961|212962|212588
+      rewardsObj.43003371.reward_list.rate = 100|100|100
+      rewardsObj.43003371.reward_list.num = 450|14|10
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=itemcollection.data            wire=140B
+      _cok_                    = 641015000045
+      collectedItemStr         = 
+      shieldedItemStr          = 
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=miraclestone.data              wire=278B
+      newRewardNum             = 5067
+      returnExchangeIds        = 763875;763876;763877;763878
+      alreadyGetNum            = 67
+      lastRewardMirStoneTime   = 0
+      _cok_                    = 641015000046
+      collectNum               = 67
+      isBoughtMirStoneVIP      = False
+      canRewardNum             = 67
+      suchDayRewardNum         = 6
+      stoneSumNum              = 67
+      returnPer                = 0.004092676385936225
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=exchangeshow.ready             wire=136B
+      exchangeId               = 
+      _cok_                    = 641015000047
+      eventType                = 
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=effectCenter.all               wire=1347B
+      effectFestival           = 57581;57662;57663;57544;57627;57394;57551;57557;57432;57753;57639;57562;57646;57563;57574;
+      effectOtherDataAll.NewServerBuff.endTime = 1792800000000
+      effectOtherDataAll.REGRESSION_SERVER.endTime = 1785636000000
+      _cok_                    = 641015000048
+      effect.FOREIGN_CILIZATION.1220 = 240.0
+      effect.FOREIGN_CILIZATION.3320 = 20.0
+      effect.FOREIGN_CILIZATION.1064 = 2.0
+      effect.FOREIGN_CILIZATION.1063 = 2.0
+      effect.FOREIGN_CILIZATION.1060 = 10.0
+      effect.FOREIGN_CILIZATION.3318 = 20.0
+      effect.FOREIGN_CILIZATION.3317 = 20.0
+      effect.FOREIGN_CILIZATION.1018 = 460.0
+      effect.FOREIGN_CILIZATION.3316 = 20.0
+      effect.FOREIGN_CILIZATION.1017 = 460.0
+      effect.FOREIGN_CILIZATION.3315 = 20.0
+      effect.FOREIGN_CILIZATION.1016 = 680.0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=festivalview.data              wire=2891B
+      maxLevel                 = 30
+      unlock                   = False
+      openBoxCfg.cost          = 36013821;1|215974;1
+      openBoxCfg.seniorRewardId = 43011279
+      openBoxCfg.grandPrizeId  = 43011280
+      openBoxCfg.commonRewardId = 43011278
+      level                    = 11
+      noticeHistoryArray       = [{'activityId': '57753', 'para': [1930, '2224341409001851', 'Ӓ**', '212038', 40000, 179264
+      boxItemCount             = 4
+      VIPAdditionExp           = 0
+      superPayUnlock           = False
+      exchangeId               = 771938
+      SuperVIPAddition         = 0
+      freeMark                 = 1;2;3;4;5;6;7;8;9;10;11
+      superExchangeId          = 771939
+      _cok_                    = 641015000049
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=generalBP.data                 wire=982B
+      _cok_                    = 641015000050
+      start                    = 1791504000000
+      end                      = 1793923200000
+      list                     = [{'generalId': 53553, 'endTime': 1793923200000, 'task_list': [{'exchangeId': '773068', 'ge
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=open_server_way.ui             wire=540B
+      milestoneList            = [{'rewardId': '43006603', 'index': 11, 'taskList': [], 'status': 0}, {'rewardId': '4300660
+      _cok_                    = 641015000052
+      endTime                  = 1793318400000
+      type                     = 0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=newServerPower.info            wire=749B
+      base_now                 = 350703066
+      sky_piea_now             = 31
+      tech_config_max          = 5000000
+      tech_max                 = 0
+      building                 = [{'reward': '256379', 'num': 50000, 'id': '40200006', 'status': 1}, {'reward': '256380', '
+      building_config_max      = 5000000
+      sky_piea_max             = 0
+      all_now                  = 334944871
+      tech_now                 = 300070136
+      base_max                 = 1570798
+      all                      = [{'reward': '256373', 'num': 100000, 'id': '40200000', 'status': 1}, {'reward': '256374', 
+      all_max                  = 7938
+      tech                     = [{'reward': '256385', 'num': 50000, 'id': '40200012', 'status': 1}, {'reward': '256386', '
+      equip_now                = 12288777
+      end_time                 = 1792810800000
+      sky_piea_config_max      = 10
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=allianceNewBoss.bossMainInfo   wire=289B
+      bossInfo                 = [{'trapProgress': 0, 'scheduleTime': 0, 'uid': '04d975366372494a94389e805d76eb3c', 'pointI
+      _cok_                    = 641015000054
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=shadowDragon.data              wire=119B
+      _cok_                    = 641015000055
+      dragons                  = []
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=everydayexchange.data          wire=229B
+      freeRewarded             = True
+      commonExchangeIds        = 764086;764087;764088;766114
+      _cok_                    = 641015000056
+      freeReward               = 256844
+      specialExchangeId        = 
+      payRewarded              = False
+      oneClickBuyExchangeId    = 766121
+      payReward                = 256845
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=trigger.activity               wire=117B
+      _cok_                    = 641015000057
+      type                     = 53
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=convoy.login                   wire=212B
+      _cok_                    = 641015000058
+      convoyData.compensateRewardCd = 1
+      convoyData.escortTimes   = 0
+      convoyData.compensateRewardMaxTimes = 3
+      convoyData.robTimes      = 0
+      convoyData.nextResetTime = 1792713600000
+      convoyData.lastCompensateRewardTime = 0
+      convoyData.compensateRewardTimes = 0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=convoy.activityData            wire=156B
+      data.currentStage        = 3
+      data.currentStageEndTime = 1792713600000
+      _cok_                    = 641015000059
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=monthfund.rewardinfo           wire=347B
+      fund                     = [{'needCardNum': 1, 'gold': 'gold_2', 'multiple': '888', 'available': 0, 'id': '9022504', 
+      _cok_                    = 641015000060
+      progressBoxInfo          = [{'reward': '43004277', 'num': 0, 'index': 0, 'target': 1, 'status': 0}, {'reward': '43004
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=monthlySign.info               wire=4031B
+      _cok_                    = 641015000061
+      multiDays                = 3;5
+      rewardObj.10-30.reward   = [{'type': 7, 'value': {'num': 20000, 'id': '211508'}}]
+      rewardObj.10-30.month    = 10
+      rewardObj.10-30.year     = 2026
+      rewardObj.10-30.goodsId  = 211508
+      rewardObj.10-30.monthlyCard = 2
+      rewardObj.10-30.day      = 30
+      rewardObj.10-30.goodsNum = 20000
+      rewardObj.10-30.quality  = 3
+      rewardObj.10-31.reward   = [{'type': 7, 'value': {'num': 25, 'id': '215206'}}]
+      rewardObj.10-31.month    = 10
+      rewardObj.10-31.year     = 2026
+      rewardObj.10-31.goodsId  = 215206
+      rewardObj.10-31.monthlyCard = 2
+      rewardObj.10-31.day      = 31
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=dailyQuest2025.data            wire=891B
+      dailyTaskId2025          = 5000101;5000102;5000100;
+      newWeekRewardList        = [{'weekInfo': [{'type': 7, 'value': {'num': 1, 'id': '200304'}}, {'type': 7, 'value': {'nu
+      curReward                = 30
+      weekEndTime              = 1792972800000
+      _cok_                    = 641015000062
+      rewardList               = [{'id': '5000100', 'point': 30, 'info': [{'type': 48, 'value': {'activityId': '57753', 'tr
+      dailyQuest               = [{'times': 0, 'totalNum': 1, 'totalTimes': 10, 'num': 0, 'id': '57621751'}, {'times': 0, '
+      weekTaskScore            = 1215
+      weekTaskRewardId2025     = 5000210
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=resource.client.reward.get     wire=305B
+      rewardId                 = 43011278
+      award                    = [{'type': 7, 'value': {'num': 1, 'id': '212588'}}, {'type': 7, 'value': {'num': 5000, 'id'
+      reward_list.item         = 212588|36005606|36007998|211508|200208|200340
+      reward_list.rate         = 100|100|100|100|100|100
+      reward_list.num          = 1|5000|5000|40000|75|10000
+      _cok_                    = 641015000063
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=push.common.red.tips           wire=402B
+      moduleType               = 1
+      tips                     = [{'targetId': '36013315', 'configId': '53052805'}, {'targetId': '36012785', 'configId': '5
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=cmd.finishinit                 wire=115B
+      _cok_                    = 641015000069
+      success                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=invest.open.ui                 wire=116B
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=branchcity.enter               wire=144B
+      rewardarray              = [{'reward': 248356, 'id': 1}, {'reward': 248356, 'id': 2}]
+      _cok_                    = 641015000075
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=story.task.info                wire=260B
+      _cok_                    = 641015000076
+      section                  = 1
+      storyTaskList            = [{'targetNum': 2, 'num': 2, 'para1': '400000', 'id': '33101001', 'state': 1, 'type': 1, 't
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=civilizationCastle.info        wire=467B
+      def                      = 22500
+      maxAidSoldierCount       = 710100
+      maxMarchSoldierCount     = 175100
+      resourceNum              = 1300.0
+      output                   = 16.0
+      allianceId               = 58a613bf89754041b39c73d9b192ff49
+      uid                      = 136063574002223
+      removeEndTime            = 0
+      pointId                  = 970068
+      allianceName             = Meu DEUS
+      beRobNum                 = 0
+      abbr                     = MDS
+      itemAddCount             = 0
+      buildTime                = 1792235090738
+      level                    = 6
+      userName                 = 元气少女李逵
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=userfeedback.info              wire=123B
+      _cok_                    = 641015000078
+      modelNumStr              = 
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=formation.getData              wire=177B
+      uid                      = 136063574002223
+      numOrder                 = False
+      level                    = 0
+      typeOrder                = True
+      _cok_                    = 641015000080
+      percent                  = 1
+      lvOrder                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=skin.introduction              wire=357B
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=skill.state.get                wire=468B
+      conVal                   = 0
+      km                       = 527060
+      kmsg                     = 
+      uss                      = []
+      khis                     = [{'data': '1355646', 'diaId': '146014', 'effType': 3, 'time': 1792607588188, 'params': ['S
+      _cok_                    = 641015000082
+      kss                      = [{'hdm': 3200, 'tut': 0, 'sid': '1501012', 'et': 0}, {'hdm': 900, 'tut': 0, 'sid': '150101
+      curSid                   = 
+      pm                       = 4000
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=general_choice.data            wire=165B
+      rewardId                 = 44005016
+      _cok_                    = 641015000083
+      dataList                 = ['53515']
+      time                     = 1792281600
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=castle.data                    wire=164B
+      castleLv                 = 6
+      _cok_                    = 641015000084
+      giftIds                  = 767200,767201,767202,767203,767204,767205
+      time                     = 1792418067940
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=formationTrain.bag             wire=335B
+      freeTimes                = 3
+      score                    = 0
+      pageCount                = 2
+      totalPage                = 0
+      _cok_                    = 641015000085
+      pool                     = [{'freeTimes': 3, 'activityId': '42740000', 'score': 1, 'goodsId': '36005004', 'drawId': 0
+      updateTime               = 1792713600000
+      pageData                 = [{'marchUuid': '', 'defence': 0, 'num': 1, 'name': '', 'state': 0}, {'marchUuid': '', 'def
+      autoBreak                = 
+      info                     = []
+      freeScore                = 0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=heroBadge.badgeList            wire=118B
+      _cok_                    = 641015000087
+      list                     = []
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=nightPet.list                  wire=173B
+      _cok_                    = 641015000088
+      power.isFirst            = False
+      power.level              = 0
+      power.lvLimit            = 60
+      power.exp                = 0
+      power.expLimit           = 900000
+      list                     = []
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=matchAct.info                  wire=123B
+      nextFreeTime             = 86400000
+      _cok_                    = 641015000089
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=relic.getRelicList             wire=199B
+      _cok_                    = 641015000090
+      groupIds                 = ['52634921']
+      buildingList.52636922.relics = 
+      buildingList.52636922.unlocks = 3
+      buildingList.52636922.buildingId = 52636922
+      buildingList.52636921.relics = 
+      buildingList.52636921.unlocks = 1
+      buildingList.52636921.buildingId = 52636921
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=tactics.getData                wire=119B
+      _cok_                    = 641015000092
+      generalId                = 
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=skin.effect_new                wire=156B
+      _cok_                    = 641015000093
+      new_enchant_skills.144   = 15000
+      new_enchant_skills.5134  = 2
+      new_enchant_skills.1230  = 1
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=magic_weapon.data              wire=326B
+      _cok_                    = 641015000094
+      magicWeaponList          = [{'weaponId': '59965803', 'level': 2, 'runeList': [{'runePos': 7, 'runeLevel': 1, 'lock': 
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=godGift.info                   wire=287B
+      finishTime               = 1792713609943
+      item                     = 36013706
+      rewardCount              = 20
+      helpMax                  = 5
+      canTwice                 = True
+      signCount                = 5
+      signReward               = 43002905
+      num                      = 33538
+      openday                  = 7
+      wishMax                  = 0
+      history                  = []
+      result                   = 0
+      help                     = 0
+      canWish                  = 0
+      canAddSign               = False
+      _cok_                    = 641015000095
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=directUpgrade.data             wire=287B
+      _cok_                    = 641015000096
+      activityArray            = [{'minMainBuildLevel': 0, 'minOpenServerTime': 0, 'canUp': False, 'minRegTime': 0, 'type':
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=lordTask.data                  wire=2032B
+      task_arr                 = [{'process': 1, 'leftTimes': 1792121922479, 'state': 2, 'moduleId': 'lord_task', 'taskId':
+      _cok_                    = 641015000097
+      curProgress              = 162
+      stages                   = 3;5;8;13;21;30;40;50;60;70;80;90;100;110;120;130;140;150;160
+      awardIndex               = 0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18
+      rewards                  = 45046712;45046713;45046714;45046715;45046716;45046717;45046718;45046719;45046720;45046721;
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=overview_new.data              wire=332B
+      queueList                = [[{'finishTime': 0, 'maxValue': 0, 'startTime': 0, 'type': 4, 'params': {}, 'curValue': 50
+      noOpenList               = []
+      _cok_                    = 641015000098
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=gem.getDigView                 wire=1312B
+      curTimes                 = 0
+      rare_show                = False
+      redPoint                 = False
+      noticeArray              = []
+      noticeHistoryArray       = []
+      leftFreeTimes            = 6
+      maxRcvdTimes             = 6
+      maxGemNum                = 1000
+      gemArray                 = [{'level': 1, 'pos': 0, 'equipUuid': '', 'lock': 0, 'id': '41562634', 'exp': 0, 'uuid': 'a
+      _cok_                    = 641015000099
+      maxLuckyValue            = 4
+      needTimes                = 100000
+      luckyValue               = 0
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=act.ls                         wire=222B
+      act                      = [{'opt': 1793847600, 't': 0, 'fightOfKingEndTime': 86400000}, {'opt': 1793847600, 't': 4},
+      _cok_                    = 641015000101
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=crossthrone.time               wire=97B
+      success                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=show.status.item               wire=195B
+      statusItems              = [{'type2': 1, 'startTime': 1792578719369, 'endTime': 1792837919369}, {'type2': 100, 'start
+      _cok_                    = 641015000103
+      extraStatus              = []
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=achieve.ls                     wire=1365B
+      _cok_                    = 641015000104
+      list                     = [{'reward': [{'type': 7, 'value': {'num': 180, 'id': '211509'}}], 'num': 0, 'start': 0, 'e
+      stageRewardInfo          = [{'receiveRewardStages': '10;20;40', 'type_page': 1, 'stages': '10;20;40;60;80;100;150', '
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=medal.list                     wire=209B
+      _cok_                    = 641015000105
+      medal                    = [{'level': 2, 'id': '40875100'}, {'level': 2, 'id': '40875200'}, {'level': 7, 'id': '40875
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=mall.info                      wire=9772B
+      shoppingMallCurrency     = 214292;214293
+      _cok_                    = 641015000106
+      shoppingMall             = [{'value2': '0', 'item_id': '200555', 'value1': '1400', 'value2_type': '1', 'display': '1'
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=drawNew.info                   wire=644B
+      _cok_                    = 641015000107
+      pools                    = [{'totalFree': 5, 'wishPool': '213288;213288|213289;213289|213300;213300|213280;213280|211
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=nfight.data                    wire=314B
+      restTime                 = 1793059200000
+      sumScore                 = 0
+      actId                    = 11658
+      maxScore                 = 50000
+      actInfos                 = [{'cost': 0, 'nameId': '52045449', 'levelWithStar': 35, 'type': 1}, {'cost': 10000, 'nameI
+      shopScore                = 0
+      _cok_                    = 641015000108
+      startTime                = 1792641600000
+      signEndTime              = 1792642800000
+      nextSignTime             = 1792650000000
+      crossleave               = False
+      fightEndTime             = 1792644300000
+      status                   = -1
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=newHeaven.info                 wire=502B
+      unlockGeneralNum         = 1
+      exploreNum               = 1
+      unlockDragonNum          = 0
+      curCrystal               = 290
+      sky_city_guide           = 0
+      chooseRewards            = ['52028101', '52028102']
+      deviceInfo               = []
+      chooseGeneral            = [{'index': 1, 'id': 53160007}]
+      powerRefreshCdTime       = 1792562883104
+      landId                   = 56014601
+      chooseDragon             = []
+      curPower                 = 352273864
+      fightPower               = 1561
+      _cok_                    = 641015000112
+      state                    = 2
+      endTime                  = 1792568278104
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=aw_formula.getData             wire=268B
+      conf_k3                  = 100
+      conf_k5                  = 1;0;0|2;10;0|3;20;0|4;30;0
+      _cok_                    = 641015000113
+      queue                    = [{'itemObj': {}, 'totalTime': 0, 'startTime': 0, 'updateTime': 0, 'endTime': 0, 'type': 44
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=kingdom.officers               wire=169B
+      kingdomName              = kingdom#2223
+      _cok_                    = 641015000114
+      thronePic                = 401
+      banner                   = 
+      officers                 = []
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=dragon.playoff.info            wire=122B
+      _cok_                    = 641015000115
+      success                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=dragon.battle.info             wire=130B
+      _cok_                    = 641015000116
+      errorCode                = 102192
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=contact.get.server.current     wire=201B
+      contactList              = [{'uid': '131003130002223', 'lastUpdateTime': '1792611835'}, {'uid': '151482316002223', 'l
+      _cok_                    = 641015000117
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=redPackets.rvd.id              wire=121B
+      records                  = []
+      _cok_                    = 641015000118
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=chat.get.system.mails          wire=409B
+      firstSeqId               = -1
+      msg                      = [{'fromUser': '', 'save': '0', 'title': '52802741', 'type': 13, 'rewardStatus': 1, 'itemId
+      lastSeqId                = -1
+      more                     = False
+      _cok_                    = 641015000119
+      id                       = 0
+      type                     = 4
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=chat.room.invitee              wire=743B
+      _cok_                    = 641015000120
+      invitee                  = [{'uid': '31569370002223', 'lastUpdateTime': '1792336341'}, {'uid': '44576158002223', 'las
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=chat.get.new.mails             wire=279B
+      rooms                    = []
+      _cok_                    = 641015000121
+      updatemail               = {"update":[{"uid":"3864a6d8b4b2415ca5237cbf733e4850","saveFlag":0,"mailLastUpdateTime":179
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=heaven.task.info               wire=207B
+      _cok_                    = 641015000122
+      tasks                    = [{'cur': 0, 'taskId': '56019902', 'rewards': '', 'target': 3}, {'cur': 0, 'taskId': '56019
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=al.task.record                 wire=407B
+      freequeueTime            = 0
+      refreshCount             = 0
+      itemPublishCount         = 0
+      refreshTime              = 1792641714008
+      conditionTime            = 86400
+      maxPublishRewardCount    = 10
+      maxPublishItemUseCount   = 100000
+      acceptCount              = 0
+      freequeue                = 1
+      maxPublishCount          = 6
+      itemPublishUseCount      = 0
+      maxAcceptRewardCount     = 10
+      gold                     = 0
+      maxAcceptCount           = 10
+      conditionPublishLevel    = 10
+      nextGold                 = 50
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=check.result                   wire=93B
+      success                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=get.user.info.multi            wire=437B
+      uids                     = [{'officer': '', 'stateId': 0, 'sLevel': 0, 'pic': 'g008', 'picVer': 0, 'serverId': 2223, 
+      _cok_                    = 641015000126
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+--- cmd=luckyday.effect                wire=96B
+      success                  = True
+    p.p.qqq                  = 65
+    a                        = 13
+    c                        = 1
+
+==========================================================================
+统计
+  请求 params 解码: 成功 101 失败 0 明文 0
+  响应 params 解码: 成功 91 失败 0 明文 1
+
+请求命令统计:
+   accountLock.getUnlockView        x1
+   achieve.ls                       x1
+   act.ls                           x1
+   al.rank                          x1
+   al.task.record                   x1
+   allianceBoss.enter               x1
+   allianceNewBoss.bossMainInfo     x6
+   alquick.data                     x1
+   auction.getView                  x1
+   aw_formula.getData               x1
+   branchcity.enter                 x2
+   buidlingextension.resEffect      x1
+   castle.data                      x1
+   castleLevelUp.getLevel           x2
+   cemetery.get.info                x1
+   chat.get.new.mails               x1
+   chat.get.system.mails            x1
+   chat.room.invitee                x1
+   check.result                     x1
+   civilization.prestige.info       x1
+   civilizationCastle.info          x1
+   cmd.finishinit                   x1
+   cmd.ping                         x19
+   cok.proto                        x1
+   contact.get.server.current       x1
+   convoy.activityData              x1
+   convoy.login                     x2
+   crossthrone.time                 x1
+   daily.quest.ls                   x1
+   dailyQuest2025.data              x1
+   directUpgrade.data               x1
+   dragon.battle.info               x1
+   dragon.playoff.info              x1
+   drawNew.info                     x1
+   effectCenter.all                 x1
+   everydayexchange.data            x1
+   exchange.refresh                 x1
+   exchangeshow.ready               x1
+   featureStateChange.data          x1
+   festivalview.data                x2
+   formation.getData                x1
+   formationTrain.bag               x1
+   gem.getDigView                   x1
+   generalBP.data                   x1
+   general_choice.data              x1
+   get.clash.server.list            x1
+   get.user.info.multi              x2
+   godGift.info                     x1
+   heaven.task.info                 x1
+   hero.introduction                x1
+   heroBadge.badgeList              x1
+   invest.open.ui                   x1
+   itemcollection.data              x1
+   kingdom.officers                 x1
+   kingdomBiography.info            x1
+   kingdomtask_new.data             x1
+   login.dataconfig                 x1
+   login.other                      x4
+   lordTask.data                    x1
+   luckyday.effect                  x2
+   magic.effectList                 x1
+   magic_weapon.data                x1
+   mall.info                        x1
+   matchAct.info                    x1
+   medal.list                       x1
+   miraclestone.data                x1
+   monthfund.rewardinfo             x1
+   monthlySign.info                 x1
+   newBoat.data                     x1
+   newHeaven.info                   x1
+   newServerPower.info              x1
+   nfight.data                      x1
+   nightPet.list                    x1
+   oneKeyLoad.data                  x1
+   open_server_way.ui               x1
+   overview_new.data                x1
+   permitCommandInfo                x1
+   redPackets.rvd.id                x1
+   relic.getRelicList               x1
+   resource.client.reward.get       x3
+   resource.client.reward.getmulti  x4
+   save.phone.device                x1
+   scanctuary.data                  x1
+   science.data.cond                x1
+   science.data.init                x1
+   score.login                      x1
+   shadowDragon.data                x2
+   show.status.item                 x1
+   skill.state.get                  x1
+   skin.effect_new                  x1
+   skin.introduction                x1
+   soldierHelp.info                 x1
+   stat.tt                          x1
+   story.task.info                  x1
+   strengthen.info                  x1
+   tactics.getData                  x1
+   treasuremap.info                 x1
+   trigger.activity                 x3
+   userfeedback.info                x1
+   userpayreward.newinfo            x1
+   worldboss                        x5
+
+响应命令统计:
+   accountLock.getUnlockView        x1
+   achieve.ls                       x1
+   act.ls                           x1
+   al.task.record                   x1
+   allianceBoss.enter               x1
+   allianceNewBoss.bossMainInfo     x6
+   alquick.data                     x1
+   auction.getView                  x1
+   aw_formula.getData               x1
+   branchcity.enter                 x1
+   buidlingextension.resEffect      x1
+   castle.data                      x1
+   castleLevelUp.getLevel           x2
+   cemetery.get.info                x1
+   chat.get.new.mails               x1
+   chat.get.system.mails            x1
+   chat.room.invitee                x1
+   check.result                     x1
+   civilization.prestige.info       x1
+   civilizationCastle.info          x1
+   cmd.finishinit                   x1
+   cmd.ping                         x19
+   cok.proto                        x1
+   contact.get.server.current       x1
+   convoy.activityData              x1
+   convoy.login                     x2
+   crossthrone.time                 x1
+   daily.quest.ls                   x1
+   dailyQuest2025.data              x1
+   directUpgrade.data               x1
+   dragon.battle.info               x1
+   dragon.playoff.info              x1
+   drawNew.info                     x1
+   effectCenter.all                 x1
+   everydayexchange.data            x1
+   exchangeshow.ready               x1
+   festivalview.data                x2
+   formation.getData                x1
+   formationTrain.bag               x1
+   gem.getDigView                   x1
+   generalBP.data                   x1
+   general_choice.data              x1
+   get.user.info.multi              x2
+   godGift.info                     x1
+   heaven.task.info                 x1
+   hero.introduction                x1
+   heroBadge.badgeList              x1
+   invest.open.ui                   x1
+   itemcollection.data              x1
+   kingdom.officers                 x1
+   login.other                      x1
+   lordTask.data                    x1
+   luckyday.effect                  x2
+   magic.effectList                 x1
+   magic_weapon.data                x1
+   mall.info                        x1
+   matchAct.info                    x1
+   medal.list                       x1
+   miraclestone.data                x1
+   monthfund.rewardinfo             x1
+   monthlySign.info                 x1
+   newBoat.data                     x1
+   newHeaven.info                   x1
+   newServerPower.info              x1
+   nfight.data                      x1
+   nightPet.list                    x1
+   oneKeyLoad.data                  x1
+   open_server_way.ui               x1
+   overview_new.data                x1
+   permitCommandInfo                x1
+   push.common.red.tips             x1
+   push.server.action               x1
+   redPackets.rvd.id                x1
+   relic.getRelicList               x1
+   resource.client.reward.get       x3
+   resource.client.reward.getmulti  x4
+   save.phone.device                x1
+   scanctuary.data                  x1
+   science.data.cond                x1
+   shadowDragon.data                x2
+   show.status.item                 x1
+   skill.state.get                  x1
+   skin.effect_new                  x1
+   skin.introduction                x1
+   soldierHelp.info                 x1
+   stat.tt                          x1
+   story.task.info                  x1
+   strengthen.info                  x1
+   tactics.getData                  x1
+   trigger.activity                 x3
+   userfeedback.info                x1
+   worldboss                        x2

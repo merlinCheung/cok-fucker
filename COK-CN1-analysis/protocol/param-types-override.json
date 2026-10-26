@@ -1,0 +1,37 @@
+{
+ "_source": "手工类型修正表: 静态反出(Lua putParam 的 CCInteger/CCString) + 直连实测校准。不是抓包产物, 因此与 command-catalog-typed.json 分开放。",
+ "_rules": {
+  "auto": "false = 只纠正类型, 不自动补默认值(该命令允许只传部分字段)",
+  "type": "SFS 类型名, 与 command-catalog-typed.json 一致"
+ },
+ "autoQueue.data": [],
+ "autoQueue.levelMaxMonster": [],
+ "autoQueue.search": [
+  {"key": "autoQueue", "type": "INT", "auto": false}
+ ],
+ "autoQueue.save": [
+  {"key": "lv", "type": "STRING", "auto": false},
+  {"key": "format", "type": "STRING", "auto": false},
+  {"key": "saveItems", "type": "STRING", "auto": false},
+  {"key": "autoCount", "type": "INT", "auto": false},
+  {"key": "force", "type": "INT", "auto": false}
+ ],
+ "autoQueue.status": [
+  {"key": "status", "type": "INT", "auto": false}
+ ],
+ "res.tile.find": [
+  {"key": "type", "type": "INT", "auto": false},
+  {"key": "level", "type": "INT", "auto": false},
+  {"key": "NoRecord", "type": "INT", "auto": false}
+ ],
+ "world.march": [
+  {"key": "point", "type": "INT", "auto": false},
+  {"key": "type", "type": "INT", "auto": false},
+  {"key": "soldiers", "type": "OBJECT", "auto": false},
+  {"key": "generalId", "type": "STRING", "auto": false},
+  {"key": "petDragonUid", "type": "STRING", "auto": false},
+  {"key": "aormationId", "type": "STRING", "auto": false},
+  {"key": "autoQueue", "type": "INT", "auto": false},
+  {"key": "marchKey", "type": "STRING", "auto": false}
+ ]
+}

@@ -1,0 +1,191 @@
+{
+ "cmd.ping": [],
+ "login.dataconfig": [],
+ "login.other": [
+  {
+   "key": "config",
+   "type": "STRING",
+   "value": "config"
+  }
+ ],
+ "kingdomtask_new.data": [],
+ "save.phone.device": [
+  {
+   "key": "phoneDevice",
+   "type": "STRING",
+   "value": "default"
+  },
+  {
+   "key": "batteryStates",
+   "type": "STRING",
+   "value": "2-1-1-0-55-100-0.55|2-1-1-0-56-100-0.56|2-1-1-0-57-100-0.57|2-1-1-0-57-100-0.57|2-1-1-0-57-100-0.57"
+  }
+ ],
+ "castleLevelUp.getLevel": [],
+ "cemetery.get.info": [],
+ "daily.quest.ls": [],
+ "civilization.prestige.info": [],
+ "hero.introduction": [],
+ "cok.proto": [
+  {
+   "key": "pb",
+   "type": "BYTES",
+   "value": "<5 bytes>"
+  }
+ ],
+ "allianceBoss.enter": [],
+ "oneKeyLoad.data": [],
+ "alquick.data": [],
+ "buidlingextension.resEffect": [],
+ "strengthen.info": [],
+ "kingdomBiography.info": [],
+ "treasuremap.info": [],
+ "worldboss": [
+  {
+   "key": "op",
+   "type": "INT",
+   "value": 0
+  },
+  {
+   "key": "type",
+   "type": "INT",
+   "value": 16
+  }
+ ],
+ "soldierHelp.info": [],
+ "accountLock.getUnlockView": [
+  {
+   "key": "password",
+   "type": "STRING",
+   "value": "nil"
+  },
+  {
+   "key": "emailAddr",
+   "type": "STRING",
+   "value": "nil"
+  },
+  {
+   "key": "password2",
+   "type": "STRING",
+   "value": "nil"
+  },
+  {
+   "key": "password1",
+   "type": "STRING",
+   "value": "nil"
+  },
+  {
+   "key": "verifCode",
+   "type": "STRING",
+   "value": "nil"
+  }
+ ],
+ "permitCommandInfo": [],
+ "magic.effectList": [],
+ "science.data.init": [],
+ "score.login": [],
+ "al.rank": [
+  {
+   "key": "allianceId",
+   "type": "STRING",
+   "value": "58a613bf89754041b39c73d9b192ff49"
+  }
+ ],
+ "userpayreward.newinfo": [],
+ "branchcity.enter": [],
+ "featureStateChange.data": [],
+ "scanctuary.data": [],
+ "newBoat.data": [],
+ "stat.tt": [
+  {
+   "key": "id",
+   "type": "STRING",
+   "value": "5"
+  }
+ ],
+ "exchange.refresh": [],
+ "science.data.cond": [
+  {
+   "key": "scienceIds",
+   "type": "STRING",
+   "value": "53698010;0|53698020;0"
+  }
+ ],
+ "check.result": [
+  {
+   "key": "sC",
+   "type": "STRING",
+   "value": "02aad0f0e9c4323135bd50af79bcd20d"
+  },
+  {
+   "key": "bS",
+   "type": "STRING",
+   "value": "2-1-1-0-55-100-0.55|2-1-1-0-56-100-0.56|2-1-1-0-57-100-0.57|2-1-1-0-57-100-0.57|2-1-1-0-57-100-0.57"
+  },
+  {
+   "key": "cP",
+   "type": "INT",
+   "value": 0
+  }
+ ],
+ "miraclestone.data": [],
+ "exchangeshow.ready": [],
+ "auction.getView": [],
+ "resource.client.reward.getmulti": [
+  {
+   "key": "rewardIds",
+   "type": "STRING",
+   "value": "43003368;43003370;43003367;43003371;43003366;43003369;43003365"
+  }
+ ],
+ "itemcollection.data": [
+  {
+   "key": "itemType",
+   "type": "INT",
+   "value": 1
+  }
+ ],
+ "shadowDragon.data": [],
+ "everydayexchange.data": [],
+ "trigger.activity": [
+  {
+   "key": "request_flag",
+   "type": "STRING",
+   "value": "2"
+  },
+  {
+   "key": "type",
+   "type": "INT",
+   "value": 53
+  }
+ ],
+ "monthfund.rewardinfo": [],
+ "dailyQuest2025.data": [],
+ "newHeaven.info": [],
+ "aw_formula.getData": [],
+ "heaven.task.info": [],
+ "effectCenter.all": [],
+ "festivalview.data": [
+  {
+   "key": "activityId",
+   "type": "STRING",
+   "value": "57753"
+  }
+ ],
+ "resource.client.reward.get": [
+  {
+   "key": "rewardId",
+   "type": "STRING",
+   "value": "43011278"
+  }
+ ],
+ "generalBP.data": [
+  {
+   "key": "activityId",
+   "type": "STRING",
+   "value": "57607"
+  }
+ ],
+ "al.task.record": [],
+ "cmd.finishinit": []
+}

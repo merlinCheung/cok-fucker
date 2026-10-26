@@ -1,0 +1,160 @@
+{
+ "cmd.ping": {},
+ "login.dataconfig": {},
+ "login.other": {
+  "config": "config"
+ },
+ "kingdomtask_new.data": {},
+ "save.phone.device": {
+  "phoneDevice": "default",
+  "batteryStates": "2-1-1-0-34-100-0.34|2-1-1-0-32-100-0.32|2-1-1-0-32-100-0.32|2-1-1-0-33-100-0.33|2-1-1-0-33"
+ },
+ "castleLevelUp.getLevel": {},
+ "cemetery.get.info": {},
+ "daily.quest.ls": {},
+ "civilization.prestige.info": {},
+ "hero.introduction": {},
+ "cok.proto": {
+  "pb": "0a0308f54e"
+ },
+ "allianceBoss.enter": {},
+ "oneKeyLoad.data": {},
+ "alquick.data": {},
+ "buidlingextension.resEffect": {},
+ "strengthen.info": {},
+ "kingdomBiography.info": {},
+ "treasuremap.info": {},
+ "worldboss": {
+  "op": "0",
+  "type": "16"
+ },
+ "soldierHelp.info": {},
+ "accountLock.getUnlockView": {
+  "password": "nil",
+  "emailAddr": "nil",
+  "password2": "nil",
+  "password1": "nil",
+  "verifCode": "nil"
+ },
+ "permitCommandInfo": {},
+ "magic.effectList": {},
+ "science.data.init": {},
+ "score.login": {},
+ "al.rank": {
+  "allianceId": "58a613bf89754041b39c73d9b192ff49"
+ },
+ "userpayreward.newinfo": {},
+ "branchcity.enter": {},
+ "featureStateChange.data": {},
+ "scanctuary.data": {},
+ "newBoat.data": {},
+ "stat.tt": {
+  "id": "5"
+ },
+ "exchange.refresh": {},
+ "science.data.cond": {
+  "scienceIds": "53698010;0|53698020;0"
+ },
+ "auction.getView": {},
+ "resource.client.reward.getmulti": {
+  "rewardIds": "43003368;43003370;43003367;43003371;43003366;43003369;43003365"
+ },
+ "itemcollection.data": {
+  "itemType": "1"
+ },
+ "miraclestone.data": {},
+ "exchangeshow.ready": {},
+ "effectCenter.all": {},
+ "festivalview.data": {
+  "activityId": "57753"
+ },
+ "generalBP.data": {
+  "activityId": "57607"
+ },
+ "open_server_way.ui": {},
+ "newServerPower.info": {},
+ "allianceNewBoss.bossMainInfo": {},
+ "shadowDragon.data": {},
+ "everydayexchange.data": {},
+ "trigger.activity": {
+  "request_flag": "2",
+  "type": "53"
+ },
+ "convoy.login": {},
+ "convoy.activityData": {},
+ "monthfund.rewardinfo": {},
+ "monthlySign.info": {},
+ "dailyQuest2025.data": {},
+ "resource.client.reward.get": {
+  "rewardId": "43011278"
+ },
+ "cmd.finishinit": {},
+ "invest.open.ui": {},
+ "story.task.info": {},
+ "civilizationCastle.info": {},
+ "userfeedback.info": {},
+ "formation.getData": {},
+ "skin.introduction": {},
+ "skill.state.get": {},
+ "general_choice.data": {},
+ "castle.data": {},
+ "formationTrain.bag": {
+  "pageNo": "1"
+ },
+ "heroBadge.badgeList": {},
+ "nightPet.list": {},
+ "matchAct.info": {},
+ "relic.getRelicList": {},
+ "get.clash.server.list": {},
+ "tactics.getData": {},
+ "skin.effect_new": {},
+ "magic_weapon.data": {},
+ "godGift.info": {},
+ "directUpgrade.data": {},
+ "lordTask.data": {},
+ "overview_new.data": {},
+ "gem.getDigView": {
+  "isLogin": "1"
+ },
+ "act.ls": {},
+ "crossthrone.time": {},
+ "show.status.item": {},
+ "achieve.ls": {},
+ "medal.list": {},
+ "mall.info": {},
+ "drawNew.info": {},
+ "nfight.data": {},
+ "newHeaven.info": {},
+ "aw_formula.getData": {},
+ "kingdom.officers": {
+  "serverId": "2223"
+ },
+ "dragon.playoff.info": {},
+ "dragon.battle.info": {},
+ "contact.get.server.current": {},
+ "redPackets.rvd.id": {},
+ "chat.get.system.mails": {
+  "clientseq": "e058ea557fb742eab65acad2e5442c73",
+  "count": "50",
+  "time": "1792637322542"
+ },
+ "chat.room.invitee": {
+  "allianceId": "58a613bf89754041b39c73d9b192ff49"
+ },
+ "chat.get.new.mails": {
+  "updatemailtime": "1792592422672",
+  "params": ""
+ },
+ "heaven.task.info": {},
+ "al.task.record": {},
+ "check.result": {
+  "sC": "02aad0f0e9c4323135bd50af79bcd20d",
+  "bS": "2-1-1-0-34-100-0.34|2-1-1-0-32-100-0.32|2-1-1-0-32-100-0.32|2-1-1-0-33-100-0.33|2-1-1-0-33",
+  "cP": "0"
+ },
+ "get.user.info.multi": {
+  "uids": "['23145760002223', '6109796002223']",
+  "allservers": "1"
+ },
+ "luckyday.effect": {}
+}
