@@ -1514,17 +1514,22 @@ class Engine(object):
             if not int(r.get("radius") or 0):
                 last_full = r
                 break
-        if (last_full and last_full.get("status") == "interrupted"
-                and meta.get("partial") and meta.get("next_x") is not None):
-            cmd.append("--resume")        # 从上次全图的断点接着扫
         step = int(body.get("step") or 12)
         cmd += ["--step", str(step)]
         radius = int(body.get("radius") or 0)
-        if radius > 0:
+        # ⚠️ --fresh 和 --resume **互斥**:
+        #   fresh  = 清空索引从头扫(全图重扫; 旧坐标属于上一次地图布局)
+        #   resume = 接着上次的断点继续(索引里已有数据, 不能清)
+        # 两个一起用 = 清空后又从旧断点开始, 断点之前的区域永远漏掉。
+        want_resume = bool(body.get("resume"))
+        if want_resume:
+            if (radius <= 0 and last_full
+                    and last_full.get("status") == "interrupted"
+                    and meta.get("partial") and meta.get("next_x") is not None):
+                cmd.append("--resume")
+        elif radius > 0:
             cmd += ["--radius", str(radius)]
         else:
-            # 全图重扫: 必须从空白索引开始。旧索引的坐标属于上一次地图布局
-            # (服务端会重排地图), 混进来会让众数投票选错(实测正确率 16.7%)。
             cmd.append("--fresh")
         maxreq = int(body.get("maxRequests") or 0)
         if maxreq > 0:

@@ -342,6 +342,7 @@
           <option value="20">20 (快, 会漏)</option>
           <option value="26">26 (更快, 漏更多)</option>
         </select>
+        <label style="min-width:auto"><input type="checkbox" id="chkScanResume"> 从上次断点继续</label>
         <span class="mini">world.get 的实际覆盖区只有 <b>±12 格</b>(实测), 步长必须 ≤ 覆盖直径, 否则玩家的城会被视野边界截断</span>
       </div>
       <div id="scanProgress"></div>
@@ -1813,9 +1814,10 @@ async function loadScanHistory(){
 }
 
 $('btnScanAll').onclick=async()=>{
-  const step=Number($('selScanStep').value||20);
+  const step=Number($('selScanStep').value||12);
+  const resume=!!($('chkScanResume')&&$('chkScanResume').checked);
   await busy($('btnScanAll'),'启动中…',async()=>{
-    const r=await api('/api/scan/start',{step});
+    const r=await api('/api/scan/start',{step,resume});
     if(r&&r.ok){
       toast(r.note||'扫描已启动','ok');
       setRes('resLocate',(r.note||'扫描已启动')+(r.resumed?'(从上次断点继续)':''),'ok');
