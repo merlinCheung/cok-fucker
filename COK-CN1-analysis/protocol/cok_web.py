@@ -109,6 +109,8 @@ class Engine(object):
         self.persistent = bool(getattr(args, "persistent", False))
         self.last_poll = 0.0
         self.app_yield = False
+        self._suspend_poll = False
+        self._poll_suspend_until = 0.0
         self._app_online_flag = False
         self.names = self._load_names()
         self.settings = self._load_settings()
@@ -469,6 +471,18 @@ class Engine(object):
     def _loop(self):
         while not self._stop.is_set():
             try:
+                # 全图扫描在跑时, 主动把账号让给扫描器(否则两边互抢锁)
+                if getattr(self, "_suspend_poll", False):
+                    scanning = self._scan_status().get("running")
+                    if scanning or time.time() < getattr(self, "_poll_suspend_until", 0):
+                        with self.lock:
+                            self.connected = False
+                        for _ in range(3):
+                            if self._stop.is_set():
+                                break
+                            time.sleep(1.0)
+                        continue
+                    self._suspend_poll = False
                 if not self.settings.get("autoPoll", True):
                     # 用户关掉了自动轮询: 不连游戏服, 只等用户手动点「立即刷新」
                     with self.lock:
@@ -1487,6 +1501,11 @@ class Engine(object):
         cmd = [sys.executable, os.path.join(HERE, "scan_world.py"),
                "--out", cok_map.DEFAULT_INDEX]
         meta = (cok_map.load_index().get("meta") or {})
+        # ⚠️ 先让网页**自己**把账号交出来: 扫描器和后台轮询会互相抢锁
+        # (轮询每 5 秒一轮、每轮持锁 2~3 秒), 扫描器用 LOCK_NB 轮询
+        # 可能整整 120 秒都抢不到空隙。暂停轮询后扫描器就能稳定拿到锁。
+        self._suspend_poll = True
+        self._poll_suspend_until = time.time() + 120.0
         # ⚠️ 只有「上次是**全图**扫描且被中断」才续扫 —— 小范围扫描的断点
         # 落在地图一角, 全图扫描接着它扫会把那一大片漏掉。
         runs = (cok_map.load_history().get("runs") or [])
@@ -1510,6 +1529,10 @@ class Engine(object):
         maxreq = int(body.get("maxRequests") or 0)
         if maxreq > 0:
             cmd += ["--max-requests", str(maxreq)]
+        # 限速: 服务端在请求过快时会降速, 匀速反而更快跑完
+        dly = float(body.get("delay", 0.25))
+        if dly > 0:
+            cmd += ["--delay", str(dly)]
         # 扫描前备份现有索引 —— 扫描中途失败不至于毁掉已有数据
         bak = ""
         try:
