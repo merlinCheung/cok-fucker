@@ -9,6 +9,8 @@ map-index*.json
 map-index.backup-*.json
 scan-history.json
 scan.pid
+.cok-account.lock
+.cok-web-token
 scan.log
 *.xlsx
 *.csv

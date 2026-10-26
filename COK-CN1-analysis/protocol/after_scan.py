@@ -29,16 +29,28 @@ def sh(cmd, timeout=600):
 
 def main():
     print("等扫描结束…", flush=True)
+    # ⚠️ 不能只看 pid 文件: 扫描器启动/结束时都会改这个文件, 存在读到空值的窗口,
+    # 一旦误判就会提前跑复核 + 启动打怪 -> 打怪抢走账号 -> 把还在跑的扫描挤死。
+    # 判据改成「索引进度是否还在增长」, 最稳。
+    last = -1
+    stable = 0
     while True:
-        pid = cok_map.read_scan_pid()
-        alive = False
-        if pid:
-            try:
-                os.kill(pid, 0)
-                alive = True
-            except OSError:
-                alive = False
-        if not alive:
+        try:
+            meta = (cok_map.load_index().get("meta") or {})
+        except Exception:
+            meta = {}
+        done = meta.get("requests_done") or 0
+        total = meta.get("requests_total") or 0
+        if done and done == last:
+            stable += 1
+        else:
+            stable = 0
+        last = done
+        if total and done >= total:
+            print("扫描已完成: %d/%d" % (done, total), flush=True)
+            break
+        if stable >= 3:      # 连续 3 次(约 90 秒)没进展 -> 认定已停
+            print("扫描已停止: %d/%d (连续 90 秒无进展)" % (done, total), flush=True)
             break
         time.sleep(30)
 
