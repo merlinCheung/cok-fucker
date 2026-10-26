@@ -389,7 +389,8 @@ def merge_players(index, players, center=None):
 
 def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
               index=None, path=DEFAULT_INDEX, progress=None,
-              max_requests=None, own_uid=None, delay=0.0, resume_y=None):
+              max_requests=None, own_uid=None, delay=0.0, resume_y=None,
+              reconnect=None, reconnect_every=200):
     """扫描一个矩形区域, 把玩家写进本地索引。
 
     x0/y0/x1/y1 是**格子坐标**范围(闭区间)。返回统计 dict。
@@ -398,6 +399,9 @@ def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
     resume_y: 断点续扫时**第一列**的起始 y(第一列从这个 y 开始, 后续列仍从 y0 开始)。
               ⚠️ 早先用 y0=next_y 把**整个区域**的 y 起点都抬高了 ——
               那样会漏掉 x>断点列 且 y<断点y 的整片区域, 而那部分还没扫过。
+    reconnect: 可选回调, 每 reconnect_every 个中心调一次(重建连接)。
+              长连接偶尔会进入"既不返回也不断连"的半死状态, 表现为扫描
+              长时间卡在同一个中心; 定期重连能把影响限制在少量请求内。
     """
     index = index if index is not None else load_index(path)
     stats = {"requests": 0, "tiles": 0, "players": 0, "new": 0,
@@ -416,6 +420,17 @@ def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
             if cx == x0 and resume_y is not None:
                 start_y = max(y0, int(resume_y))
             for cy in range(start_y, y1 + 1, step):
+                if (reconnect and reconnect_every
+                        and stats["requests"] % reconnect_every == 0
+                        and stats["requests"] > 0):
+                    try:
+                        client = reconnect() or client
+                    except Exception:  # noqa: BLE001
+                        pass
+                if delay:
+                    # ⚠️ 限速: 服务端在请求过快时会**降速**(每个请求要等好几秒)甚至
+                    # 半死连接。匀速发反而更快跑完。
+                    time.sleep(delay)
                 if max_requests and stats["requests"] >= max_requests:
                     next_x, next_y = cx, cy
                     stopped = True

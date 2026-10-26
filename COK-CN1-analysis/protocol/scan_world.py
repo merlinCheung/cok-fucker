@@ -72,7 +72,25 @@ def main():
     ap.add_argument("--server", type=int, default=2223)
     ap.add_argument("--keep-app", action="store_true",
                     help="不要停掉手机上的游戏 App(同账号双连接会被服务端互踢)")
+    ap.add_argument("--reconnect-every", type=int, default=200,
+                    help="每 N 个中心重连一次(看门狗, 0 = 不重连)")
+    ap.add_argument("--delay", type=float, default=0.0,
+                    help="每个中心之间的额外停顿秒数(限速, 避免服务端降速)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="全图重扫: 归档旧索引并从空白索引开始(旧数据属于"
+                         "上一次地图布局, 混进来会让众数投票选错)")
     args = ap.parse_args()
+
+    # ⚠️ 全图重扫必须从**空白索引**开始: 旧索引里的坐标属于**上一次地图布局**
+    # (服务端会重排地图), 混进新扫描后, 旧坐标的票数可能反而更多 ——
+    # 众数投票就会选中原地不动的旧坐标(实测复核正确率只有 16.7%)。
+    if args.fresh and os.path.exists(args.out):
+        bak = "%s.bak-%s" % (args.out, time.strftime("%Y%m%d-%H%M%S"))
+        try:
+            os.replace(args.out, bak)
+            print("  旧索引已归档: %s" % os.path.basename(bak), flush=True)
+        except OSError as e:
+            print("  [!] 归档旧索引失败(继续): %s" % e, flush=True)
 
     index = cok_map.load_index(args.out)
     meta = index.get("meta") or {}
@@ -173,7 +191,8 @@ def main():
         print("[*] 从断点继续: x=%d, 第一列从 y=%d 开始(后续列从 y=%d 起)" % (
             x0, resume_y, y0), flush=True)
 
-    total = ((x1 - x0) // args.step + 1) ** 2
+    # ⚠️ 区域可能是长方形(续扫时), 必须是 列数 × 行数, 不能用平方
+    total = ((x1 - x0) // args.step + 1) * ((y1 - y0) // args.step + 1)
     print("=" * 68, flush=True)
     print("  COK 全图扫描", flush=True)
     print("  区域: x %d~%d  y %d~%d  步长 %d" % (x0, x1, y0, y1, args.step), flush=True)
@@ -214,27 +233,33 @@ def main():
         index["meta"] = meta2
         cok_map.save_index(index, args.out)
 
+    def make_conn():
+        """建一条干净连接(登录 + 预热)。"""
+        # ⚠️ 超时要**短**(20 秒): 服务端偶尔会让某条请求既不返回也不断连,
+        # 60 秒 × 4 次重试 = 卡 4 分钟才放弃。正常响应只要 0.2~1 秒。
+        cc = cok_client.CokClient(timeout=20.0).connect()
+        cc.bin_handshake()
+        cc.login()
+        # ⚠️ 新连接的第一条业务请求会被服务端丢弃 -> 补发一条把连接"热"起来
+        for _ in range(2):
+            try:
+                cc.call("cmd.ping")
+            except Exception:
+                pass
+        return cc
+
     try:
         with cok_client.account_lock(timeout=120.0, purpose="scan-world"):
-            c = cok_client.CokClient(timeout=60.0).connect()
-            c.bin_handshake()
-            c.login()
-            try:
-                c.call("cmd.ping")
-            except Exception:
-                pass
-            # ⚠️ 新连接的第一条业务请求会被服务端丢弃 -> 补发一条把连接"热"起来
-            # (用 cmd.ping 而不是 world.get.detail, 后者偶尔会挂到超时)
-            try:
-                c.call("cmd.ping")
-            except Exception:
-                pass
+            c = make_conn()
             try:
                 st = cok_map.scan_area(
                     c, x0, y0, x1, y1, server_id=args.server, step=args.step,
                     index=index, path=args.out, progress=progress,
                     max_requests=args.max_requests or None, own_uid=own_uid,
-                    resume_y=resume_y)
+                    resume_y=resume_y,
+                    # 看门狗: 长连接偶尔半死(既不返回也不断连), 定期重连
+                    reconnect=make_conn, reconnect_every=args.reconnect_every,
+                    delay=args.delay)
             finally:
                 c.close()
     except KeyboardInterrupt:

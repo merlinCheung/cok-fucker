@@ -1503,6 +1503,10 @@ class Engine(object):
         radius = int(body.get("radius") or 0)
         if radius > 0:
             cmd += ["--radius", str(radius)]
+        else:
+            # 全图重扫: 必须从空白索引开始。旧索引的坐标属于上一次地图布局
+            # (服务端会重排地图), 混进来会让众数投票选错(实测正确率 16.7%)。
+            cmd.append("--fresh")
         maxreq = int(body.get("maxRequests") or 0)
         if maxreq > 0:
             cmd += ["--max-requests", str(maxreq)]
