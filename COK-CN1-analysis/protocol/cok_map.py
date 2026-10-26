@@ -389,12 +389,15 @@ def merge_players(index, players, center=None):
 
 def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
               index=None, path=DEFAULT_INDEX, progress=None,
-              max_requests=None, own_uid=None, delay=0.0):
+              max_requests=None, own_uid=None, delay=0.0, resume_y=None):
     """扫描一个矩形区域, 把玩家写进本地索引。
 
     x0/y0/x1/y1 是**格子坐标**范围(闭区间)。返回统计 dict。
     own_uid: 自己的 uid —— 扫描时顺带记下自己的坐标(存在 index.meta.self_point),
              这样"扫描附近"永远以自己为中心, 不需要写死坐标。
+    resume_y: 断点续扫时**第一列**的起始 y(第一列从这个 y 开始, 后续列仍从 y0 开始)。
+              ⚠️ 早先用 y0=next_y 把**整个区域**的 y 起点都抬高了 ——
+              那样会漏掉 x>断点列 且 y<断点y 的整片区域, 而那部分还没扫过。
     """
     index = index if index is not None else load_index(path)
     stats = {"requests": 0, "tiles": 0, "players": 0, "new": 0,
@@ -408,7 +411,11 @@ def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
     next_x = next_y = None
     try:
         for cx in range(x0, x1 + 1, step):
-            for cy in range(y0, y1 + 1, step):
+            # 断点续扫: 只有**第一列**从断点 y 开始, 后面每一列都从 y0 重新开始
+            start_y = y0
+            if cx == x0 and resume_y is not None:
+                start_y = max(y0, int(resume_y))
+            for cy in range(start_y, y1 + 1, step):
                 if max_requests and stats["requests"] >= max_requests:
                     next_x, next_y = cx, cy
                     stopped = True

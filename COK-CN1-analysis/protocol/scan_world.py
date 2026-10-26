@@ -163,10 +163,15 @@ def main():
         x1 = y1 = cok_map.WORLD_SIZE - 1
 
     # 断点续扫
+    resume_y = None
     if args.resume and meta.get("partial") and meta.get("next_x") is not None:
         x0 = int(meta["next_x"])
-        y0 = int(meta["next_y"])
-        print("[*] 从断点继续: x=%d y=%d" % (x0, y0), flush=True)
+        # ⚠️ 只把**第一列**的起点抬到断点 y, 后面每一列仍从 y0(=0) 开始 ——
+        # 早先这里把 y0 也设成了 next_y, 那样会漏掉 "x>断点列 且 y<断点y" 的整片区域,
+        # 而那部分**还没扫过**(日志会显示成 "区域: x 204~1200 y 432~1200")。
+        resume_y = int(meta.get("next_y") or 0)
+        print("[*] 从断点继续: x=%d, 第一列从 y=%d 开始(后续列从 y=%d 起)" % (
+            x0, resume_y, y0), flush=True)
 
     total = ((x1 - x0) // args.step + 1) ** 2
     print("=" * 68, flush=True)
@@ -228,7 +233,8 @@ def main():
                 st = cok_map.scan_area(
                     c, x0, y0, x1, y1, server_id=args.server, step=args.step,
                     index=index, path=args.out, progress=progress,
-                    max_requests=args.max_requests or None, own_uid=own_uid)
+                    max_requests=args.max_requests or None, own_uid=own_uid,
+                    resume_y=resume_y)
             finally:
                 c.close()
     except KeyboardInterrupt:
