@@ -4,7 +4,7 @@
 用法:
   python3 verify_points.py            # 抽 30 个真人玩家复核
   python3 verify_points.py 100        # 抽 100 个
-  python3 verify_points.py 100 136063574002223   # 指定 uid
+  python3 verify_points.py 100 <uid-main>   # 指定 uid
 
 原理: 索引里记了某玩家的坐标 (x,y) —— 如果那个坐标现在还是他,
 说明记录是对的; 如果那个点已经站着别人, 说明这条记录过期/错位。

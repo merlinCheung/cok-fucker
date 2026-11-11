@@ -1,0 +1,386 @@
+/* Android-only mobile console. Injected after the shared desktop stylesheet. */
+@media (max-width:760px){
+  :root{
+    --bg:#10151d;
+    --bg2:#10151d;
+    --panel:#18212c;
+    --panel2:#202b38;
+    --panel3:#283545;
+    --line:#344254;
+    --line2:#293544;
+    --fg:#f4f7fb;
+    --dim:#b1bdcc;
+    --dim2:#8795a8;
+    --accent:#4f9bd7;
+    --accent2:#8bc8ef;
+    --ok:#52bd93;
+    --warn:#e1b45c;
+    --err:#ef7770;
+    --chip:#202b38;
+    --radius:12px;
+    --radius-sm:9px;
+    --shadow:none;
+    --shadow-sm:none;
+    --ring:0 0 0 3px rgba(79,155,215,.22);
+  }
+
+  html{background:var(--bg);}
+  body{
+    min-height:100vh;
+    padding-bottom:calc(90px + env(safe-area-inset-bottom));
+    background:var(--bg);
+    background-image:none;
+    color:var(--fg);
+    font-size:14px;
+    line-height:1.48;
+  }
+  ::-webkit-scrollbar{display:none;}
+
+  /* Account context stays up top; all navigation moves to the thumb zone. */
+  header{
+    position:sticky;
+    top:0;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:12px;
+    padding:18px 16px 12px;
+    background:#10151d;
+    border-bottom:1px solid var(--line2);
+    backdrop-filter:none;
+    -webkit-backdrop-filter:none;
+  }
+  h1{
+    width:auto;
+    min-width:0;
+    margin:0;
+    color:var(--fg);
+    background:none;
+    -webkit-text-fill-color:initial;
+    font-size:21px;
+    font-weight:750;
+    letter-spacing:0;
+    line-height:1.2;
+  }
+  h1::after{
+    content:"移动控制台";
+    display:block;
+    margin-top:4px;
+    color:var(--dim2);
+    font-size:11px;
+    font-weight:500;
+    letter-spacing:.2px;
+  }
+  .badge{
+    min-height:34px;
+    padding:6px 10px;
+    border:1px solid var(--line);
+    border-radius:9px;
+    background:var(--panel);
+    box-shadow:none;
+    color:var(--dim);
+    font-size:12px;
+  }
+  #connBadge{
+    align-self:start;
+    justify-self:end;
+    min-height:34px;
+    max-width:140px;
+    overflow:hidden;
+    white-space:nowrap;
+  }
+  #connBadge .connFresh{display:none;}
+  #connText{font-size:0;}
+  #connText::after{content:"连接";font-size:12px;}
+  .dot{width:8px;height:8px;}
+  .dot.on{box-shadow:0 0 0 4px rgba(82,189,147,.14);}
+  .dot.wait{box-shadow:0 0 0 4px rgba(225,180,92,.14);}
+
+  #acctBadge{
+    grid-column:1/-1;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) repeat(4,32px);
+    gap:4px;
+    width:100%;
+    min-height:46px;
+    padding:5px;
+    background:var(--panel);
+  }
+  #acctSelect{
+    min-width:0;
+    width:100%;
+    max-width:none!important;
+    min-height:34px;
+    padding:0 8px!important;
+    border-radius:6px!important;
+    color:var(--fg)!important;
+    font-size:14px!important;
+  }
+  #acctBadge button{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:32px;
+    min-width:32px;
+    height:34px;
+    min-height:34px;
+    margin:0;
+    padding:0!important;
+    border-radius:6px;
+    background:transparent;
+    box-shadow:none;
+    color:var(--dim);
+  }
+  #acctBadge button:active{background:var(--panel3);}
+  header>.badge:not(#connBadge):not(#acctBadge),
+  header>.spacer{display:none;}
+  .headerActions{
+    grid-column:1/-1;
+    display:grid;
+    grid-template-columns:1.25fr 1fr 1fr;
+    gap:8px;
+    width:100%;
+  }
+  .headerActions label.badge,
+  #btnKeys{display:none;}
+  .headerActions button{
+    min-height:38px;
+    padding:7px 8px;
+    justify-content:center;
+    border-radius:8px;
+    box-shadow:none;
+    font-size:13px;
+  }
+  #btnRefresh{
+    background:#2f7faf;
+    border-color:#54a7d6;
+    color:#fff;
+  }
+  #btnReconnect,#btnDisconnect{background:var(--panel);}
+
+  .banner{
+    margin:12px 16px 0;
+    padding:11px 12px;
+    border-radius:10px;
+    border-left-width:3px;
+    box-shadow:none;
+    font-size:12.5px;
+    line-height:1.55;
+  }
+  main{max-width:none;padding:12px 16px 0;}
+
+  /* The original tabs become fixed bottom navigation for one-hand use. */
+  .tabbar{
+    position:fixed;
+    z-index:35;
+    right:0;
+    bottom:0;
+    left:0;
+    top:auto!important;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:0;
+    width:100%;
+    margin:0;
+    padding:8px 16px calc(8px + env(safe-area-inset-bottom));
+    background:#18212c;
+    border-top:1px solid var(--line);
+  }
+  .tab{
+    position:relative;
+    min-height:48px;
+    padding:9px 12px;
+    justify-content:center;
+    border:0;
+    border-radius:8px;
+    background:transparent;
+    box-shadow:none;
+    color:var(--dim2);
+    font-size:13px;
+    font-weight:650;
+  }
+  .tab:hover:not(.active){background:transparent;color:var(--fg);}
+  .tab.active{
+    background:#243b4c;
+    border:0;
+    box-shadow:none;
+    color:#dff3ff;
+  }
+  .tab.active::after{
+    position:absolute;
+    right:26%;
+    bottom:5px;
+    left:26%;
+    height:3px;
+    border-radius:3px;
+    background:var(--accent2);
+    content:"";
+  }
+  .tab .cnt{
+    min-width:18px;
+    margin-left:6px;
+    padding:1px 6px;
+    border:1px solid rgba(139,200,239,.28);
+    background:rgba(139,200,239,.13);
+    color:inherit;
+    font-size:10px;
+  }
+  .tab:not(.active) .cnt{background:var(--panel3);border-color:var(--line);color:var(--dim);}
+
+  /* The native shell owns the persistent bottom navigation. In its embedded
+     console view, keep these tabs as page-level controls instead. */
+  .cok-embed .tabbar{
+    display:none;
+  }
+  .cok-embed #acctBadge{display:none;}
+  .cok-embed main{padding-top:12px;padding-bottom:20px;}
+
+  /* Status is the home screen: clear priority, no desktop dashboard strip. */
+  .ovbar{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px;
+    overflow:visible;
+    margin:0 0 18px;
+    padding:0;
+    border:0;
+    border-radius:0;
+    background:transparent;
+    box-shadow:none;
+  }
+  .ov{
+    min-width:0;
+    min-height:78px;
+    padding:11px;
+    border:1px solid var(--line);
+    border-radius:11px;
+    background:var(--panel);
+    box-shadow:none;
+  }
+  .ov:nth-child(1){grid-column:1/-1;min-height:88px;background:#1c2b35;border-color:#3b6172;}
+  .ov:hover{transform:none;background:var(--panel2);border-color:var(--line);box-shadow:none;}
+  .ov:active{background:var(--panel3);}
+  .ov .lb{color:var(--dim2);font-size:11px;}
+  .ov .vl{font-size:21px;font-weight:750;line-height:1.2;letter-spacing:0;}
+  .ov:nth-child(1) .vl{font-size:27px;}
+  .ov .vl small{font-size:11px;}
+  .ov .pip{top:8px;right:9px;}
+
+  .grid,.g2,.g3{grid-template-columns:minmax(0,1fr);gap:12px;}
+  .span2{grid-column:auto;}
+  .sec{
+    margin:24px 0 9px;
+    color:var(--dim2);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:1.1px;
+  }
+  .sec:after{background:var(--line2);}
+  .card{
+    padding:15px 13px;
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:var(--panel);
+    box-shadow:none;
+  }
+  .card:hover{border-color:var(--line);box-shadow:none;}
+  .card h2{
+    min-height:31px;
+    margin:0 0 12px;
+    padding:0 38px 10px 0;
+    border-bottom-color:var(--line);
+    color:var(--fg);
+    font-size:16px;
+    font-weight:720;
+    line-height:1.35;
+    letter-spacing:0;
+  }
+  .card h2 .sub{
+    width:100%;
+    color:var(--dim2);
+    font-size:11px;
+    font-weight:500;
+    line-height:1.35;
+  }
+  .card>.fold,.card:hover>.fold{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    top:11px;
+    right:10px;
+    width:30px;
+    height:30px;
+    padding:0;
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:var(--panel2);
+    box-shadow:none;
+    color:var(--dim);
+    font-size:15px;
+  }
+  .card.collapsed{padding-bottom:14px;}
+  .sumline{order:3;width:100%;max-width:100%;margin:0;text-align:left;}
+
+  .todo{gap:8px;}
+  .trow{min-height:54px;padding:9px;border:1px solid var(--line2);border-radius:9px;background:var(--panel2);}
+  .trow:hover{background:var(--panel2);border-color:var(--line2);}
+  .trow button{min-height:34px;padding:5px 10px;border-radius:7px;box-shadow:none;}
+  .todo .none{border-radius:9px;}
+
+  .row{gap:8px;margin:11px 0;align-items:center;}
+  .row label{min-width:auto;color:var(--dim);font-size:12px;}
+  .row>button{min-height:42px;padding:8px 11px;justify-content:center;border-radius:8px;box-shadow:none;}
+  button.primary{background:#2f7faf;border-color:#54a7d6;box-shadow:none;}
+  button.primary:hover:not(:disabled){background:#2f7faf;border-color:#54a7d6;}
+  button.danger{background:#47292d;border-color:#815057;box-shadow:none;}
+  button.ghost{box-shadow:none;}
+  select,input{
+    min-height:42px;
+    padding:8px 10px;
+    border-color:var(--line);
+    border-radius:8px;
+    background:#111923;
+    font-size:14px;
+  }
+  input[type=checkbox]{width:18px;height:18px;min-height:18px;}
+  .hint{margin-top:8px;color:var(--dim);font-size:12px;line-height:1.6;}
+  .res{margin-top:10px;padding:8px 10px;border-radius:8px;font-size:12px;}
+  .panel{padding:11px;border-radius:9px;background:var(--panel2);border-color:var(--line2);}
+  .panel .ttl{font-size:12px;}
+
+  /* Primary actions remain obvious; secondary choices fit below without squeeze. */
+  #cardAssist .row>button:first-child,
+  #cardWelfare .row>button:first-child,
+  #cardScore .row>button:first-child,
+  #cardDock .row>button:first-child,
+  #cardSky .row>button:first-child{flex:1 0 100%;}
+  #cardAssist .row>button:not(:first-child),
+  #cardWelfare .row>button:not(:first-child),
+  #cardScore .row>button:not(:first-child),
+  #cardDock .row>button:not(:first-child),
+  #cardSky .row>button:not(:first-child){flex:1 1 calc(50% - 4px);}
+  #cardAssist .row label,#cardWelfare .row label,#cardScore .row label,
+  #cardDock .row label,#cardSky .row label{flex:1 0 100%;margin-left:0!important;}
+  #cardSpeed .row label:first-child,#cardShield .row label:first-child,
+  #cardHook .row label:first-child{flex:0 0 100%;}
+  #cardSpeed select,#cardShield select,#cardHook select,#cardHook input{flex:1 1 100%!important;min-width:0!important;}
+  #cardSpeed .row>button,#cardShield .row>button{flex:1 1 calc(50% - 4px);}
+  #cardLocate .row{align-items:stretch;}
+  #cardLocate .row label:first-child,#cardLocate input{flex:1 0 100%!important;min-width:0!important;}
+  #cardLocate .row>button{flex:1 1 calc(50% - 4px);}
+  #cardLocate #btnExport{flex-basis:100%;}
+  #cardHunt .row{align-items:flex-start;}
+  #cardHunt .row label:not([style*="min-width:auto"]){flex:0 0 100%;}
+  #cardHunt .row select[style],#cardHunt .row input[style]{min-width:0!important;}
+
+  .kv{padding:7px 0;border-bottom-color:var(--line2);}
+  .tag{border-radius:6px;}
+  .logs{height:230px;padding:9px;border-radius:9px;box-shadow:none;}
+  .logbar{gap:6px;}
+  .logbar .chip{min-height:31px;padding:5px 8px;border-radius:7px;}
+  .sqtable{display:block;overflow-x:auto;white-space:nowrap;}
+  .sqtable th,.sqtable td{white-space:nowrap;}
+  .toast{right:16px;bottom:calc(86px + env(safe-area-inset-bottom));left:16px;max-width:none;border-radius:9px;}
+  .kbar{display:none!important;}
+  .ovl{align-items:flex-end;}
+  .ovl .modal,.ovl .modal.wide{width:100%;max-height:88vh;border-radius:14px 14px 0 0;}
+}

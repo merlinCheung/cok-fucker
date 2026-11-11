@@ -4,7 +4,7 @@
 用法:
     python3 cok_client.py --cmd cmd.ping
     python3 cok_client.py --cmd daily.quest.ls
-    python3 cok_client.py --account my_account.json --cmd get.user.info.multi --params '{"uids":[136063574002223]}'
+    python3 cok_client.py --account my_account.json --cmd get.user.info.multi --params '{"uids":[<gameUid>]}'
     python3 cok_client.py --dump-only          # 只做离线回环自检, 不连服务器
 
 协议要点（全部经字节级实证，见 COK-游戏服协议实测报告.md）：
@@ -26,11 +26,13 @@ import fcntl
 import json
 import os
 import random
+import re
 import socket
 import struct
 import sys
 import threading
 import time
+import uuid as uuidlib
 import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +40,7 @@ from cok_sfs import (  # noqa: E402
     encode_object, flatten, xor_buf, read_value, Reader,
     derive_session_key, derive_login_fields, sign_code_from_cert, parse_best,
     TypedInt, SFS_BYTE, SFS_SHORT, SFS_INT, SFS_LONG,
+    restore_typed_fields,
 )
 
 DEFAULT_HOST = "42.192.152.154"   # 游戏服(2026-10-23 由设备侧 getpeername 确认)
@@ -53,29 +56,29 @@ REAL_BIN_FRAME = (
     "0003617069080005312e382e300001610300000001630200"
 )
 
-# 从线上抓包复原的账号与设备参数（海尔渠道 nearme）。
-# 敏感项来自用户本人设备上的实测登录请求；请勿外传。
+# 账号凭据模板(从设备/渠道登录复原后填入，提交前请勿硬编码真值)。
+# 必填字段: pfId / platformToken / gameUid / deviceId / uuid / signCode /
+#   buildCode / baseActiveKey / parseRegisterId / host / port / pf / channelSign
 ACCOUNT = {
-    "pfId": "nearme:g1385224335121502465",
-    "platformToken": "g1385224335121502465",
-    "gameUid": "136063574002223",
-    "deviceId": "1e933e9e19504d5",
-    "uuid": "cokc38ff41ed97c027836c622935f2a2a04",
-    "buildCode": "c7d89544df01787870515c10fba1cd68",
-    "signCode": "02aad0f0e9c4323135bd50af79bcd20d",
-    # 游戏服地址(域名优先; 备用 IP 见 DEFAULT_HOST)
+    "pfId": "<渠道:平台身份, 如 nearme:g1372797742670953701>",
+    "platformToken": "<平台 token>",
+    "gameUid": "<游戏服唯一 uid>",
+    "deviceId": "<设备 id>",
+    "uuid": "<账号 uuid(游戏服下发)>",
+    "buildCode": "<构建码(32 位 hex)>",
+    "signCode": "<签名码(32 位 hex)>",
     "host": "txaia-cok.elexapp.com",
     "port": 32231,
-    "baseActiveKey": "ljIR9UngqTsi2lSDyxooqIHdFlGwPW87nWsAe2MxobzVob8E/wrOtO9EfgZfOWbi",
+    "baseActiveKey": "<baseActiveKey>",
     "packageName": "com.hcg.cok.nearme.gamecenter",
     "appVersion": "12.06.0",
     "luaVersion": "release_12.06.0_25",
-    "serverId": "2223",                 # 客户端写的是字符串
-    "parseRegisterId": "28e1b3bd-48e3-4c7d-bd33-df82685e1ba4",
+    "serverId": "2223",
+    "parseRegisterId": "<uuid4>",
     "pf": "cn_nearme",
     "channelSign": "bang",
     "isSmall": "kao",
-    "isHDLogin": "0",                   # 字符串
+    "isHDLogin": "0",
     "lang": "zh_CN",
     "region": "CN",
     "fromCountry": "CN",
@@ -84,7 +87,7 @@ ACCOUNT = {
     "pfchild": "",
     "gaid": "",
     "gmUid": "",
-    "gmLogin": TypedInt(0, SFS_INT),    # 这个是 INT
+    "gmLogin": TypedInt(0, SFS_INT),
     "afUID": "",
     "googlePlay": "",
     "pfSign": "",
@@ -129,6 +132,29 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 ACCOUNT_LOCK_FILE = os.environ.get(
     "COK_ACCOUNT_LOCK_FILE", os.path.join(_HERE, ".cok-account.lock"))
 
+#: 账号 id -> 文件名的清洗(多账号时每个账号一把锁)。
+_LOCK_KEY_RE = re.compile(r"[^0-9A-Za-z_-]")
+
+
+def lock_file_for(key=None):
+    """按账号 id 解析锁文件路径。
+
+    * 环境变量 COK_ACCOUNT_LOCK_FILE 一旦设置, **永远**用它(测试隔离优先,
+      忽略 key) —— 保持既有测试行为不变。
+    * key 为空 -> 默认单文件 .cok-account.lock(与多账号改造前完全一致,
+      所有老调用点无需改动)。
+    * key 非空 -> 每账号一把 .cok-account-<key>.lock, 不同账号互不阻塞,
+      同账号(含跨进程)仍然互斥。
+    """
+    env = os.environ.get("COK_ACCOUNT_LOCK_FILE")
+    if env:
+        return env
+    key = str(key or "").strip()
+    if not key:
+        return os.path.join(_HERE, ".cok-account.lock")
+    safe = _LOCK_KEY_RE.sub("_", key) or "default"
+    return os.path.join(_HERE, ".cok-account-%s.lock" % safe)
+
 
 class AccountBusy(CokError):
     """账号正被别的进程/线程占用(同账号只允许一个连接)。"""
@@ -141,11 +167,22 @@ class AccountBusy(CokError):
 #: 另一个线程(poll 轮询 vs 打怪线程)会误以为自己拿到了独占权, 两个线程
 #: 同时连游戏服 → 服务端互踢(表现为"连接被服务端关闭")。
 #: 所以这里记住持有者的 thread id, 只有同线程才走计数。
+#:
+#: 多账号: 每把锁(每个账号一个锁文件)各记一份状态, 按锁文件路径索引。
 _LOCK_MUTEX = threading.Lock()
-_LOCK_STATE = {"fd": None, "depth": 0, "purpose": "", "tid": None}
+_LOCK_STATES = {}
 
 
-def _release_lock_once():
+def _lock_state(path):
+    """取某锁文件的进程内持锁状态(没有则初始化)。调用方须持 _LOCK_MUTEX。"""
+    st = _LOCK_STATES.get(path)
+    if st is None:
+        st = {"fd": None, "depth": 0, "purpose": "", "tid": None}
+        _LOCK_STATES[path] = st
+    return st
+
+
+def _release_lock_once(path):
     """把进程内持锁计数减一; 归零时真正解锁并关 fd。
 
     注意: 释放**不**校验线程 —— 打怪的锁是 action 线程拿的, 却由打怪线程
@@ -155,12 +192,13 @@ def _release_lock_once():
     """
     fdd = None
     with _LOCK_MUTEX:
-        _LOCK_STATE["depth"] = max(0, _LOCK_STATE["depth"] - 1)
-        if _LOCK_STATE["depth"] == 0:
-            fdd = _LOCK_STATE["fd"]
-            _LOCK_STATE["fd"] = None
-            _LOCK_STATE["purpose"] = ""
-            _LOCK_STATE["tid"] = None
+        st = _lock_state(path)
+        st["depth"] = max(0, st["depth"] - 1)
+        if st["depth"] == 0:
+            fdd = st["fd"]
+            st["fd"] = None
+            st["purpose"] = ""
+            st["tid"] = None
     if fdd is not None:
         try:
             # ⚠️ 必须在解锁**之前**清掉持有者信息 —— flock 释放了但文件里
@@ -183,13 +221,16 @@ def _release_lock_once():
 
 
 @contextlib.contextmanager
-def account_lock(timeout=0.0, purpose=""):
+def account_lock(timeout=0.0, purpose="", key=None):
     """占用账号互斥锁(进程内可重入)。
 
     timeout=0 表示**不等待**, 拿不到就立刻抛 AccountBusy(调用方应当跳过本轮)。
     用法:
         with account_lock(timeout=5, purpose="web poll"):
             ...连游戏服...
+
+    key 是账号 id(gameUid)。不传则用默认单账号锁(行为同改造前);
+    传了则每个账号一把独立锁, 不同账号并发不互相阻塞。
 
     **可重入**: 同一**线程**里嵌套取锁不会自己把自己挡掉(只加计数)。
     这条必须有 —— 网页控制台的 action() 已经持锁, 里面的
@@ -201,19 +242,21 @@ def account_lock(timeout=0.0, purpose=""):
     另一个线程会拿到 AccountBusy 而不是假装自己拿到了独占权。
     否则两个线程会同时连游戏服, 服务端把其中一个踢掉。
     """  # noqa: E501
+    path = lock_file_for(key)
     with _LOCK_MUTEX:
-        nested = (_LOCK_STATE["depth"] > 0
-                  and _LOCK_STATE["tid"] == threading.get_ident())
+        st = _lock_state(path)
+        nested = (st["depth"] > 0
+                  and st["tid"] == threading.get_ident())
     if nested:
         with _LOCK_MUTEX:
-            _LOCK_STATE["depth"] += 1
+            _lock_state(path)["depth"] += 1
         try:
             yield
         finally:
-            _release_lock_once()
+            _release_lock_once(path)
         return
 
-    fd = os.open(ACCOUNT_LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o644)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
     deadline = time.time() + max(0.0, timeout)
     try:
         while True:
@@ -234,21 +277,23 @@ def account_lock(timeout=0.0, purpose=""):
         except OSError:
             pass
         with _LOCK_MUTEX:
-            _LOCK_STATE["fd"] = fd
-            _LOCK_STATE["depth"] = 1
-            _LOCK_STATE["purpose"] = purpose
-            _LOCK_STATE["tid"] = threading.get_ident()
+            st = _lock_state(path)
+            st["fd"] = fd
+            st["depth"] = 1
+            st["purpose"] = purpose
+            st["tid"] = threading.get_ident()
         try:
             yield
         finally:
-            _release_lock_once()
+            _release_lock_once(path)
     except BaseException:
         # 还没成功拿到锁就退出了(flock 失败/抛异常) —— 别把 fd 泄漏掉
         with _LOCK_MUTEX:
-            if _LOCK_STATE["fd"] == fd:
-                _LOCK_STATE["fd"] = None
-                _LOCK_STATE["depth"] = 0
-                _LOCK_STATE["tid"] = None
+            st = _lock_state(path)
+            if st["fd"] == fd:
+                st["fd"] = None
+                st["depth"] = 0
+                st["tid"] = None
         try:
             fcntl.flock(fd, fcntl.LOCK_UN)
         except OSError:
@@ -260,10 +305,10 @@ def account_lock(timeout=0.0, purpose=""):
         raise
 
 
-def account_holder():
+def account_holder(key=None):
     """当前锁文件里记的持有者(给页面显示用)。"""
     try:
-        with open(ACCOUNT_LOCK_FILE, encoding="utf-8", errors="replace") as f:
+        with open(lock_file_for(key), encoding="utf-8", errors="replace") as f:
             # 清掉 NUL / 空白 —— 文件可能被旧版本写过空洞
             raw = " ".join(f.read().split("\0")).strip()
             # "free" 是空闲占位, 不是持有者
@@ -272,9 +317,9 @@ def account_holder():
         return ""
 
 
-def account_is_busy():
+def account_is_busy(key=None):
     """锁现在是否被别人占着(不抢, 只看)。"""
-    fd = os.open(ACCOUNT_LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o644)
+    fd = os.open(lock_file_for(key), os.O_RDWR | os.O_CREAT, 0o644)
     try:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -286,7 +331,7 @@ def account_is_busy():
         os.close(fd)
 
 
-def account_holder_info():
+def account_holder_info(key=None):
     """锁持有者信息。
 
     flock 的锁绑在 open file description 上, **同进程用另一个 fd 再 flock 也会失败**,
@@ -295,7 +340,7 @@ def account_holder_info():
 
     返回 {'holder': 原始字符串, 'pid': int|None, 'self': bool}
     """
-    raw = account_holder()
+    raw = account_holder(key)
     pid = None
     parts = raw.split()
     if parts and parts[0].isdigit():
@@ -305,6 +350,18 @@ def account_holder_info():
             pid = None
     return {"holder": raw, "pid": pid,
             "self": pid is not None and pid == os.getpid()}
+
+
+def apply_account_types(acc, template=None):
+    """把账号 dict 里的整数字段恢复成正确的 SFS 类型(见 cok_sfs.restore_typed_fields)。
+
+    JSON 存盘会把 TypedInt 退化成裸 int, 再读回来时 SFS 编码类型就变了
+    (gmLogin 0 -> BYTE, screen_h 2577 -> SHORT), 服务端会直接拒登。
+    """
+    if not isinstance(acc, dict):
+        return acc
+    tmpl = template if template is not None else ACCOUNT
+    return restore_typed_fields(acc, tmpl)
 
 
 def load_account(source=None):
@@ -320,7 +377,7 @@ def load_account(source=None):
         return _la()
     if source and os.path.isfile(source):
         with open(source, encoding="utf-8") as fh:
-            return json.load(fh)
+            return apply_account_types(json.load(fh))
     return {}
 
 
@@ -377,6 +434,53 @@ class CokClient(object):
         self.account = dict(ACCOUNT)
         if account:
             self.account.update(account)
+        # Imported accounts from early Android builds can contain explicit
+        # empty values for protocol-wide defaults. ``dict.update`` would let
+        # those blanks erase the packaged defaults: login still succeeds, but
+        # the server silently discards every encrypted feature request. Only
+        # restore fields which are shared protocol configuration, never an
+        # account identity or channel token.
+        for key in ("baseActiveKey", "appVersion", "luaVersion", "channelSign",
+                    "isSmall", "isHDLogin", "lang", "region", "fromCountry",
+                    "subscriberId", "phoneDevice", "pfchild", "gaid", "gmUid",
+                    "afUID", "googlePlay", "pfSign", "linkname",
+                    "instantAppCookie"):
+            if not self.account.get(key) and ACCOUNT.get(key):
+                self.account[key] = ACCOUNT[key]
+        if not self.account.get("parseRegisterId"):
+            # This is an installation registration marker, not an account
+            # credential. A locally generated UUID is valid for Android
+            # imports which did not have one persisted yet.
+            self.account["parseRegisterId"] = str(uuidlib.uuid4())
+        if not isinstance(self.account.get("device_info"), dict) or not self.account["device_info"]:
+            self.account["device_info"] = dict(ACCOUNT.get("device_info") or {})
+        else:
+            # The Android package used to persist the literal placeholder
+            # ``Android`` as os_version. This field is a protocol client
+            # marker (rather than the device's Android release); the official
+            # client sends the fixed value from ACCOUNT. That placeholder
+            # authenticates, yet makes the server drop every feature command.
+            # Repair existing imports in memory so users needn't re-add roles.
+            device_info = self.account["device_info"]
+            if device_info.get("os_version") == "Android":
+                device_info["os_version"] = (ACCOUNT.get("device_info") or {}).get(
+                    "os_version", "9.9.9")
+        # Compatibility migration for Guopan accounts imported by builds which
+        # omitted platformToken. The server-facing token is the role part of
+        # ``ewanqf:<token>``; deriving it locally repairs existing accounts
+        # without exposing credentials or requiring a second password login.
+        pf_id = str(self.account.get("pfId") or "")
+        if pf_id.startswith("ewanqf:") and ":" in pf_id:
+            # Account dictionaries are first overlaid onto a generic template.
+            # A legacy import can therefore carry a *non-empty token from a
+            # different channel*. For Guopan, pfId and platformToken identify
+            # the same selected role, so the pfId suffix is authoritative.
+            self.account["platformToken"] = pf_id.partition(":")[2]
+        # ⚠️ 贴回 SFS 整数类型: 账号可能来自 JSON(多账号库 / --account 文件),
+        #    JSON 会把 TypedInt(INT) 退化成裸 int, 编码时 gmLogin 变成 BYTE、
+        #    device_info 里的数字变成 SHORT —— 服务端对登录参数类型敏感,
+        #    类型一错就拒登(响应 id 是数字 + init.error 推送)。
+        restore_typed_fields(self.account, ACCOUNT)
         # 账号里带的服务器地址优先(设备上的 account_ip/account_port)
         self.host = self.account.get("host") or host
         self.port = int(self.account.get("port") or port)
@@ -390,6 +494,15 @@ class CokClient(object):
         # 服务端主动推送帧(与请求命令不匹配的响应)。原先被静默丢弃,
         # 现在收集起来, 供"被攻击自动开保护罩"这类事件触发使用。
         self.pushes = []
+        #: 可选的响应观察者: on_response(cmd, decoded) —— 解码后的**每个**
+        #: 响应和推送都会调一次。用来被动学习"服务端下发的道具实例 uuid"
+        #: (玩家背包没有只读接口, 只能从下发事件里学)。
+        self.on_response = None
+        # 登录后服务端下发的 `init` 推送(全局状态)。**只在这里下发**的数据
+        # 有: cargo(码头宝箱的奖励物品/刷新时间)、building、assets 等。
+        # 不缓存下来的话, 这些数据就永远拿不到 —— 端口卡片第一行
+        # (type=0 的"码头宝箱"位)就是这么显示不出来的。
+        self.init_params = {}
 
     # ---------------- 底层 ----------------
     def connect(self, retries=3, backoff=5.0):
@@ -430,13 +543,65 @@ class CokClient(object):
         out, self.rbuf = self.rbuf[:n], self.rbuf[n:]
         return out
 
+    @staticmethod
+    def _is_zlib_head(head):
+        """判断 head 是不是 zlib 流的开头(CMF/FLG)。
+
+        zlib 头 2 字节: CMF=0x78(deflate/32K窗口), FLG 使 (CMF<<8|FLG)%31==0。
+        """
+        return len(head) >= 2 and head[0] == 0x78 and ((head[0] << 8) | head[1]) % 31 == 0
+
+    def _read_zlib_stream(self, seed=b""):
+        """把 socket 里的字节当成**一整条 zlib 流**读到结束。
+
+        服务端对超大响应(实测: login.init 的 95 万字节玩家全量数据)会**不带
+        帧长度**直接发一条裸 zlib 流 —— 这时帧头的 3 个字节其实就是 zlib 流的
+        头两个字节, 长度字段是假的(读出来只有 39936, 实际 13 万)。
+        所以这里不能用长度, 只能解到 zlib 流自然结束。
+        """
+        d = zlib.decompressobj()
+        out = []
+        data = seed + self.rbuf
+        self.rbuf = b""
+        while True:
+            try:
+                out.append(d.decompress(data))
+            except zlib.error:
+                break
+            if d.eof:
+                # 多读出来的字节要退回缓冲, 否则后面的帧全错位
+                if d.unused_data:
+                    self.rbuf = d.unused_data + self.rbuf
+                break
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise CokError("连接被服务端关闭（zlib 流未结束）")
+            data = chunk
+        return b"".join(out)
+
     def _recv_frame(self):
-        head = self._recv_exact(3)
-        flags = head[0]
-        length = (head[1] << 8) | head[2]
-        payload = self._recv_exact(length)
-        if flags & 0x20:
-            payload = zlib.decompress(payload)
+        while True:
+            head = self._recv_exact(3)
+            flags = head[0]
+            length = (head[1] << 8) | head[2]
+            # 「裸 zlib 流」帧: 帧头 3 字节就是 zlib 流的开头(0x78 0x9c ...),
+            # 长度字段无效 —— 必须解到流自然结束, 否则后面所有帧都错位。
+            if flags & 0x20 and self._is_zlib_head(head[:2]):
+                payload = self._read_zlib_stream(head)
+                obj = read_value(Reader(payload))
+                return flags, obj, obj
+            payload = self._recv_exact(length)
+            if flags & 0x20:
+                try:
+                    payload = zlib.decompress(payload)
+                except zlib.error:
+                    # 服务端心跳帧: flags=0xa8, 载荷只有 2 字节 "Yv" —— 它带
+                    # 0x20(压缩) 位但根本不是压缩数据。以前在这里直接抛
+                    # zlib.error, 把整个命令判成失败。心跳没有内容, 丢掉继续读。
+                    if length <= 16:
+                        continue
+                    raise
+            break
         obj = read_value(Reader(payload))
         # 注意: 不要用 flatten() —— 响应里 "p.c" 既是命令名又是顶层数字 c,
         # flatten 会因键冲突覆盖, 导致按命令名匹配响应失效。用原始嵌套结构。
@@ -519,7 +684,10 @@ class CokClient(object):
         """登录: 发明文登录请求, 从响应里取 id 并派生会话密钥。"""
         acc = self.account
         t = int(time.time())
-        self.seq += 1
+        # Real client login uses the bootstrap sequence number 000000.  The
+        # first encrypted request must then be 000001; starting login at 1
+        # still permits authentication but channel game servers can silently
+        # discard every subsequent feature request in that session.
         derived = derive_login_fields(
             t, acc["gameUid"], acc["appVersion"], acc.get("signCode"), acc.get("buildCode")
         )
@@ -575,6 +743,26 @@ class CokClient(object):
         self._send_frame(env)
         flags, obj, f = self._recv_frame()
         lp = self._resp_params(obj)
+
+        # 服务端拒绝登录时不会下发 id。先翻译常见错误，避免把根因误报成
+        # “登录响应里没有 id 字段”。
+        if lp.get("ep") or lp.get("ec"):
+            ep = lp.get("ep")
+            ec = lp.get("ec")
+            codes = [str(code) for code in ep] if isinstance(ep, list) else []
+            zone_error = next((code for code in codes
+                               if code.startswith("E003_ZONE_")), "")
+            if zone_error:
+                err_msg = ("登录失败：账号区服不匹配（服务端要求 COK%s，错误码 %s）"
+                           % (zone_error.rsplit("_", 1)[-1], zone_error))
+            elif codes:
+                err_msg = "登录失败：服务器拒绝登录（错误码 %s）" % ", ".join(codes)
+            else:
+                err_msg = "登录失败：服务器返回异常响应"
+            if ec:
+                err_msg += " ec=%s" % ec
+            raise CokError(err_msg)
+
         id_str = lp.get("id")
         if not id_str:
             raise CokError("登录响应里没有 id 字段: %s"
@@ -585,7 +773,7 @@ class CokClient(object):
         return self.key, self.key_id
 
     # ---------------- 业务命令 ----------------
-    def call(self, cmd, params=None, retries=1):
+    def call(self, cmd, params=None, retries=1, timeout=None):
         """发一条业务命令并返回解码后的 params 明文(读操作)。
 
         实测: 新连接登录后, 服务端会**丢弃第一条加密业务请求**(不返回任何东西),
@@ -593,32 +781,47 @@ class CokClient(object):
         """
         if self.key is None:
             raise CokError("尚未登录")
-        last = None
-        for attempt in range(retries + 1):
-            try:
-                return self._call_once(cmd, params)
-            except socket.timeout as e:
-                last = e
-                if attempt < retries:
-                    log("[!] %s 无响应,重发一次(服务端会丢弃新连接的首条业务请求)" % cmd)
-                    continue
-                raise CokError("命令 %s 无响应" % cmd)
-            except CokError as e:
-                if "连接被服务端关闭" in str(e):
+        sock = self.sock
+        previous_timeout = None
+        if timeout is not None and sock is not None:
+            previous_timeout = sock.gettimeout()
+            sock.settimeout(timeout)
+        try:
+            last = None
+            for attempt in range(retries + 1):
+                try:
+                    return self._call_once(cmd, params)
+                except socket.timeout as e:
+                    last = e
+                    if attempt < retries:
+                        log("[!] %s 无响应,重发一次(服务端会丢弃新连接的首条业务请求)" % cmd)
+                        continue
+                    raise CokError("命令 %s 无响应" % cmd)
+                except CokError as e:
+                    if "连接被服务端关闭" in str(e):
+                        raise
+                    last = e
+                    if attempt < retries:
+                        log("[!] %s 失败(%s),重试一次" % (cmd, e))
+                        continue
                     raise
-                last = e
-                if attempt < retries:
-                    log("[!] %s 失败(%s),重试一次" % (cmd, e))
-                    continue
-                raise
-        raise CokError("命令 %s 失败: %s" % (cmd, last))
+            raise CokError("命令 %s 失败: %s" % (cmd, last))
+        finally:
+            if previous_timeout is not None and sock is not None:
+                try:
+                    sock.settimeout(previous_timeout)
+                except OSError:
+                    pass
 
     def _call_once(self, cmd, params=None):
         self.seq += 1
         t = int(time.time())
         p = {
             "_cok_": "%06d%06d" % (self.cok_prefix, self.seq),
-            "cmdBaseTime": t,
+            # The live client sends this as an SFS STRING, even though it is
+            # a Unix timestamp.  Sending an INT authenticates successfully
+            # but channel servers silently drop subsequent feature requests.
+            "cmdBaseTime": str(t),
             "newbasekey": "%032x" % random.getrandbits(128),
         }
         if params:
@@ -638,17 +841,27 @@ class CokClient(object):
             "c": TypedInt(1, SFS_BYTE),
         }
         self._send_frame(env)
+        # Keep Android field diagnostics useful without writing account data,
+        # session keys, request bodies, or random replay-prevention values.
+        log("[protocol] tx cmd=%s seq=%d params_bytes=%d" %
+            (cmd, self.seq, len(plain)))
 
         deadline = time.time() + self.timeout
         while True:
             flags, obj, f = self._recv_frame()
             rcmd = self._resp_cmd(obj)
             if rcmd == cmd:
-                return self._decode_response(obj, cmd)
+                decoded = self._decode_response(obj, cmd)
+                log("[protocol] rx cmd=%s flags=0x%02x" % (cmd, flags))
+                # 响应里也可能带新状态(如 cargo.reward 回的新宝箱状态)
+                self._maybe_merge_cargo(decoded)
+                return decoded
             # 推送帧(服务端主动下发): 收集而不是丢弃, 再继续等本命令的响应
             if rcmd:
                 try:
-                    self.pushes.append(self._decode_response(obj, rcmd))
+                    decoded = self._decode_response(obj, rcmd)
+                    self.pushes.append(decoded)
+                    self._maybe_merge_cargo(decoded)
                 except Exception:  # noqa: BLE001
                     self.pushes.append({"__cmd__": rcmd})
                 if len(self.pushes) > 300:
@@ -665,6 +878,75 @@ class CokClient(object):
         self.pushes = []
         return out
 
+    def receive_pushes(self, wait=0.0):
+        """Read unsolicited server frames without bypassing the frame buffer.
+
+        Login can be followed by an encrypted ``init`` push.  Callers used to
+        read the socket directly for it, which bypassed ``rbuf`` and could
+        split a later response across two readers.  Keep every frame on the
+        same decoder path instead.
+        """
+        if self.sock is None:
+            return []
+        previous_timeout = self.sock.gettimeout()
+        deadline = time.monotonic() + max(0.0, float(wait or 0.0))
+        received = []
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if wait and remaining <= 0:
+                    break
+                self.sock.settimeout(min(1.0, remaining) if wait else 0.05)
+                try:
+                    _, obj, _ = self._recv_frame()
+                except socket.timeout:
+                    if not wait:
+                        break
+                    continue
+                rcmd = self._resp_cmd(obj)
+                if not rcmd:
+                    continue
+                try:
+                    decoded = self._decode_response(obj, rcmd)
+                except Exception:  # noqa: BLE001
+                    decoded = {"__cmd__": rcmd}
+                self.pushes.append(decoded)
+                self._maybe_merge_cargo(decoded)
+                received.append(decoded)
+                if len(self.pushes) > 300:
+                    del self.pushes[:-300]
+        finally:
+            try:
+                self.sock.settimeout(previous_timeout)
+            except OSError:
+                pass
+        return received
+
+    def _maybe_merge_cargo(self, decoded):
+        """把"码头宝箱"状态合并进缓存。
+
+        宝箱(cargo)状态会出现在三个地方, 都会带**最新**值:
+          * `init` 推送(登录时) —— 整个 init 缓存一份
+          * `cargo.reward` 的**响应**(领取后: 立刻变成新物品 + 新倒计时)
+          * 带 cargo 的推送(push.adreward 等)
+
+        不合并的话, 领完之后页面还显示旧物品/旧倒计时。
+        """
+        ip = decoded.get("__params__")
+        if not isinstance(ip, dict) or not ip:
+            return
+        if (decoded.get("__cmd__") or "") == "init":
+            self.init_params = ip
+            return
+        cg = ip.get("cargo")
+        if not isinstance(cg, dict):
+            # 有些帧把宝箱字段直接摊在顶层
+            if "rewardInfo" in ip or "rewardTime" in ip:
+                cg = {k: ip.get(k) for k in
+                      ("rewardInfo", "rewardTime", "times") if k in ip}
+        if isinstance(cg, dict) and cg and self.init_params:
+            self.init_params["cargo"] = cg
+
     def _decode_response(self, obj, cmd):
         """解码响应。
 
@@ -676,11 +958,11 @@ class CokClient(object):
         pp = self._resp_params(obj)
         rcmd = self._resp_cmd(obj)
         if not pp:
-            return {"__raw__": obj}
+            return self._notify(cmd, {"__raw__": obj})
         qqq = pp.get("qqq")
         if qqq is None:
-            return {"__qqq__": None, "__cmd__": rcmd or cmd,
-                    "__params__": flatten(pp) if not isinstance(pp, dict) else {k: v for k, v in pp.items()}}
+            return self._notify(cmd, {"__qqq__": None, "__cmd__": rcmd or cmd,
+                    "__params__": flatten(pp) if not isinstance(pp, dict) else {k: v for k, v in pp.items()}})
         # 加密 params: 找值为长 hex 串的字段
         blob_key = None
         for k, v in pp.items():
@@ -690,7 +972,7 @@ class CokClient(object):
                 blob_key = k
                 break
         if blob_key is None:
-            return {"__qqq__": qqq, "__cmd__": rcmd or cmd, "__raw__": obj}
+            return self._notify(cmd, {"__qqq__": qqq, "__cmd__": rcmd or cmd, "__raw__": obj})
         raw_hex = pp[blob_key]
         blob = binascii.unhexlify(raw_hex)
         x = xor_buf(blob, self.key)
@@ -700,8 +982,23 @@ class CokClient(object):
             body = zlib.decompress(x)
         # 用 parse_best: 它会尝试所有 SFS_ARRAY 编码模式并要求完整消费缓冲区
         inner, mode = parse_best(body)
-        return {"__qqq__": qqq, "__cmd__": rcmd or cmd, "__mode__": mode,
-                "__params__": flatten(inner) if not isinstance(inner, dict) else inner}
+        return self._notify(cmd, {"__qqq__": qqq, "__cmd__": rcmd or cmd, "__mode__": mode,
+                "__params__": flatten(inner) if not isinstance(inner, dict) else inner})
+
+    def _notify(self, cmd, decoded):
+        """把解码后的响应/推送交给可选的观察者。
+
+        用途: 自动打怪要喝背包里的体力药水, 而**玩家背包没有只读接口** ——
+        道具实例 uuid 只能从"服务端下发道具"的响应里学到(领奖/掉落/获得)。
+        调用方挂一个 on_response 钩子即可被动学到。
+        """
+        hook = getattr(self, "on_response", None)
+        if hook is not None:
+            try:
+                hook(cmd, decoded)
+            except Exception:  # noqa: BLE001
+                pass
+        return decoded
 
 
 # ---------------- 离线自检 ----------------
@@ -726,11 +1023,17 @@ def selftest():
     back2 = flatten(read_value(Reader(body)))
     ok2 = back2.get("cmdBaseTime") == "1792658351"
 
-    d = derive_login_fields(1792658351, "136063574002223", "12.06.0",
-                            "02aad0f0e9c4323135bd50af79bcd20d",
-                            "c7d89544df01787870515c10fba1cd68")
-    ok3 = (d["SecurityCode"] == "014707b6687e72c32caeb40200833222"
-           and d["cc"] == "2a6cb8e03c0cac24492d589d1dede6fb")
+    # 登录字段派生自检: 输入(accountId/signCode/buildCode)**从 ACCOUNT 读**,
+    # 不写死在源码里 —— 写死的话这些真凭据会被打进安卓 APK。
+    # 安卓包里 ACCOUNT 是空模板(见 android-app/app/build.gradle), 这一项跳过。
+    _acct = ACCOUNT
+    if _acct.get("gameUid") and _acct.get("signCode") and _acct.get("buildCode"):
+        d = derive_login_fields(1792658351, _acct["gameUid"], "12.06.0",
+                                _acct["signCode"], _acct["buildCode"])
+        ok3 = (d["SecurityCode"] == "014707b6687e72c32caeb40200833222"
+               and d["cc"] == "2a6cb8e03c0cac24492d589d1dede6fb")
+    else:
+        ok3 = None   # 没有凭据(安卓包) -> 跳过, 不算失败
     k, kid = derive_session_key("4c462c581c94244362f283cd83766e4b_85")
     ok4 = k == key and kid == 85
 
@@ -744,13 +1047,14 @@ def selftest():
 
     log("  请求 XOR 回环      : %s" % ("OK" if ok1 else "FAIL"))
     log("  响应 XOR+zlib 回环 : %s" % ("OK" if ok2 else "FAIL"))
-    log("  登录字段派生       : %s" % ("OK" if ok3 else "FAIL"))
+    log("  登录字段派生       : %s" % ("SKIP(无凭据)" if ok3 is None
+                                          else ("OK" if ok3 else "FAIL")))
     log("  会话密钥派生       : %s" % ("OK" if ok4 else "FAIL"))
     log("  bin 帧逐字节等价   : %s" % ("OK" if ok5 else "FAIL"))
     if not ok5:
         log("    线上: %s" % REAL_BIN_FRAME)
         log("    我方: %s" % mine_bin.hex())
-    return all((ok1, ok2, ok3, ok4, ok5))
+    return all((ok1, ok2, ok3 is not False, ok4, ok5))
 
 
 def main():

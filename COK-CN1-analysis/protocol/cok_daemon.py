@@ -322,21 +322,30 @@ class Daemon(object):
                 self.client.close()
             except Exception:
                 pass
-        # 游戏服地址: 优先 --game-host/--game-port(网页控制台的 --host/--port
-        # 是**网页监听地址**, 不是游戏服 —— 早期两者混用, 害得控制台连自己)
-        gh = getattr(self.args, "game_host", None) or self.args.host
-        gp = int(getattr(self.args, "game_port", None) or self.args.port)
-        c = CokClient(gh, gp, self.args.timeout, self.args.account)
+        # 已入库账号的 host/port 必须优先。不同区服的 SmartFox TCP 端口
+        # 不同，例如 COK2218 使用 32181；若先取全局 --game-port(默认
+        # 32231)，即使账号凭据与 zn 都正确也会登录到错误节点并被拒绝。
+        # --game-host/--game-port 仅是没有账号地址时的启动兜底。
+        account = getattr(self.args, "account", None) or {}
+        gh = account.get("host") or getattr(self.args, "game_host", None) or self.args.host
+        gp = int(account.get("port") or getattr(self.args, "game_port", None)
+                 or self.args.port)
+        c = CokClient(gh, gp, self.args.timeout, account)
         c.connect()
         c.bin_handshake()
         c.login()
-        try:
-            c.call("cmd.ping")
-        except Exception:
-            pass
         self.client = c
         self.queues = []
-        self.grab_init()
+        # The server can send init immediately after login.  Read it through
+        # CokClient so partial frames remain in its receive buffer.
+        self.grab_init(wait=3.0)
+        try:
+            # This is the normal client-side boundary between receiving init
+            # and using feature endpoints.  It also absorbs the known first
+            # encrypted-request drop before a watcher needs to do so.
+            c.call("cmd.finishinit", retries=1, timeout=min(12.0, c.timeout))
+        except Exception as e:  # noqa: BLE001
+            self.emit("init_warning", {"cmd": "cmd.finishinit", "msg": str(e)[:120]})
         self.emit("connected", {"host": c.host, "port": c.port, "key_id": c.key_id})
 
     def grab_init(self, wait=20.0):
@@ -347,41 +356,12 @@ class Daemon(object):
         """
         out = []
         try:
-            from cok_sfs import decode_params, parse_packet
-            self.client.sock.settimeout(3.0)
-            buf = b""
-            t0 = time.time()
-            while time.time() - t0 < wait:
-                try:
-                    ch = self.client.sock.recv(65536)
-                except Exception:
-                    continue
-                if not ch:
-                    break
-                buf += ch
-                i = 0
-                while i + 3 <= len(buf):
-                    fl = buf[i]
-                    ln = (buf[i + 1] << 8) | buf[i + 2]
-                    if not (fl & 0x80) or ln == 0 or i + 3 + ln > len(buf):
-                        break
-                    try:
-                        _, _, obj, _ = parse_packet(buf[i:i + 3 + ln])
-                    except Exception:
-                        break
-                    pp = self.client._resp_params(obj)
-                    if self.client._resp_cmd(obj) == "init":
-                        for k, v in pp.items():
-                            if isinstance(v, str) and len(v) > 60 and k != "qqq":
-                                try:
-                                    o2, _, _ = decode_params(bytes.fromhex(v), self.client.key)
-                                    out = o2.get("queue") or []
-                                except Exception:
-                                    pass
-                    i += 3 + ln
-                buf = buf[i:]
-                if out:
-                    break
+            if not getattr(self.client, "init_params", None):
+                self.client.receive_pushes(wait=wait)
+            params = getattr(self.client, "init_params", None) or {}
+            out = params.get("queue") or []
+            if params:
+                self.init_params = params
         except Exception:
             pass
         self.queues = out
@@ -394,22 +374,26 @@ class Daemon(object):
         return {"today": lt.tm_mday, "month": lt.tm_mon, "now": now,
                 "date": time.strftime("%Y-%m-%d", lt)}
 
-    def poll_once(self):
+    def poll_once(self, on_state=None):
+        """Read every configured watcher once.
+
+        ``on_state`` lets embedded clients publish a successful partial snapshot
+        immediately.  A few optional game endpoints are slow or occasionally
+        never reply; callers must not have to wait for those endpoints before
+        rendering the overview which was already received.
+        """
         ctx = self.ctx()
         for name in self.args.watch:
             cmd, ex = WATCHERS[name]
             try:
-                r = self.client.call(cmd)
+                # Feature APIs can be unavailable for a channel account. A
+                # bounded read keeps the rest of the console responsive.
+                r = self.client.call(cmd, timeout=min(15.0, self.client.timeout))
             except Exception as e:  # noqa: BLE001
-                # 单个监控项失败**不中断整轮**: 有的命令在长连接上会把连接弄废
-                # (实测 allianceNewBoss.bossMainInfo 单独连接 OK, 连续发时被踢),
-                # 这里重连后继续下一个监控项, 已取到的状态保留不清空。
+                # A timeout is endpoint-specific until proven otherwise. Do
+                # not reconnect here: reconnecting makes every next endpoint
+                # become the first request on a new session again.
                 self.emit("error", {"watch": name, "cmd": cmd, "msg": str(e)[:120]})
-                try:
-                    self.connect()
-                except Exception as e2:  # noqa: BLE001
-                    self.emit("fatal", {"msg": str(e2)[:200]})
-                    raise
                 continue
             p = r.get("__params__") or {}
             prev = self.last.get(name)
@@ -424,6 +408,13 @@ class Daemon(object):
                 self.last_state[name] = state
                 self.emit("state", {"watch": name, "cmd": cmd, "state": state})
                 self.alert_on_state(name, state, prev)
+            if on_state is not None:
+                try:
+                    on_state(name, state)
+                except Exception:  # noqa: BLE001
+                    # A UI publication failure must never compromise the game
+                    # polling session itself.
+                    pass
 
     def alert_on_state(self, name, state, prev):
         """按规则把有意义的状态变化推成告警"""
@@ -524,15 +515,21 @@ class Daemon(object):
                     self.claim_total += 1
                 self.emit("claim_result", {"cmd": "lordTask.reward.process", "index": nxt,
                                           "rewardId": rewards[nxt], "award": award,
+                                          "taskKind": "lord_milestone",
                                           "errorCode": pp.get("errorCode")})
         except Exception as e:  # noqa: BLE001
             self.emit("claim_result", {"cmd": "lordTask.reward.process",
                                       "error": str(e)[:100]})
+        # 每笔奖励记住它的来源(周任务 / 主线), 领取成功后好按类目归档统计。
+        sources = {}
         # 2) 周任务奖励
         try:
             r = self.client.call("dailyQuest2025.data")
             p = r.get("__params__") or {}
-            targets += [x for x in str(p.get("weekTaskRewardId2025") or "").split(";") if x]
+            for x in str(p.get("weekTaskRewardId2025") or "").split(";"):
+                if x:
+                    sources.setdefault(x, "weekly_reward")
+                    targets.append(x)
         except Exception:
             pass
         # 3) 主线任务奖励(state==1 表示已完成)
@@ -541,7 +538,9 @@ class Daemon(object):
             p = r.get("__params__") or {}
             for t in (p.get("storyTaskList") or []):
                 if isinstance(t, dict) and _as_int(t.get("state")) == 1 and t.get("taskReward"):
-                    targets.append(t["taskReward"])
+                    rid = t["taskReward"]
+                    sources.setdefault(rid, "story_task")
+                    targets.append(rid)
         except Exception:
             pass
         room = self.args.claim_max_total - self.claim_total
@@ -563,6 +562,7 @@ class Daemon(object):
                     self.claim_total += 1
                 self.emit("claim_result", {"rewardId": rid,
                                           "award": award,
+                                          "taskKind": sources.get(rid, "task_reward"),
                                           "errorCode": p.get("errorCode")})
             except Exception as e:  # noqa: BLE001
                 self.emit("claim_result", {"rewardId": rid, "error": str(e)[:100]})
@@ -639,14 +639,22 @@ class Daemon(object):
         # 状态未知时先拉一次
         if not self.shield_end_ms:
             self.refresh_shield_state()
-        # 有罩且未过期: 只有"被攻击"才续(说明罩扛不住了), 其它触发(被侦查等)跳过
-        if (not force) and now_ms and self.shield_end_ms and now_ms < self.shield_end_ms:
-            self.emit("shield_skip", {
-                "note": "保护罩仍在生效中, 不重复开启",
-                "剩余毫秒": self.shield_end_ms - now_ms,
-                "触发": hit.get("__cmd__"),
-            })
-            return
+        # 有罩且还剩不少时间 -> 不重复开。
+        # ⚠ 早先的逻辑是"被攻击就续罩", 但保护罩是**8 小时**的定时 buff,
+        # 罩还在的时候重复开只是白白烧道具(用户一共就 9 个)。
+        # 现在改成: 罩还剩 > shield_refresh_before 秒就不动,
+        # 快到期了才续(免得续完立刻又被打)。
+        refresh_before = int(getattr(a, "shield_refresh_before", 300) or 300) * 1000
+        if now_ms and self.shield_end_ms and now_ms < self.shield_end_ms:
+            left = self.shield_end_ms - now_ms
+            if left > refresh_before:
+                self.emit("shield_skip", {
+                    "note": "保护罩仍在生效中(还剩 %.1f 小时), 不重复开启"
+                            % (left / 3600000.0),
+                    "剩余毫秒": left,
+                    "触发": hit.get("__cmd__"),
+                })
+                return
         if time.time() - self.shield_last < a.shield_cooldown:
             return
 
@@ -665,16 +673,45 @@ class Daemon(object):
             end = p.get("shieldEndTime")
             if end:
                 self.shield_end_ms = int(end)
+            # ⚠ 槽位里没有可用的保护罩道具时, 服务端**不报错也不生效**
+            # (和手动开罩一个毛病), 响应里也没有 shieldEndTime。
+            # 所以"没报错"不等于"开成了" —— 用 show.status.item 复核一次,
+            # 免得明明没开成还报"已自动开启保护罩"(白烧道具还误导人)。
+            if ok and not end:
+                try:
+                    self.refresh_shield_state()
+                except Exception:
+                    pass
+                new_end = self.shield_end_ms
+                if new_end and now_ms and new_end > now_ms:
+                    # 罩仍然生效 —— 可能本来就有(服务端不重复消耗道具)
+                    self.emit("shield_note", {
+                        "note": "保护罩已生效(到期 %s), 无需重复开启" % new_end,
+                    })
+                else:
+                    ok = False
+                    self.emit("shield_fail", {
+                        "note": "开罩没生效: 槽位 %d 里没有可用的保护罩道具"
+                                "(服务端不报错, 只是不生效)" % a.shield_slot,
+                        "slot": a.shield_slot,
+                    })
             self.emit("shield_result", {
                 "cmd": "onekeybuff.use", "ok": ok,
                 "errorCode": p.get("errorCode"),
                 "shieldEndTime": self.shield_end_ms or p.get("shieldEndTime"),
             })
-            self.alert.push(RULE_SHIELD, "已自动开启保护罩",
-                           ["触发: %s" % hit.get("__cmd__"),
-                            "槽位: %s" % a.shield_slot,
-                            "到期: %s" % (self.shield_end_ms or p.get("shieldEndTime"))],
-                           key="shield", value=p)
+            if ok:
+                self.alert.push(RULE_SHIELD, "已自动开启保护罩",
+                               ["触发: %s" % hit.get("__cmd__"),
+                                "槽位: %s" % a.shield_slot,
+                                "到期: %s" % (self.shield_end_ms or p.get("shieldEndTime"))],
+                               key="shield", value=p)
+            else:
+                self.alert.push(RULE_ERROR, "自动开罩失败",
+                               ["触发: %s" % hit.get("__cmd__"),
+                                "槽位: %s(里面没有保护罩道具?)" % a.shield_slot,
+                                "错误码: %s" % (p.get("errorCode") or "无(服务端静默不生效)")],
+                               key="shield_fail", value=p)
         except Exception as e:  # noqa: BLE001
             self.emit("shield_result", {"cmd": "onekeybuff.use", "error": str(e)[:120]})
 
@@ -852,6 +889,8 @@ def main():
                     help="onekeybuff.use 的 coverOld(1=覆盖旧罩)")
     ap.add_argument("--shield-cooldown", type=float, default=600.0,
                     help="两次自动开罩的最小间隔秒(防连续烧道具)")
+    ap.add_argument("--shield-refresh-before", type=int, default=300,
+                    help="罩还剩不到这么多秒时才续开(默认 5 分钟; 罩还早就别烧道具)")
     ap.add_argument("--webhook", help="告警 webhook URL")
     ap.add_argument("--webhook-type", default="generic",
                     choices=["generic", "wechat", "dingtalk"], help="告警载荷格式")

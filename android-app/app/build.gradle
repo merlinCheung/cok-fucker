@@ -1,0 +1,347 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.plugin.compose'
+    id 'com.chaquo.python'
+}
+
+def protocolSource = file("${rootDir}/../COK-CN1-analysis/protocol")
+def generatedPython = layout.buildDirectory.dir("generated/python")
+
+tasks.register("preparePythonSources") {
+    inputs.dir(protocolSource)
+    inputs.files(
+        file("${rootDir}/mobile-console.css"),
+        file("${rootDir}/mobile-console.js"),
+    )
+    outputs.dir(generatedPython)
+
+    doLast {
+        def output = generatedPython.get().asFile
+        delete(output)
+        copy {
+            from(protocolSource) {
+                include "cok_*.py"
+                // 全图扫描核心: 安卓端进程内线程调用 scan_world.run_scan(), 必须进包
+                include "scan_world.py"
+                include "id-names.json"
+                include "bag-items.json"
+                include "speedup-items.json"
+                include "speedup-meta.json"
+                include "shield-specs.json"
+                include "game-config.json"
+                include "monster-levels.json"
+                include "command-catalog-typed.json"
+                include "param-types-override.json"
+                include "cok_webui.html"
+            }
+            into(output)
+        }
+
+        // The desktop source carries local development credentials. The Android
+        // artifact gets only a protocol template; users add their own account.
+        def client = new File(output, "cok_client.py")
+        def safeAccount = '''ACCOUNT = {
+    "pfId": "",
+    "platformToken": "",
+    "gameUid": "",
+    "deviceId": "android",
+    "uuid": "",
+    "buildCode": "",
+    "signCode": "",
+    "host": "txaia-cok.elexapp.com",
+    "port": 32231,
+    # This is protocol-wide bootstrap configuration, not a user credential.
+    # Leaving it empty permits authentication but causes the server to discard
+    # all encrypted game commands after login.
+    "baseActiveKey": "<baseActiveKey>",
+    "packageName": "com.hcg.cok.nearme.gamecenter",
+    "appVersion": "12.06.0",
+    "luaVersion": "release_12.06.0_25",
+    "serverId": "2223",
+    "parseRegisterId": "",
+    "pf": "cn_ewanqf",
+    "channelSign": "bang",
+    "isSmall": "kao",
+    "isHDLogin": "0",
+    "lang": "zh_CN",
+    "region": "CN",
+    "fromCountry": "CN",
+    "subscriberId": "default",
+    "phoneDevice": "android",
+    "pfchild": "",
+    "gaid": "",
+    "gmUid": "",
+    "gmLogin": TypedInt(0, SFS_INT),
+    "afUID": "",
+    "googlePlay": "",
+    "pfSign": "",
+    "linkname": "",
+    "instantAppCookie": "",
+    "zn": "COK2223",
+    "pw": "",
+    "device_info": {
+        "operator_name": "",
+        "screen_h": TypedInt(2400, SFS_INT),
+        "screen_w": TypedInt(1080, SFS_INT),
+        "os_build": "Android",
+        "screen_density": TypedInt(420, SFS_INT),
+        "operators": "UNKNOWN",
+        "os_version": "9.9.9",
+        "model": "Android",
+        "os_serial": "unknown",
+        "os_fgpt": "",
+        "network_type": TypedInt(0, SFS_INT),
+    },
+}
+'''
+        // ⚠ 正则必须带 MULTILINE(?sm): `^}` 要匹配"行首的 }"这种 ACCOUNT 块的结尾。
+        //    少了 m 的话 `^` 只匹配字符串开头, 正则匹配不到 -> 替换静默失败,
+        //    **桌面端的游戏账号凭据会被原样打进 APK**(2026-10-31 踩过这个坑)。
+        client.text = client.text.replaceFirst(/(?sm)ACCOUNT = \{.*?^\}\n(?=\n\ndef log)/, safeAccount)
+        // 打包后**自检**: 整个产物里不能残留任何桌面端账号凭据。
+        //   1) cok_client.py 的内置账号必须被清空
+        //   2) 所有文件里都不能出现源账号的真实凭据串
+        // 敏感串从**源码的 ACCOUNT 块**里现取, 不写死在本脚本里
+        // (写死等于把凭据又抄进构建脚本)。
+        def srcClient = new File(protocolSource, "cok_client.py")
+        def sensitive = []
+        if (srcClient.exists()) {
+            def src = srcClient.text
+            def m = (src =~ /(?sm)ACCOUNT = \{.*?^\}/)
+            if (m) {
+                def acct = m[0]
+                ["pfId", "platformToken", "uuid", "buildCode", "deviceId"].each { k ->
+                    def kv = (acct =~ /(?m)"${k}"\s*:\s*"([^"]*)"/)
+                    if (kv) {
+                        def v = kv[0][1]
+                        // 跳过明显是占位/模板的值
+                        if (v && !v.startsWith("android") && v != "0") sensitive << v
+                    }
+                }
+            }
+        }
+        if (client.text.contains("ACCOUNT = {") && !client.text.contains('"pfId": ""')) {
+            throw new GradleException(
+                "APK 安全自检失败: cok_client.py 里的内置账号没有被清空 " +
+                "(桌面端凭据会被打进 APK)。请检查 ACCOUNT 块的替换正则。")
+        }
+        if (sensitive) {
+            def hits = []
+            output.eachFileRecurse { f ->
+                if (!f.isFile()) return
+                if (f.name.endsWith(".pyc")) return
+                def txt = null
+                try { txt = f.getText("UTF-8") } catch (Exception ignored) { return }
+                sensitive.each { s ->
+                    if (txt.contains(s)) hits << "${f.name} 含 ${s.take(6)}…"
+                }
+            }
+            if (hits) {
+                throw new GradleException(
+                    "APK 安全自检失败: 产物里残留桌面端凭据 -> " + hits.join(", "))
+            }
+        }
+        client.text = client.text.replace(
+            "import fcntl",
+            '''try:
+    import fcntl
+except ImportError:
+    class _AndroidFcntl(object):
+        LOCK_EX = 0
+        LOCK_NB = 0
+        LOCK_UN = 0
+
+        @staticmethod
+        def flock(fd, operation):
+            return None
+
+    fcntl = _AndroidFcntl()'''
+        )
+
+        // Keep the shared desktop console unchanged. The Android artifact gets
+        // its own mobile information architecture and presentation layer.
+        def html = new File(output, "cok_webui.html")
+        // Kept here temporarily as reference while the dedicated stylesheet
+        // evolves. It is intentionally not injected into the APK.
+        def legacyMobileCss = '''
+  /* Android app: touch-first layout, applied only to the packaged console. */
+  @media (max-width:640px){
+    :root{
+      --bg:#0b1019; --bg2:#101722; --panel:#151e2b; --panel2:#1a2534;
+      --panel3:#223044; --line:#2b3a4d; --line2:#223044; --fg:#f4f7fb;
+      --dim:#a9b6c9; --dim2:#8090a6; --accent:#4d8dff; --accent2:#8bb7ff;
+      --radius:8px; --radius-sm:6px;
+    }
+    body{
+      font-size:14px; line-height:1.5; background:var(--bg); background-image:none;
+      padding-bottom:env(safe-area-inset-bottom);
+    }
+    header{
+      display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:12px 16px 10px; align-items:center;
+      background:rgba(11,16,25,.97); border-bottom-color:var(--line);
+    }
+    h1{width:auto; min-width:0; font-size:18px; letter-spacing:0; color:#fff;
+       background:none; -webkit-text-fill-color:initial}
+    #connBadge{justify-self:end; max-width:150px; overflow:hidden; white-space:nowrap}
+    #connBadge .connFresh{display:none}
+    .badge{gap:5px; min-height:32px; padding:5px 9px; border-radius:6px;
+           box-shadow:none; font-size:12px; background:var(--panel2)}
+    #connText{font-size:0}
+    #connText::after{content:"连接";font-size:12px}
+    #acctBadge{grid-column:1/-1; min-width:0; width:100%}
+    #acctSelect{min-width:0; flex:1; max-width:none!important}
+    #acctBadge button{min-width:28px; min-height:28px; padding:0 4px!important}
+    header>.badge:not(#acctBadge):not(:has(#connText)):not(:has(#sLast)):not(#sGold),
+    #sDate,#sMode{display:none}
+    #sGold{display:none}
+    header>.spacer{display:none}
+    .headerActions{grid-column:1/-1; display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; width:100%}
+    .headerActions label.badge{display:none}
+    #btnRefresh{grid-column:span 1; justify-content:center; min-height:38px;
+      border-color:#5b99ff; background:#2f77ed; box-shadow:none}
+    #btnReconnect,#btnDisconnect{min-height:38px; justify-content:center}
+    #btnKeys{display:none}
+
+    .banner{margin:10px 16px 0; padding:10px 12px; border-radius:6px; font-size:12.5px; box-shadow:none}
+    .ovbar{
+      display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; overflow:visible;
+      margin:12px 16px 0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none;
+    }
+    .ov{min-width:0; min-height:80px; padding:10px; border-radius:8px; box-shadow:none;
+         background:var(--panel); border-color:var(--line)}
+    .ov:hover{transform:none; box-shadow:none; background:var(--panel2)}
+    .ov .lb{font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .ov .vl{font-size:19px; line-height:1.25; overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+    .ov .vl small{font-size:10px}
+    .ov .pip{top:6px; right:6px}
+
+    main{padding:14px 16px 36px; max-width:none}
+    .tabbar{
+      top:var(--header-h,0px); display:grid; grid-template-columns:1fr 1fr; gap:6px;
+      margin:0 0 14px; padding:8px 0; background:rgba(11,16,25,.96); border-bottom:1px solid var(--line2);
+    }
+    .tab{justify-content:center; min-height:40px; padding:8px 12px; border-radius:6px; box-shadow:none}
+    .tab.active{background:#2f77ed; border-color:#5b99ff; box-shadow:none}
+    .grid,.g2,.g3{grid-template-columns:minmax(0,1fr); gap:12px}
+    .span2{grid-column:auto}
+    .sec{margin:22px 0 8px; font-size:11px; letter-spacing:1px}
+    .card{padding:14px 12px; border-radius:8px; box-shadow:none; background:var(--panel); border-color:var(--line)}
+    .card:hover{border-color:var(--line); box-shadow:none}
+    .card h2{min-height:30px; margin:0 0 12px; padding:0 34px 10px 0; gap:4px;
+      font-size:15px; line-height:1.35; border-bottom-color:var(--line)}
+    .card h2 .sub{width:100%; font-size:11px; line-height:1.35; color:var(--dim2)}
+    .card>.fold,.card:hover>.fold{display:flex; width:30px; height:30px; top:10px; right:8px;
+      border-color:var(--line); border-radius:6px; background:var(--panel2); font-size:15px}
+    .card.collapsed{padding-bottom:14px}
+    .sumline{max-width:100%; margin:0; width:100%; text-align:left; order:3}
+    .row{gap:8px; margin:10px 0; align-items:center}
+    .row>button{min-height:40px; justify-content:center; padding:8px 12px; box-shadow:none}
+    .row label{min-width:auto; font-size:12px}
+    select,input{min-height:40px; padding:8px 10px; border-radius:6px; background:#0e1520; border-color:var(--line); font-size:14px}
+    input[type=checkbox]{min-height:18px; width:18px; height:18px}
+    .hint{margin-top:8px; font-size:12px; line-height:1.55; color:var(--dim)}
+    .res{margin-top:10px; padding:8px 10px; border-radius:6px; font-size:12px}
+
+    #cardAssist .row>button:first-child,
+    #cardWelfare .row>button:first-child,
+    #cardScore .row>button:first-child,
+    #cardDock .row>button:first-child,
+    #cardSky .row>button:first-child{flex:1 0 100%}
+    #cardAssist .row>button:not(:first-child),
+    #cardWelfare .row>button:not(:first-child),
+    #cardScore .row>button:not(:first-child),
+    #cardDock .row>button:not(:first-child),
+    #cardSky .row>button:not(:first-child){flex:1 1 calc(50% - 4px)}
+    #cardAssist .row label,#cardWelfare .row label,#cardScore .row label,
+    #cardDock .row label,#cardSky .row label{margin-left:0!important; flex:1 0 100%}
+    #cardSpeed .row label:first-child,#cardShield .row label:first-child,
+    #cardHook .row label:first-child{flex:0 0 100%}
+    #cardSpeed select,#cardShield select,#cardHook select,#cardHook input{flex:1 1 100%!important; min-width:0!important}
+    #cardSpeed .row>button,#cardShield .row>button{flex:1 1 calc(50% - 4px)}
+    #cardLocate .row{align-items:stretch}
+    #cardLocate .row label:first-child,#cardLocate input{flex:1 0 100%!important; min-width:0!important}
+    #cardLocate .row>button{flex:1 1 calc(50% - 4px)}
+    #cardLocate #btnExport{flex-basis:100%}
+    #cardLocate .mini{line-height:1.45}
+    #cardHunt .row{align-items:flex-start}
+    #cardHunt .row label:not([style*="min-width:auto"]){flex:0 0 100%}
+    #cardHunt .row select[style],#cardHunt .row input[style]{min-width:0!important}
+    #cardHunt .mini{overflow-wrap:anywhere}
+    .trow{min-height:48px; padding:8px; border-radius:6px}
+    .trow button{min-height:32px; padding:5px 9px}
+    .logs{height:220px; padding:8px; border-radius:6px; box-shadow:none}
+    .logbar{gap:6px}
+    .logbar .chip{min-height:30px; padding:5px 8px; border-radius:6px}
+    .toast{left:16px; right:16px; bottom:calc(16px + env(safe-area-inset-bottom)); max-width:none; border-radius:6px}
+    .ovl{align-items:flex-end}
+    .ovl .modal,.ovl .modal.wide{width:100%; max-height:88vh; border-radius:10px 10px 0 0}
+  }
+'''
+        def mobileCss = file("${rootDir}/mobile-console.css").getText("UTF-8")
+        html.text = html.text.replaceFirst("</style>", mobileCss + "</style>")
+        def mobileJs = file("${rootDir}/mobile-console.js").getText("UTF-8")
+        html.text = html.text.replaceFirst("</body>", "<script>" + mobileJs + "</script></body>")
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("PythonSources") }.configureEach {
+    dependsOn(tasks.named("preparePythonSources"))
+}
+
+android {
+    namespace 'com.cok.console'
+    compileSdk 37
+
+    defaultConfig {
+        applicationId 'com.cok.console'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+dependencies {
+    def composeUi = '1.11.4'
+    implementation "androidx.core:core-ktx:1.16.0"
+    implementation "androidx.activity:activity-compose:1.9.0"
+    implementation "androidx.compose.ui:ui:${composeUi}"
+    implementation "androidx.compose.ui:ui-graphics:${composeUi}"
+    implementation "androidx.compose.foundation:foundation:${composeUi}"
+    implementation "androidx.compose.animation:animation:${composeUi}"
+    implementation "androidx.compose.material3:material3:1.4.0"
+    implementation "androidx.compose.material:material-icons-core:1.7.8"
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.9.4"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+    testImplementation "junit:junit:4.13.2"
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.13"
+    }
+    sourceSets {
+        main {
+            srcDir(generatedPython)
+        }
+    }
+}

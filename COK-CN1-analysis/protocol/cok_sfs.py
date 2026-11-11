@@ -216,6 +216,39 @@ SFS_INT = 0x04
 SFS_LONG = 0x05
 
 
+def restore_typed_fields(values, template):
+    """按模板把 values 里的整数字段恢复成带 SFS 类型标注的 TypedInt。
+
+    背景(2026-10-27 实测踩坑): `TypedInt` 是 int 的子类, **JSON 存盘会把它
+    退化成裸 int**。再读回来时 SFS 编码改成"按值大小选最小类型":
+        gmLogin=0        -> BYTE(0x02)   (本该是 INT 0x04)
+        screen_h=2577    -> SHORT(0x03)  (本该是 INT 0x04)
+    服务端对登录参数类型敏感, 类型一错就直接拒登, 响应是
+        {rs, zn, un, pi:0, rl:[], id:<数字>}  +  `init.error` 推送
+    —— 数字 id 而不是 `<前缀>_<密钥ID>` 字符串 id, 字符串 id 才代表会话建成。
+
+    所以**任何从 JSON 读回来的账号凭据都要重新贴类型标签**, 否则多账号库
+    里存下来的号一个都登不上。template 一般取 cok_client.ACCOUNT。
+
+    原地修改并返回 values; template 里没有的字段保持原样。
+    """
+    if not isinstance(values, dict) or not isinstance(template, dict):
+        return values
+    for k, tv in template.items():
+        if k not in values:
+            continue
+        v = values[k]
+        if isinstance(tv, TypedInt):
+            # bool 是 int 的子类, 但布尔有独立编码, 不能当整数处理
+            if isinstance(v, bool) or isinstance(v, TypedInt):
+                continue
+            if isinstance(v, int):
+                values[k] = TypedInt(v, tv.sfs_type)
+        elif isinstance(tv, dict) and isinstance(v, dict):
+            restore_typed_fields(v, tv)
+    return values
+
+
 def encode_value(v):
     """把 python 值编码成 SFS value（不含外层 key）"""
     if isinstance(v, TypedInt):
@@ -460,7 +493,7 @@ def derive_login_fields(cmd_base_time, game_uid, app_version="12.06.0",
     """构造登录请求里的四个本地字段。
 
     cmd_base_time : int/str, 请求里的 cmdBaseTime(秒级时间戳)
-    game_uid      : str, 账号 gameUid(如 "136063574002223")
+    game_uid      : str, 账号 gameUid(如 "<uid-main>")
     app_version   : str, appVersion
     sign_code     : str, 缺省用 None(调用方需自备; 正常从证书派生)
     build_code    : str, 缺省用 None

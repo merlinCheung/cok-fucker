@@ -130,10 +130,10 @@ value     : [typeID : 1 字节][数据]
 ```
 → 登录请求: { p: { bin: true, cl: "Android", api: "1.8.0" }, a: 0, c: 0 }
 → 带凭证请求: { p: { appVersion: "12.06.0", luaVersion: "release_12.06.0_25",
-                    pfId: "nearme:g1385224335121502465",
-                    signCode: "02aad0f0e9c4323135bd50af79bcd20d",
-                    buildCode: "c7d89544df01787870515c10fba1cd68",
-                    deviceId: "1e933e9e19504d5", isSmall: "kao", ... } }
+                    pfId: "<pfId-example>",
+                    signCode: "<signCode>",
+                    buildCode: "<buildCode>",
+                    deviceId: "<deviceId>", isSmall: "kao", ... } }
 ← 登录响应: { p: { ct: 1000001, ms: 1000000, tk: "6d0cb4f72fec985b7ed4b9ac67af1477" }, a: 0, c: 0 }
 ```
 
@@ -281,7 +281,7 @@ current_key_id = keyId;          // 全局，请求侧用
 | `SecurityCode` | `md5( str(cmdBaseTime) + "e01684719c1bec876c10bb124a6d65aa" + game_uid )` | 是（依赖 cmdBaseTime） |
 | `cc` | `md5( "d6b63d01d640fb78c979912ec839a0de" + appVersion + str(cmdBaseTime) + game_uid )` | 是（依赖 cmdBaseTime） |
 
-`game_uid` = 账号 gameUid（如 `136063574002223`）；`appVersion` = 如 `12.06.0`；
+`game_uid` = 账号 gameUid（如 `<uid-main>`）；`appVersion` = 如 `12.06.0`；
 `cmdBaseTime` = 请求里的秒级时间戳。
 
 ### 5.2 逐字段的代码依据
@@ -302,7 +302,7 @@ UserDefault["theSignCode"] = signCode;      // 登录时从这里读
 
 **`buildCode`** —— `UserDefault["buildcode"]`，由渠道侧写入
 （`FUN_00cf1ef0` = `GmController::ChangeGameUID` 与 `nativeSetPlatformUID` 都会动这个键）。
-本渠道实测恒为 `c7d89544df01787870515c10fba1cd68`。
+本渠道实测恒为 `<buildCode>`。
 
 **`SecurityCode` / `cc`** —— 都在登录请求构造函数 `FUN_00c2ee8c` 内，
 用 `FUN_017a99e0`(MD5_Init) / `FUN_017aa548`(MD5_Update) / `FUN_017aadec`(MD5_Final+hex)：
@@ -330,15 +330,15 @@ md5(local_3f8) -> params["cc"];
 | B | 1792641027 | `91fc6034a167caec1fd5b126ba175206` ✓ | `ec59169ac5eae4845393b7bd9f0acf81` ✓ |
 | C | 1792658351 | `014707b6687e72c32caeb40200833222` ✓ | `2a6cb8e03c0cac24492d589d1dede6fb` ✓ |
 
-`signCode` 三会话同为 `02aad0f0e9c4323135bd50af79bcd20d`，且由 APK 证书
+`signCode` 三会话同为 `<signCode>`，且由 APK 证书
 （`META-INF/ANDROID_.RSA` 里的 X.509 DER，`Arrays.hashCode = 0x54168fb4`）独立算出同值 ✓
 
 **运行时实证**（hook 设备版 native `MD5_Update`，抓到真实输入缓冲）：
 
 ```
-1792658351e01684719c1bec876c10bb124a6d65aa136063574002223
+1792658351e01684719c1bec876c10bb124a6d65aa<uid-main>
     → SecurityCode = md5(...) = 014707b6687e72c32caeb40200833222   与线上完全一致
-d6b63d01d640fb78c979912ec839a0de12.06.01792658351136063574002223
+d6b63d01d640fb78c979912ec839a0de12.06.01792658351<uid-main>
     → cc = md5(...) = 2a6cb8e03c0cac24492d589d1dede6fb                与线上完全一致
 ```
 
@@ -647,7 +647,7 @@ python3 cok_client.py --account-device --cmd monthlySign.info   # 一键直连
 实测（`--account-device` 端到端）：
 
 ```
-[+] 已从设备读取账号: {"pfId":"nearme:g1385224335121502465","gameUid":"136063574002223",
+[+] 已从设备读取账号: {"pfId":"<pfId-example>","gameUid":"<uid-main>",
                         "host":"txaia-cok.elexapp.com","port":32231}
 [*] 已连接 txaia-cok.elexapp.com:32231
 [+] bin 握手成功 tk=… ct=1000001 ms=1000000
@@ -997,6 +997,99 @@ push.protect.time          保护罩时间变更
 > 开保护罩消耗道具，回城可能损失战利品。**风控上也更敏感**（主动出征比只读/领奖更容易被识别）。
 > 建议顺序：保护罩（最简单、纯道具）→ 回城（纯防守）→ 采集（主动出征，最后做）。
 
+### 6.14 背包与体力药水（2026-11-10 真机实测）
+
+#### 6.14.1 `login.init` = 直连拉全背包（只读）
+
+**这一条推翻了 2026-10-25 的旧结论**「直连拉全背包的命令名仍未定位」。
+旧结论的成因是：当时把 `rlQW45Y` 解开后**递归扫了整棵树**，
+带 `uuid` 的 dict 只有 101 个、且全是 `building[]`（建筑实例），
+于是判成「init push 里没有背包」—— **那次扫法漏掉了 `items` 这一层的匹配形态**
+（`items` 的元素里 `uuid` 和 `itemId` 是**平级**的，按「uuid 所在 dict 里有没有 itemId」
+去匹配是能匹配上的，问题在于当时的扫描器只认嵌套在 `itemObj` 里的 uuid）。
+
+**实测**（2026-11-10，4 个账号）：
+
+```
+login.init  ->  {"qqq": <keyId>, "rlQW45Y": "<30 万 hex>"}
+rlQW45Y     ->  XOR(会话密钥) -> zlib -> SFS 对象(133 个顶层键 / 95 万字节)
+其中 items = [{"itemId":"200381","count":40,"uuid":"94e0...","para1":"107","para2":"50"}, ...]
+```
+
+* **`items` 就是玩家背包**：每条带 `itemId` / `count` / `uuid`(道具实例 id) /
+  `para2`(体力值) / `useDate` / `vanishTime`
+* 道具是**堆叠**的（一个实例 `count=N`），实例 uuid 在 count 用完前**稳定**
+  ⇒ **拉一次缓存起来能长期用**，不需要反复拉
+* 实测背包规模：`<uid-guopan>` → 770 件；`<uid-main>` → 515 件；
+  `<uid-guopan-intl>` → 685 件
+
+**⚠️ 坑 1：这个响应是「裸 zlib 流」** —— 服务端**不发帧长度**，
+帧头 3 字节直接就是 zlib 流的开头（`78 9c …`）。
+按长度字段读会读出 39936 而实际约 13 万字节，**后面所有帧全部错位**。
+⇒ `cok_client._recv_frame` 新增 `_is_zlib_head` / `_read_zlib_stream`，
+必须解到 zlib 流自然结束才算一帧。
+
+**⚠️ 坑 2：服务端会发 5 字节心跳帧**（`a8 00 02` + 2 字节载荷）。
+按压缩帧解会抛 `zlib.error` —— 现在按心跳跳过。
+
+**⚠️ 坑 3：服务端丢弃新连接的首条业务请求** —— `login.init` 第一次常常超时，
+**重发一次**才有响应（`retries=1`）。
+
+**耗时 40~50 秒**（响应 95 万字节）⇒ 只在真需要时拉一次，然后缓存到
+`accounts/<uid>.items.json`。
+
+#### 6.14.2 `item.use` = 用掉一个道具实例
+
+```jsonc
+{ "uuid": "<道具实例 uuid, 32 位 hex>", "num": <SFS INT> }
+```
+
+```python
+from cok_sfs import TypedInt, SFS_INT
+client.call("item.use", {"uuid": uuid, "num": TypedInt(1, SFS_INT)}, retries=1)
+```
+
+**实测响应**（真服，喝 1 瓶 200380）：
+
+```json
+{"itemId": "200380", "itemEffectObj": {"stamina": 300}, "count": 1}
+```
+
+体力 **290 → 300（+10）** —— 真的生效。
+
+**三个必死的点**：
+
+- `uuid` 是**道具实例 id**，不是模板 id —— 传 `"200381"` → `E000000`
+- `num` **必须编码成 SFS INT**（`TypedInt(n, SFS_INT)`），传普通 int → `E000000`
+- uuid 不存在 → `E100166`（没有该道具）；数量不够 → `E100165`（道具数量不足）
+
+#### 6.14.3 体力药水（自动打怪喝药用）
+
+| 道具 id | 恢复体力 | 来源 |
+|---|---|---|
+| `200380` | +10 | 客户端道具表 `para` 字段 |
+| `200381` | +50 | 同上 |
+| `200382` | +100 | 同上 |
+
+客户端配置 `data_config.auto_kill_monster.k1 = "200380;200381"`。
+
+**已排除的路线（别再试）**：
+
+| 路线 | 结论 |
+|---|---|
+| 服务端代喝药 `autoQueue.status {status:1}` | ❌ 需「自动打怪周卡」（客户端 k2=766437），4 个账号全部 `E000000` |
+| `autoQueue.status {status:0}` | ✅ 能读回 stamina，但只是关着，不代喝 |
+| `autoQueue.data` | ✅ 可读（saveItems/useItems/status/lv/autoCount/force/format） |
+| 商城买 `mall.info` / `mall.data` | ❌ 这 4 个号（497 条商品 / `mallId:"15"` 206 件）**不卖** 200380/200381/200382；换 mallId → `E000004` |
+| `item.buy {id, num}` | 参数名是 **`id`**（传 `itemId` 报 `E000000`），能返回 uuid，但买体力药水 → `E000000` |
+
+**错误码速查**：`E100047`=体力不足 / `E100165`=道具数量不足 /
+`E100166`=没有该道具 / `E000000`=参数错误 / `E000004`=对象不存在。
+
+**落地**：控制台「自动打怪」新增开关「体力不足自动喝体力药水」（PC + 安卓都有）。
+没缓存到实例时自动拉一次背包（40~50 秒）→ 喝 → 计数减一 → 用完丢掉 uuid。
+喝药失败**不计入打怪 fails**。
+
 ## 7. 抓到的真实命令
 
 一次 200 秒会话内实证到的命令（请求 194 帧 / 响应 177 帧）：
@@ -1054,10 +1147,10 @@ redPackets.rvd.id              contact.get.server.current      permissionCommand
 
 ### 剩下的门槛
 1. **渠道账号鉴权**：`pfId` / `platformToken` / `gameUid` 来自海尔渠道登录
-   （`nearme:g1385224335121502465` 这类 token）。**目前用的是从 App 抓包复原的现成 token**；
+   （`<pfId-example>` 这类 token）。**目前用的是从 App 抓包复原的现成 token**；
    要长期脱离 App，需要解决渠道 token 的获取与续期——这是**账号体系问题，不是协议问题**。
    （协议层的 `signCode`/`buildCode`/`SecurityCode`/`cc` 已全部可本地计算。）
-2. **设备标识**：`deviceId`（`1e933e9e19504d5`）与 `uuid`（`cok` + 32 hex）
+2. **设备标识**：`deviceId`（`<deviceId>`）与 `uuid`（`cok` + 32 hex）
    是首次安装时本地生成并持久化在 `UserDefault` 的，换设备需要复现生成规则
    （尚未逆，但直连端可以自己生成并保持稳定）。
 3. **风控**：`newbasekey`、`_cok_` 序号、`cmdBaseTime` 说明服务端在做重放/时序校验；
@@ -1081,6 +1174,466 @@ redPackets.rvd.id              contact.get.server.current      permissionCommand
 
 ---
 
+## 8.1 多账号登录：怎么登录"其他账号"（2026-10-28 实证）
+
+### 8.1.1 一句话结论
+
+**登录另一个号 = 拿到另一套凭据。协议侧没有障碍，唯一的卡点是"新号的凭据从哪来"。**
+
+登录请求里真正跟"账号"绑定的字段只有 4 个：
+
+| 字段 | 含义 | 作用域 |
+|---|---|---|
+| `pfId` | `<渠道>:<平台token>`（nearme:`g1385224335121502465`） | **每账号** |
+| `platformToken` | 同上的 token 部分 | **每账号** |
+| `gameUid` | 游戏角色 id | **每账号** |
+| `uuid` | `cok` + 32hex | **每账号** |
+
+其余（`signCode`/`buildCode`/`packageName`/`pf`/`channelSign`/`deviceId`/`host`/`port`/`zn`/
+`device_info`…）都是**每设备/每包/每区服**的公共字段，账号库里用模板补齐即可。
+
+### 8.1.2 凭据是长期有效的 bearer token（已实证）
+
+`<pfId-example>` 是 **2026-10-22** 抓的，**2026-10-28 仍然能登录**（当天实测
+`bin 握手 → 登录 → id 派生密钥` 全通）。→ 平台 token 实质是**长期用户标识**，不是会话 token，
+**抓一次就能长期用**；账号入库后**完全不依赖手机**。
+
+### 8.1.3 游戏自带的"设备绑定 / 切换账号"—— 本服暂不可用（已证伪）
+
+客户端里有一整套官方多账号机制（lua `game/deviceAccount/`）：
+
+| 命令 | 参数 | 作用 |
+|---|---|---|
+| `device.bind.info` | — | 列出**绑定到本设备**的所有账号（gameUid / buildcode / ip / port / zone / uuid / greenServer） |
+| `device.bind.export` | `opUid` | 导出某账号 → 返回 `{code, expireTime}` **授权码**（可把号搬到别的设备） |
+| `device.bind.import` | `code` | 用授权码把账号导入本设备 |
+| `device.bind.hide` | `opUid` | 隐藏某账号 |
+
+文案也证实了这是官方多号入口：*"开始新游戏之后，您可通过**切换账号功能**找回当前账号"*
+（`E100180`）；v2 界面的账号切换走 native `changeDeviceUser`，列表项含
+`gameUid/gameUserName/gameUserLevel/greenServer`。
+
+**实测（2026-10-28，正式服 COK2223）**：
+* `device.bind.info` 服务端**认识这个命令**，但回 `errorCode=E000000`；
+* 试了 19 组参数（`type` / `serverType` / `greenServer` / `old` / `gmFlag` / `serverId` / `zn` /
+  `gameUid` / `uid` / `opUid` 及其组合，INT 与 STRING 两种写法）**全部 E000000**；
+* 登录响应已整份 dump 过：只有资源版本 + `id` + `ver`，**没有任何角色/账号列表**。
+
+对照实验（重要）：**未知命令会被服务端直接断连**（`zzz.no.such.cmd` 实测 = 连接被关闭，
+不是 E000000）。所以 `E000000` 意味着"**命令存在、请求被拒**"，而不是"命令不存在"。
+→ 结论：**当前 build / 正式服上这条路走不通**；若要定论，必须在手机上抓一次真实
+`device.bind.info` 请求（native 侧 `requestDeviceAccount` 发的，参数名在加密的
+libgame.so 字符串里，静态反不出来）。
+
+### 8.1.4 两条会伪装成"协议失败"的坑（本次踩到）
+
+1. **同账号只允许一个连接**：第一次探针连主号立刻被断连，一度以为是协议问题；
+   真相是**网页控制台正在用主号**（`.cok-account-<uid>.lock` 的 mtime 暴露了它在占用哪个号）。
+   → 探针/抓包**必须换一个控制台没在用的号**，或者先停掉控制台。
+2. **每条连接的首条业务请求会被丢弃**（丢 = 超时，不是断连），`call()` 自带重试能兜住。
+   两次 `cmd.ping` **挡不住**（实测 ping 之后第一条业务命令照样被丢）。
+
+### 8.1.5 候选方案（按性价比排序）
+
+| # | 方案 | 做法 | 成本 | 备注 |
+|---|---|---|---|---|
+| **A** | **抓包收割（推荐）** | 手机 `tcpdump -i any "tcp port 32231"` → **登录帧是明文** → 直接抽出 `pfId/platformToken/gameUid/uuid` → 自动入库 | 一次性写脚本 | 跨渠道/跨包通用；用户在手机上切号登录一次就收一个号 |
+| B | frida 收割 | hook native 登录参数构造（`FUN_00c2ee8c`）或 `nativeSetPlatformUID` | 要 frida 环境 | 比 A 干净，但更折腾 |
+| C | `device.bind.*` | 一次列出本机所有绑定号 | 先要手机抓真实请求 | 当前服 E000000，待验证 |
+| D | 渠道 SDK 直连 | 逆 nearme/ewanqf 登录协议，自己换 token | 高 | 最彻底，可彻底脱离手机 |
+| E | 手填 | 网页加表单手填 4 个字段 | 最低 | 值还是得从手机拿，只是搬运 |
+
+**推荐 A**（手机当"发卡机"，PC 当"大脑"）：手机只负责登录/切号，
+PC 侧自动收割凭据并写进 `protocol/accounts/<gameUid>.json`。
+工具底座已有：`/tmp/cokccbi/pcap_sfs.py`（pcap → TCP 流重组 → SFS 帧）+
+`cok_sfs.parse_best`（明文登录帧直接可解）。
+
+### 8.1.6 「没有手机」怎么拿到新号的凭据（2026-10-28 追加）
+
+**前提**：手机只在**产生凭据的那一刻**需要；凭据一旦入库就与设备无关（见 8.1.2）。
+所以问题不是"要不要手机"，而是"**谁去跑那一次渠道登录**"。三条路：
+
+#### 路径 1（对朋友最友好）：游戏自带的「账号绑定 / 导出 / 切换账号」
+
+客户端 `game/deviceAccount/` 的语义已确认：**绑定 = 把游戏角色绑到 elex 账号（手机号）**，
+不是"设备上的多个角色"。文案：*"为了您的账户安全，您需要将当前账号绑定后才能开始新游戏。
+开始新游戏之后，您可通过**切换账号功能**找回当前账号"*（`E100180`）。
+
+所以官方设计的跨设备流程是：
+
+```
+朋友手机: 设备账号 → 导出账号  →  得到 {code, expireTime} 授权码  →  发给我们
+我们 PC  : device.bind.import {code}  →  拿到账号(gameUid/uuid/ip/port/zone)
+```
+
+**优点：对方零门槛**（不用 root、不用 USB、不用我们碰他的手机），**我们这边零依赖**
+（直接调游戏服命令）。
+**未解**：`device.bind.*` 直连被 `E000000` 拒（19 组参数全试过），
+真实参数在 native `requestDeviceAccount` 里（libgame.so 加密串）→ **必须抓一次真机请求**。
+注意 `device.bind.export` 是**写操作**（会生成授权码），跑之前要用户点头。
+
+#### 路径 2（完全不需要手机）：PC 端复刻 elex 账号服务 —— **已复刻成功（2026-10-28）**
+
+**1) elex 账号服务的接口（APK `com.elex.account.client` 全明文）**
+
+base（CN）：`https://accountapi3.elexapp.com` / `https://accountapi1.elexapp.com`
+（debug 环境：`http://169.53.247.133:81`）
+
+**URL = base + 路径 + appId（appId 是路径的一段，不是 query！）** —— 这是最关键的坑：
+```
+https://accountapi1.elexapp.com/services/v1/user/login/10001001
+https://accountapi1.elexapp.com/services/v1/user/token/10001001
+https://accountapi1.elexapp.com/services/v1/user/register/10001001
+https://accountapi1.elexapp.com/services/v1/user/editpass/10001001
+https://accountapi1.elexapp.com/services/v1/verifycode/getcode/10001001
+https://accountapi1.elexapp.com/services/v1/user/addantiaddiction/10001001
+```
+少了末尾的 `/10001001` 就是 `500 Internal server error`（被 WAF 挡着，看着像服务挂了）；
+带上就是正常 JSON。方法：`POST` + `Content-Type: application/json`。
+
+**2) 请求体**
+
+```
+登录: {"email": "<账号>", "passmd5": "<md5(md5(pwd)+'p392SYseXuu9wot9').lower()>"}
+公共参数(JsonHelper.fillCommonParams): ip / lang / country / time(ms) / sig
+```
+**3) 签名（SignUtil.createAccountSign）**
+```
+每个字段拼成 "k=v&"（嵌套 JSONObject 递归）→ 大小写不敏感排序 → 拼接
+sig = md5( 拼接结果 + "key=zOXjcEOc48UAj7fY" ).lower()     # sig 自身不参与签名
+```
+
+**4) 实测（假账号）**
+```
+POST .../services/v1/user/login/10001001
+{"email":"nobody@example.com","passmd5":"<md5(md5('wrongpass')+'p392SYseXuu9wot9')>",...}
+→ {"code":105201,"message":"no account or pass error","body":null}
+```
+**手机号登录**(PhoneLoginActivity.requestLogin 原始字段，实测 accountType=1 才通：
+0→500、2/3→param error)：
+```
+{"accountType":1, "mobile":"<手机号>", "countryCode":"86", "passmd5":"<同上>", ...公共参数}
+```
+→ **参数形状 + 签名全部正确**（已经走到账号校验这一步）。
+`tools`: `protocol/cok_elex_account.py`（login / phone-login / getcode / token / raw）、
+`protocol/cok_elex_game_login.py`（拿到 token → 直接试登游戏服）。
+
+**5) 最关键的桥：elex 账号就是一条合法的游戏登录通道**
+
+`com.clash.of.kings.COK_CN1.onCreate` →
+```java
+ElexAccount.getsInstance().initlizePhone(ctx, "10001001", callback);   // 手机号登录已开
+```
+`COK_CN1$1.onLoginSuccess(userId)` →
+```java
+Native.nativeSetPlatformUID("elextech:" + userId);      // ← 平台身份 = elextech:<elex uid>
+```
+→ **elex 手机号登录成功后，游戏把平台身份设成 `elextech:<uid>`**，
+于是游戏服登录参数就是 `pfId = "elextech:<elex uid>"`、`platformToken = <elex token>`。
+**这意味着：手机号+密码 → elex token → 直接在 PC 上登录游戏服，全程不需要手机、不需要渠道 SDK。**
+
+**6) 官方通道包的常量（我们分析的这个 APK 就是它）**
+
+| 项 | 值 | 来源 |
+|---|---|---|
+| 包名 | `com.hcg.cok.cn1` | apktool/AndroidManifest.xml |
+| 渠道 | `cn1` | `PublishImpl.getPublishChannel()` 返回 "cn1" |
+| signCode | `df0b8b7ab5a75e84f8f7cfccd0a5d165` | 由本包 CERT.RSA 派生(`sign_code_from_cert`) |
+| pf | 推测 `cn_cn1` | 规律: nearme→`cn_nearme`、ewanqf→`cn_ewanqf` = "cn_"+渠道 |
+| appId | `10001001` | `initlizePhone(ctx, "10001001", ...)` |
+
+**未解**（需要一次真实 elex 账号做实验）：
+1. elextech 通道的 `pf` 取值（`cn_cn1` / `cn1` / `elextech` 三个候选，脚本会挨个试）；
+2. `gameUid` 怎么给（服务端按 elex uid 绑定角色？还是首次登录自动建号 → **PC 端直接开新号**）；
+3. 已存在的渠道号（nearme/ewanqf）**能不能**改用 elex 身份登（要先在游戏里「账号绑定」）。
+
+**7) 实测（真实账号，2026-10-28 下午）**
+
+用手机号 `18153242005` 走完了整条 elex 链路：
+
+| 步骤 | 结果 |
+|---|---|
+| `phone-login`（密码登录） | `105201 no account or pass error` → **该手机号在 elex 原本没有账号** |
+| `getcode`（发短信验证码） | `{"code":0,"message":"success"}`（⚠️ 对任意号码都 success，不能用来判断账号是否存在） |
+| `register`（验证码+密码） | `{"code":0,"message":"success","body":{"uid":"304352946010873"}}` → **账号创建成功** |
+| `phone-login`（再登） | `{"code":0,"body":{"uid":"304352946010873","t":"1793165300204","token":"bfd6f405…"}}` → **拿到 token** |
+
+→ **elex 账号体系在 PC 上完全跑通**：注册 / 登录 / 换 token 三个接口都实测可用。
+
+**8) elex 身份登游戏服：到了服务端，但差"角色"**
+
+用 `pfId=elextech:<elex uid>` + `platformToken=<elex token>` 打游戏服（12 组参数组合都试过）：
+
+| 条件 | 服务端返回 | 含义 |
+|---|---|---|
+| `gameUid=""` | `{"ep":["E100111",ts],"ec":28}` | **E100111 = 无法获取服务器信息**（`text_zh_CN.ini` 查表）→ 服务端找不到这个身份对应的角色/区服 |
+| `gameUid="0"` / 随机 15 位 | `{"ep":["E002",ts],"ec":28}` | E002 = 登录服自己的错误码（token/角色不匹配） |
+| `pf=elextech` + `gameUid=<elex uid>` | `{"ep":["E001"],"ec":28}` | 又一个不同的码 → **pf=elextech 确实被区别对待**（其余组合都只回 E002） |
+
+→ **游戏服认识 elextech 这个通道**（不然会像未知命令那样直接断连），差的是**该身份在区服上还没有角色**。
+
+**9) 建号入口在 HTTP gameservice，且需要 native 里的 sig**
+
+新身份要先拿到"区服 + gameUid"，走的是 HTTP（`libgame.so` 明文 URL）：
+```
+https://%s/gameservice/getserverlist.php?uuid=%s&loginFlag=%d
+https://p3cok.elexapp.com/gameservice/getpfbydeviceid.php?deviceId=
+```
+实测：这些 PHP 接口都会校验 `sig`（`sig error` / `sig fail`）。
+→ **sig 的 key 在 libgame.so 的加密字符串里**（该库除了 URL 之外全加密，静态 grep 不到），
+用 elex 账号服务那两把 key（`zOXjcEOc48UAj7fY` / `…swWXswowW`）各种拼法都试过，全部 `sig error`。
+→ 要继续只能：(a) frida 在真机 runtime dump 解密后的字符串；(b) 静态解 libgame.so 的字符串加密（Ghidra 工程已在）。
+
+> ### ✅ 订正（2026-10-29 21:4x）：**sig 已破解，`getserverlist` 已可用**
+>
+> 上面的判断（"key 在加密串里、静态 grep 不到、只能 frida"）**不成立**。真正的破法是**游戏自己把带签名的 URL 打进 logcat**：
+> ```
+> adb logcat -d | grep -oE "https://[^ ]+gameservice/[^ ]+"
+> ```
+> 于是直接拿到 **明文参数 + sig** 的成对样本（4 组），直接爆破即得：
+>
+> ```
+> sig = md5( uuid + str(t) + "@z4LugUwrDN0MqOJtzmHPK7Ss-k4taAUOZh1M3Yu9" )
+> ```
+> 密钥常量在 `lib/arm64-v8a/libgame.so` 里**明文可见**（`strings` 能捞到）——
+> 之前"grep 不到"是因为搜的是**加密后的字符串池**，而这个常量是裸常量。
+> 4/4 真机样本逐字节一致（详见 `RE-渠道登录逆向方案.md` §8.13）。
+>
+> `getserverlist.php?uuid=<设备16hex>&pfId=<渠道身份>&loginFlag=1&sig=...` 响应里**直接含**：
+> ```
+> gameUid / 账号uuid / zone / ip / port / buildCode / gameUserName / gameUserLevel
+> ```
+>
+> ### 🔓 由此推翻「uuid 强绑定设备」这一结论（§8.9 的实验 Y 需要重读）
+>
+> | 实验 | 结果 |
+> |---|---|
+> | 同一个 pfId + **全新随机设备 uuid** | 仍返回**同一个角色**（原 gameUid / 账号 uuid / 昵称） |
+> | 合法 pfId + **全新 deviceId** 走 SFS 登录 | **✅ 登录成功** |
+>
+> ⇒ **uuid 绑定的是"账号"而不是"设备"；服务端会按 pfId 主动把正确 uuid 下发给你。**
+> ⇒ **拿到 pfId = 拿到该账号的全部游戏服凭据**，不需要手机 / root / 模拟器 / 官方转移通道。
+> （实验 Y「换全新 uuid → E002」仍然成立：那是因为 uuid 是**错的**；正确 uuid 来自服务端，不是来自设备。）
+
+**10) 因此当前可落地的路径：装官方包 + 登一次 + 网页「＋」**
+
+仓库里就有官方包：`5396(12.06.0)-COK_CN1--20260923-1727-10.apk`（= `com.hcg.cok.cn1`）。
+装上 → 用刚注册的 elex 账号登录一次 → 网页点「＋」自动入库（`cok_account.list_packages()`
+按 `com.hcg.cok.*` 扫全部包，**新渠道零代码**）→ 之后 PC 端独立使用，不再需要手机/root/USB。
+顺带还能测出"官方通道的 account_zone / account_ip / account_port 是不是和渠道包一样"。
+
+### 8.1.7 渠道「账号 / 密码」方式（2026-10-29 真机取证）
+
+手机连上后，对 **oppo(nearme)** 和 **果盘(ewanqf)** 两个在装的渠道做了取证。
+
+#### 果盘（`com.hcg.cok.ewanqf.guopan`）—— 账号密码制，可复刻但要逆加密
+
+* SDK 是**插件式**的：`guopan/sdk/plugin/gp_sdk_plugin_5_5_4_3.apk`（10.7MB，6 个 dex +
+  `libEncryptorP.so` / `libgism.so`），主包 `com.flamingo.sdk.dex1`（重度混淆）。
+* 账号方式：**手机号/账号 + 密码**（另有短信验证码 `XXSMSCodeReqType_LOGIN`、微信登录、游客）。
+* 登录流程：
+  1. **先取 salt**（错误码 `ELogin_RequestSaltOK`）→ 2. `signMD5`(密码, salt) → 3. 登录 → 4. 拿 `loginKey`
+  （存于 `SP_KEY_APP_LOGIN_KEY`）。
+* **账号身份三元组**（`SuperSDK.xml` 里 base64 JSON，已解出）：
+  ```json
+  {"OpenId":"1084D65F5A7FCB599158","ChannelOpenId":"C654F5A7FCB599158","Token":"abf6839f913043b8813f863bdee6976c51084"}
+  ```
+* 换成**游戏专属 uid**：协议命令 `SUBCMD_ACCOUNT_LOGINBETWEENAPPREQ`（OpenId+Token+`appid=140514`）
+  → 游戏侧就是 `pfId = ewanqf:<uid>`（本机实测 `ewanqf:1084D654F5A7FB599158`）。
+* 传输：基址 `http://userapi.guopan.cn/gamesdk/`，**二进制 subcmd 协议**
+  （`SUBCMD_ACCOUNT_*REQ/RES`）+ `libEncryptorP.so` 加密。
+  → **PC 端复刻需要先逆那个 75KB 的 .so**（中等偏大的工程）。
+
+#### oppo / nearme（`com.hcg.cok.nearme.gamecenter`）—— 账号密码制，但基本不可复刻
+
+* SDK（gcsdk / heytap）**内置在游戏包里**（不是插件），账号体系在 **OPPO 自己的 App**
+  `com.nearme.gamecenter` 里（`AuthLocal.xml` 只有 65 字节 ≈ 空 map，真正的会话在 OPPO 那边）。
+* **角色身份明文**（`com.nearme.gamecenter.open.xml` → `gcsdk_tag_local_role_info`）：
+  ```json
+  {"gameSysID":"com.hcg.cok.nearme.gamecenter","ssoid":"1385224335",
+   "gcuid":"com.hcg.cok.nearme.gamecenter","roleid":"g1385224335121502465",
+   "roleName":"GU521946202610161131912","roleShareStatus":"0"}
+  ```
+  `roleid = g1385224335121502465` 就是**平台 token**（游戏侧 `pfId=nearme:<roleid>`）。
+* → 账号密码校验在 OPPO 服务端 + gcsdk 原生（还要过设备指纹/短信风控），**PC 端复刻不可行**。
+
+#### 果盘账号协议：**真机抓包实测**（2026-10-29）
+
+设备侧 tcpdump（root）抓到了 SDK 的真实请求，协议形态确认：
+
+```
+POST http://userapi.guopan.cn/gamesdk/140514 HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 953
+<body = MIME 换行(76 列)的标准 base64 → 解出 704 字节密文>
+```
+同族端点（同一批抓到）：`/gamesdk/init/140514`、`/gamesdk/recommend/140514`、
+`/xxdatareport.php?appid=140514`、`/time.php`。
+**路径 = base + appid**（不是 query 参数）。
+
+* body = **标准 base64** → 解出来是**高熵密文**（704 字节，16 字节分块**无重复** → 不是 ECB）。
+* 加密在 `libEncryptorP.so`（75KB，**stripped**，只导出 `JNI_OnLoad`，内部动态注册 native
+  方法 `ttEncrypt`）。
+* 载荷格式 = **GPXX Proto**（`com.GPXX.Proto.*`，**2357 个类且名字全混淆**；proto 描述符里
+  的**字段名是明文**：`account / userName / password / salt / appId / appKey / sign /
+  timestamp / imei / oaid / vaid / aaid / fdid / openId / token / cmd / subcmd` …）。
+* 签名盐：`#%$*)&*M<><vance`（`com.flamingo.sdk.u7.b` / `dex3.request.a` 里出现）。
+
+→ **要在 PC 端完全复刻果盘登录 = 逆 `libEncryptorP.so` + 摸清 GPXX 消息 schema**，
+属于多天工程；而**捷径**（让安卓环境替我们跑那一次密码登录）零逆向成本，见下。
+
+#### `pf` 服务端**确实校验**（2026-10-29 实测）
+
+鸭皇号（`nearme:g1372797742670953701`）：
+
+| pf | 结果 |
+|---|---|
+| `cn_nearme` | ✅ 登录成功 |
+| `nearme` / `cn_ewanqf` / 乱填 | ❌ `E002` |
+
+→ `pf` 是**每账号**字段，"cn_<渠道段>"只是归纳，**不能当准**。
+已实现 **`cok_accounts.probe_pf()`**：拿候选列表挨个**登录实测**，成功即确定并写库
+（账号 JSON 里记 `pfVerified: true`）。`cok_accounts.py add --all` 默认会跑这个探测
+（`--no-probe` 可关）。
+
+#### 「上一个号」也能捞（已实现）
+
+`cok_account.load_previous_account(pkg)`：读 `original_account_game_uid` /
+`original_account_uuid` / `original_account_ip` / `original_account_zone`，
+平台 token 从渠道 SDK 的角色信息取（nearme: `gcsdk_tag_local_role_info.roleid`）。
+实测在 nearme 包上完整捞出主号：`<uid-main>` / `<pfId-example>` /
+`<uuid>` / roleName `GU521946202610161131912`。
+→ **凡是这台手机登过的号，凭据都能捞回来，不需要密码。**
+
+1. **"账号"是两层**：*渠道账号*（手机号/OPPO 账号 + 密码）→ 换出 **平台 token**
+   （nearme 的 `roleid` / 果盘的 `OpenId`+`Token`）→ 平台 token 才是**游戏身份**（`pfId`）。
+   **游戏服只认平台 token；密码只是"换 token 的手段"。**
+2. **手机会记住上一个号**：nearme 包的 `Cocos2dxPrefsFile.xml` 里还有
+   `original_account_game_uid=<uid-main>`、`original_account_uuid=<uuid>`、
+   `original_account_ip/zone`；配合 SDK 的 `roleid`，**凡是这台手机登过的号，凭据都能捞回来，
+   不需要密码**（主号那条已经这样闭环验证过）。
+   果盘包没有 `original_*`（只留了当前号）。
+3. **果盘 SDK 的本地存储是加密的**（`SuperSDK.xml.core_data` 是一长串 hex，
+   `NormalDatabase.db` 的 `normal_data_table` 0 行）→ **多账号列表在设备上读不出来**，
+   只能拿到"当前登录号"的 token。
+
+#### 顺带修正两处常量
+
+* `channelSign = "bang"`（来自 prefs 键 `elex_doctor_boom`）**两个渠道都一样** → 不是渠道相关项。
+* `buildCode` **随游戏版本变**（游戏已更新到 13.03.11）：nearme 现在是 `71a2ca5e…`，
+  ewanqf 是 `f97c622e…`；账号库里"主号"那条还是旧的 `<buildCode>`，但服务端容忍（今天仍能登录）。
+
+#### 路径 3：模拟器当发卡机（**2026-10-29 已跑通**）
+
+不逆 `libEncryptorP.so` 也能拿到新号凭据：**让安卓环境替我们跑那一次密码登录**。
+登录成功后**游戏**会把平台身份写进自己的 prefs，我们直接读走 → PC 长期独立使用。
+
+环境（本机）：
+* 模拟器：`~/Library/Android/sdk/emulator/emulator -avd medium_phone -no-window …`
+  系统镜像在 `/opt/homebrew/share/android-commandlinetools/system-images/android-36/default/arm64-v8a/`
+  （Android 16 / arm64-v8a），`adb root` 可用。
+* 渠道包：真机 `pm path` → `adb pull`（果盘 487MB）→ 装到模拟器。
+* **模拟器没有被拦**：两个渠道包的 `forbiddenDevice` 名单只含第三方模拟器
+  （MEmu / Droid4X / iToolsVM / umEM / Liaoran / qemu），Google 模拟器不在名单；
+  隐私 + 权限弹窗点掉后能正常进到 SDK 的**密码登录页**
+  （`view_login_user_name` / `view_login_password` / `view_protocol_checkbox` / `view_login_btn_login`）。
+
+自动化脚本 `protocol/cok_emu_login.py`：
+```
+起模拟器 → 装包 → 启动 → 过隐私/权限 → 打开「密码登录」页签
+→ 填账号密码 → 勾协议 → 点登录 → 等游戏写 platformUid
+→ 读 prefs 导出凭据 → probe_pf() 实测 pf → 写进账号库 → PC 验一次登录
+```
+实测（2026-10-29）：导出 → `pf 实测确定: cn_ewanqf` → 入库 → **PC 登录成功** ✅
+导出字段：`platformUid / gameUid / uuid / deviceId / buildCode / signCode / host / zn`。
+
+**重要限制（实测）**：果盘 SDK 的会话**不能跨设备拷贝** ——
+把手机上的 `shared_prefs`/`databases` 整个拷到模拟器后，SDK **拒绝并退回登录页**
+（token 绑设备指纹）。→ **发卡机必须做真实的密码登录**，搬会话不管用。
+
+#### 游戏里还有一个「账号绑定 / 切换账号」通道 —— 本服也关掉了（2026-10-29 实测）
+
+除了 `device.bind.*`，lua 里还有 **`user.bind`**（`game/command/UserBindcmd.lua`，
+设置项「账号绑定」`PermitCommandView.JumpBanding=1006`）：
+
+```lua
+ret:initWithName("user.bind")
+putParam: googlePlay / facebook / deviceId / mail / pass / optType
+          googleAccountName / facebookAccountName / bindId / bindPf / accessToken / inputCode
+```
+**成功响应直接回一整套凭据**（客户端收到后写进 prefs 再 ResetGame 切号）：
+```
+gameUid, buildcode, ip, port, zone, uuid, serverId, gameUserName, gameUserLevel
+```
+→ 这本来是**最理想的"账号密码换角色"通道**（游戏服命令，不需要 root / 渠道 SDK / 模拟器）。
+
+**实测（2026-10-29，用鸭皇号登录后直发）**：10 组参数组合
+（mail=手机号/邮箱、pass=明文/md5、optType=0/1/2/3/4、带/不带 bindPf、bindId，
+甚至**全空参数**）→ **全部 `E000000`**。
+连"缺参数"都返回同一个码 → **服务端把整个命令关掉了**（与 `device.bind.info` 一致）。
+旁证：客户端里 v1 界面（带导出按钮）的入口被注释掉、导出按钮的 handler body 也被注释。
+
+→ **结论：当前 build / 渠道下，"官方跨设备转移 / 用账号密码换角色"这条路是关闭的。**
+→ **剩下唯一可行的是「模拟器发卡机」**（已跑通，见上）。
+
+#### 「免 root 能不能导出凭据」—— 实测（2026-10-29，模拟器 `adb unroot` 模拟普通手机）
+
+| 手段 | 免 root | 实测结果 |
+|---|---|---|
+| 读 `/data/data/<包>/shared_prefs` | ❌ | `Permission denied` |
+| `run-as <包>` | ❌ | `package not debuggable`（游戏是 release 包） |
+| `adb backup` | ❌ | 清单 `allowBackup="false"`，且 Android 12+ 基本废止 |
+| `uiautomator dump`（读界面文本） | ✅ | 可用，但**游戏界面里没有凭据字段** |
+| `content query` 到 SDK 的 `LoginContentProvider` | ❌ | 插件框架直接拒：`UnsupportedOperationException: No external query` |
+| **游戏内「设备账号 → 导出账号」** | ✅ | **官方通道**，零 root、零 USB |
+
+→ **没 root 就读不到凭据文件**（Android 沙盒的本质，改不了）。
+→ 但**正确形态不是"读朋友的手机"，而是"让游戏自己把凭据交出来"**。
+
+#### 「发给朋友的软件包」应该长什么样
+
+游戏**官方就有**跨设备转移功能（不是我们发明的）：
+```
+游戏设置 → 账号中心(guiCommonLocal.open_DeviceAccountView → DeviceAccount_v2_View,
+                    **无 fun open 门槛**) → 导出账号 → 得到一串 code
+```
+协议就是 `device.bind.export`(v1 lua) / native `requestDeviceAccount`(v2)，
+导入端是 `device.bind.import {code}` → 服务端把完整凭据(gameUid/uuid/…)交回来。
+
+**分工**：
+* 朋友：装渠道包 → 登录 → 设置里点"导出账号" → 把那串 code 发过来
+  （**不需要 root / USB / 装我们的软件 / 我们碰他的手机**）；
+* 我们：程序发 `device.bind.import {code}` → 凭据入库 → PC 长期独立使用。
+
+→ **这条路同时解决"免 root"和"朋友自助"两个问题**，而且它本来就是游戏为"换设备"设计的。
+**前置条件**：抓一次真机的 `device.bind.export` 真实请求（直连 `device.bind.info` 已被
+`E000000` 拒，19 组参数全试过；参数名在 native 加密串里）。
+
+**兜底（导出码走不通时）**：模拟器发卡机（已跑通，见上）—— 朋友把**渠道账号密码**给你，
+你在云端模拟器上登录一次 → 采集凭据入库；朋友完全不用碰手机。
+代价：你要经手对方的渠道密码（安全上不如"发一串码"）。
+
+#### 结论：想用「账号密码」在 PC 上开新号的路
+
+| 方案 | 说明 | 成本 |
+|---|---|---|
+| 手机采集（现状） | 切号 → 自动入库；**登过的号连密码都不需要** | 已有，零代码 |
+| **模拟器发卡机** | 模拟器上密码登录 → 导出凭据；**不用占用任何人的真手机** | **已跑通** |
+| 手机半自动 | 用 adb 模拟输入在手机上完成渠道登录，再自动采集 | 小 |
+| **复刻果盘登录** | 逆 `libEncryptorP.so` + 二进制 subcmd 协议 → 纯 PC 端 账号+密码 直换 token | 中偏大 |
+| 复刻 oppo 登录 | gcsdk 原生 + OPPO 风控 | 基本不可行 |
+| elex 官方通道 | 协议已全通，差"建号"那一步的 gameservice sig（同上，native 加密） | 中偏大 |
+
+#### 三条路共同的未解项
+
+1. `device.bind.*` 的真实参数（需要一次真机抓包）；
+2. nearme / ewanqf 渠道 SDK 的登录协议（native + 加密字符串，需 frida 或模拟器才能看）；
+3. **服务端认不认"换设备"**：`deviceId` / `uuid` 是不是绑死？
+   若绑死 → 朋友的号搬过来要连 `deviceId` 一起搬，可能触发换设备风控；若不绑 → 凭据完全可移植。
+   （一次登录实验即可测，但要动真号，**跑之前要用户点头**。）
+
+---
+
 ## 9. 工具与证据清单
 
 ```
@@ -1089,6 +1642,7 @@ protocol/
 │                                #   + 密钥派生(derive) + 登录字段派生(login-fields / sign-code)
 ├── decode_capture.py           # 把 frida 抓的 JSONL 还原成 SFS 帧并解出 params 明文
 ├── cok_client.py               # 直连客户端：bin 握手 → 登录 → 派生密钥 → 发只读命令
+├── cok_elex_account.py         # elex 账号服务客户端(手机号/邮箱+密码直登, 签名已逆出)
 ├── evidence-sample.txt         # 同会话双向解码证据（命令 + 参数 + 统计）
 ├── command-catalog-typed.json # 带 SFS 类型的参数目录（844 条，含 queue.ccd 实测配方）
 ├── cok_speedup.py             # 加速工具：列队列(init 推送) + 用道具/金币加速
@@ -1138,7 +1692,7 @@ protocol/
 | 会话密钥的下发接口 | **已定位并验证**：登录响应（明文）`params.id = "<前缀>_<密钥ID>"`；密钥 = `md5_hex(前缀)`；`qqq` = 密钥ID。端到端 71/71 解密成功 |
 | `ver` 热更新包的密钥 | `md5_hex(完整 id 串)`，实测解出 Lua 源码 |
 | 登录请求 `signCode` | **已逆出**：`md5(sprintf("%x", Arrays.hashCode(certDER)) + "." + 小写hex(certDER))`，由 APK 证书独立算出与线上同值 |
-| 登录请求 `buildCode` | **数值已确认**（恒定 `c7d89544df01787870515c10fba1cd68`）；**写入源未定位**（渠道侧下发，存于 `UserDefault["buildcode"]`） |
+| 登录请求 `buildCode` | **数值已确认**（恒定 `<buildCode>`）；**写入源未定位**（渠道侧下发，存于 `UserDefault["buildcode"]`） |
 | 登录请求 `SecurityCode` | **已逆出**：`md5(str(cmdBaseTime) + "e01684719c1bec876c10bb124a6d65aa" + game_uid)`，两会话交叉验证通过 |
 | 登录请求 `cc` | **已逆出**：`md5("d6b63d01d640fb78c979912ec839a0de" + appVersion + str(cmdBaseTime) + game_uid)`，两会话交叉验证通过 |
 | 渠道鉴权（`pfId` / `platformToken` / `gameUid`） | **未逆出**（海尔渠道登录换取，非协议层问题） |

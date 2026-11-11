@@ -3,6 +3,8 @@
 本地网页, 把直连能力的**监控**和**操作**都搬到浏览器里。
 零新依赖(只用 Python 标准库), 复用 `cok_daemon.py` 的 watcher / extractor / 写操作实现。
 
+---
+
 ## 启动
 
 ```bash
@@ -91,6 +93,162 @@ App 在线就**整轮跳过**, 顶栏显示「App 在线, 已让出账号」。
 > 游戏服地址用 `--game-host/--game-port`(默认 `txaia-cok.elexapp.com:32231`)。
 > 早期两者混用, 导致控制台连自己 —— 设备账号自带 host 才掩盖住这个问题。
 
+## 多账号(账号库)
+
+页头右上角的账号下拉框可以随时切换账号; 旁边三个按钮:
+`⏻` 后台运行(不在看这个号也继续轮询/守护) / `＋` 从手机添加 / `－` 删除。
+
+### 账号库长什么样
+
+```
+protocol/
+  accounts/
+    <gameUid>.json      每个账号一份凭据(完整凭据, 不是残缺片段)
+    .active             当前选中的账号 id(纯文本一行)
+  data/
+    <gameUid>/          该账号自己的运行时数据(坐标索引 / 扫描历史 / 导出表)
+```
+
+账号 id 一律用 **gameUid**(服务端唯一), 不用显示名 —— 显示名可以重名/改名。
+每个账号的数据目录互相隔离, 换号不会覆盖上一个号的坐标索引。
+
+### 命令行
+
+```bash
+cd protocol
+python3 cok_accounts.py ls                 # 列出账号库(带 * 的是当前)
+python3 cok_accounts.py add --label 小号一  # 从设备读当前账号入库
+python3 cok_accounts.py use <uid-guopan> # 切换当前账号
+python3 cok_accounts.py rm  <uid-guopan> # 删除
+python3 cok_accounts.py label <uid-guopan> "果盘包"
+```
+
+`add --from <文件路径>` 可以从一份 JSON 凭据文件入库。
+
+### 从手机添加(多个渠道包)
+
+手机装了几个渠道客户端就有几个号。「＋」按钮会**一次把设备上所有 COK 包
+的账号都加进来**(不需要一个个点), 加完在下拉框里选。
+
+```bash
+python3 cok_account.py --list                      # 列出设备上的 COK 包
+python3 cok_account.py -p com.hcg.cok.nearme.gamecenter   # 读某个包的账号
+```
+
+### 🔑 用果盘账号密码登录(纯 PC, 不用手机/root/模拟器)
+
+顶部账号徽章上的 **🔑** 按钮 → 填果盘账号 + 密码 → 提交。**不需要任何安卓环境**。
+
+三跳(2026-10-29 全部实测通过):
+
+| 跳 | 做什么 | 产物 |
+|---|---|---|
+| 1 | 果盘 HTTP(`userapi.guopan.cn/gamesdk/140514`, XXTEA+protobuf): 取 salt → `MD5(salt+密码)` → 登录 | **pfId**(如 `ewanqf:<platformToken>`) |
+| 2 | 游戏服 HTTP `gameservice/getserverlist.php`(**按 pfId 解析角色**, 与设备 uuid 无关) | **gameUid / 账号 uuid / 区服 / buildCode / 角色名** |
+| 3 | 组装凭据 → 账号库 | 页面下拉里直接切过去用 |
+
+> **关键结论**: 拿到 `pfId` 就等于拿到该账号的**全部**游戏服凭据 ——
+> 游戏服会主动把正确的 `uuid` 发给你(所以 uuid 绑的是**账号**不是设备),
+> `deviceId` 可以随便填。⇒ **接管"别人在别的设备玩过的旧号"是可行的**。
+
+命令行同样可用:
+
+```bash
+# 账号密码 -> 完整可直连凭据(写文件)
+python3 cok_channel_login.py <果盘账号> <密码> --make-account /tmp/acct.json
+
+# 顺便入库(归属某个用户名)
+python3 cok_channel_login.py <果盘账号> <密码> --make-account --save --label 小号A --owner alice
+
+# 只验证协议(离线回放抓包, 不需要账号/网络)
+python3 cok_channel_login.py --selftest
+```
+
+工具:
+
+| 文件 | 作用 |
+|---|---|
+| `cok_channel_login.py` | 果盘渠道协议(XXTEA+protobuf)+ 小号命令族(subcmd 25/37/39/43) |
+| `cok_gamesvc.py` | `getserverlist.php` 客户端(**sig 算法**) |
+| `test_pfid_rebuild.py` | 回归: 每个号能否**只凭 pfId** 重建凭据并登录 |
+
+> ⚠️ nearme/OPPO 渠道的 pfId 仍拿不到(OPPO SDK 原生 + 风控), 只能用**账号密码**的果盘渠道;
+> 果盘账号已经玩过 COK 的号可以直接接管, **没玩过的**需要先在游戏里开号。
+
+### ⚠️ 坑一: JSON 存盘会丢 SFS 整数类型(踩了就一个号都登不上)
+
+`gmLogin` 和 `device_info` 里的数字是 **`TypedInt(INT)`**, 而 `TypedInt` 是
+`int` 的子类 —— **JSON 存盘会把它退化成裸 int**。再读回来时 SFS 编码改成
+"按值大小选最小类型":
+
+| 字段 | 应该是 | JSON 往返后变成 |
+|---|---|---|
+| `gmLogin` = 0 | INT (0x04) | BYTE (0x02) |
+| `device_info.screen_h` = 2577 | INT (0x04) | SHORT (0x03) |
+
+服务端对登录参数类型敏感, **类型一错就直接拒登**。症状很好认:
+
+* 登录响应的 `id` 是**数字**(684 / 690 / 737 …), 而不是 `<前缀>_<密钥ID>` 字符串
+* 紧接着一个 `init.error` 推送, 连接被服务端关掉
+* 响应 params 只有 `{rs, zn, un, pi:0, rl:[], id:<数字>}}` —— 没有版本数据、没有玩家数据
+
+> 注意: `id` 的数字是**全局递增的连接计数**, 不是错误码, 别拿它当错误码查。
+
+修法(三处都补了, 任意入口进来都对):
+
+| 位置 | 做什么 |
+|---|---|
+| `cok_sfs.restore_typed_fields()` | 按模板把整数字段贴回 `TypedInt`(递归处理 `device_info`) |
+| `cok_client.CokClient.__init__()` | 合并账号后统一补类型 —— **所有账号来源都过这里** |
+| `cok_accounts.get_account()` | 账号库读出来的凭据补类型 |
+
+回归测试: `python3 test_account_types.py`
+
+### ⚠️ 坑二: 平台身份要读 `platformUid`, 不是 `open.xml` 的 roleid
+
+同一台手机上多个渠道包各有各的号, 平台身份写在
+`Cocos2dxPrefsFile.xml` 的 **`platformUid`** 里:
+
+```
+com.hcg.cok.nearme.gamecenter -> nearme:g<platformToken>
+com.hcg.cok.ewanqf.guopan     -> ewanqf:<platformToken>
+```
+
+而渠道 SDK 的 `com.nearme.gamecenter.open.xml` 里的
+`gcsdk_tag_local_role_info.roleid` 可能是**上一个角色的残留**
+(nearme 包里它指向内置凭据那个号), 拿它登录会被拒。
+
+包名与渠道字段的对应(设备 libgame.so 字符串 + 实测登录验证):
+
+```
+pf   = "cn_" + <渠道段>          com.hcg.cok.<渠道>.<包名> 的第 4 段
+pfId = <渠道段> + ":" + platformToken
+```
+
+### 账号库现在的 3 个号(2026-10-27 实测全部可登录)
+
+### ⚠️ 坑三: `platformToken` 为空是合法的, 别当成"账号不完整"(2026-10-31)
+
+果盘/ewanqf 渠道的账号库里 **`platformToken` 是空的**(pfId 里已经带了渠道 token)。
+它曾被算进"账号必需字段", 于是引擎判定账号不完整 → **静默改用内置账号** →
+手机上明明选了 A 号, 实际跑的是 B 号(安卓端踩过: UI 显示国服号, 实际在跑主号)。
+
+现在:
+
+* `ACCOUNT_REQUIRED` = `pfId / gameUid / deviceId / uuid / signCode / host / port`
+  —— **不含** `platformToken`
+* 账号库里有号但凭据不全时 → **直接报错**, 不再偷偷换号
+* 运行时文件(`automation-history.json` / `map-index.json`)统一写在
+  `accounts.DATA_ROOT` 下, 不再回退到模块目录(安卓端那会写进只读的 assets)
+
+| 显示名 | gameUid | 渠道 | 备注 |
+|---|---|---|---|
+| 主号(元气少女李逵) | `<uid-main>` | nearme | 内置凭据, 不依赖手机 |
+| 果盘包(鸭皇) | `<uid-guopan>` | nearme | 手机上的海尔果盘包 |
+| 果盘国服(ʚAndreaɞ) | `<uid-guopan-intl>` | ewanqf | 手机上的果盘国服包 |
+
+> `accounts/` 里存着凭据(signCode / 平台 token / uuid), 已加进 `.gitignore`, **别提交**。
+
 ## 页面功能
 
 **顶部全局概览条**(点任意一块直接跳到对应卡片)
@@ -113,6 +271,7 @@ App 在线就**整轮跳过**, 顶栏显示「App 在线, 已让出账号」。
 * 今日还没签到 → 「去签到」
 * 有 N 个任务奖励可领(日常/周/领主) → 「去领取」
 * 港口有 N 条船的奖励没领 → 「去领取」
+* 福利中心有 N 项可领(每日好礼 / 龙之馈赠) → 「去领取」
 * N 个队列可以加速 → 「去加速」(跳到加速卡)
 * 保护罩还剩多久 / 当前没有保护罩 → 「去开罩」
 * 体力偏低 → 「看打怪」
@@ -121,10 +280,49 @@ App 在线就**整轮跳过**, 顶栏显示「App 在线, 已让出账号」。
 
 **操作区**
 
+* **领地辅助 · 一键完成**(`assist-onekey`): 对应游戏内「领地辅助(CityAssist)」面板的批量操作
+  * 收取资源 → `build.collect {uuid:"u1;u2;…"}`(秘银矿场/伐木场/铁矿场/农田, 建筑实例 uuid)
+  * 收取科研石 → `sagatower.collect {uuid:"u1;u2"}`(科研工坊)
+  * 文明要塞一键采集 → `civilizationCastle.oneKeyCollect`(无参)
+  * 建筑类型取自 `build.info` 的 `building` 数组: `building` 字段 = `<类型id>;<等级>`;
+    新城市系统 `building` 为空时从 `star_building_new`(`<类型id*10+星级>`)反推。
+  * 收取只把**已积累的**结算入库, 不消耗道具, 未产完的不会被提前结算;
+    `build.collect` 对未知 uuid 宽容(只回资源快照), 多发不会误伤。
 * 每日签到 / 领取奖励(带已领记忆与上限, 与 daemon 同一套逻辑)
 * **建造 / 训练队列加速**(`queue.ccd`): 选队列 + 选加速道具 + 数量, 或用金币
 * **保护罩**(`onekeybuff.use`): 选槽位 + 是否覆盖旧罩; 可开启「被攻击自动开罩」
 * **港口**(`newBoat` 族): 船表 + 一键领取 + 一键分派 + 自动开关
+* **福利中心**(`everydayexchange` + `userpayreward`): 每日好礼 / 龙之馈赠 + 自动领取
+* **联盟**(`al.*` 族, 2026-10-30 加): 科技树 / 捐献面板 / 任务板 / 使命 / 商店
+  * 后端模块 `cok_alliance.py`, 快照字段 `alliance`, 操作 `action=alliance`
+  * **只读**: `science.data.init`(联盟科技树 65 项) / `al.science.fresh`(捐献三档面板)
+    / `al.task.get.available` + `al.task.get.published` + `al.task.record`(任务板)
+    / `al.mission.show`(使命 + 5 天联盟签到) / `al.donate.rank.today`(捐献排行)
+    / `al.donate.res.info`(联盟资源池) / `al.shop.show`(联盟商店) / `al.showhelp`
+  * **写**(页面显式点击, 不做自动):
+    `al.task.accept {taskUid}`(接任务) / `al.task.award {taskUid}`(领奖)
+    / `al.callhelp {queueId, qType}`(请求帮助) / `al.helpall`(帮助全体)
+    / `al.science.donate {scienceId, option}`(捐献科技)
+  * 读取有 60 秒节流(`ALLIANCE_MIN_INTERVAL`), 避免拖慢每轮轮询
+  * 捐献有前置检查: 在研科技进度已满(已是"可研究状态", E100126)时**不发命令**,
+    直接提示原因, 免得只回一个没头没脑的 E000000
+  * **联盟自动捐献**(开关 `allianceDonate`): 随机挑一个开放档位捐给正在研究的科技,
+    **进度满就停**; 只发 `al.science.donate` 一条命令, 绝不碰 `al.science.research`
+    (花金币重置研究)和 `al.targetscience.set`(改捐献目标)
+    档位模式 `allianceDonateTier` = random/cheapest/low/mid/high,
+    单轮上限 `allianceDonateMax` 默认 20 次
+  * **联盟自动签到**(`allianceSignIn`): 每天领一次。领奖命令是
+    **`alliance.signIn.reward`(无参)** —— 注意不是 `signIn.reward`(那个回 102192
+    "功能未开启")。状态从 `al.mission.show` 的 `alliance_sign_in.signInReward_state` 读。
+  * **一键完成自动执行**(`assistAuto`): 定时跑游戏内「一键完成」面板(CityAssist)
+    里的**无损项** —— 资源收取 / 科研工坊 / 文明结晶 / 宝石挖掘(免费次数内);
+    试炼、招募、转盘、献祭这些**要烧金币道具体力, 故意不自动**。
+    节流 `assistAutoInterval` 默认 1800 秒。面板 13 项的清单与状态在
+    「一键完成」卡里能看到。
+  * 详细协议口径见 `ALLIANCE.md`
+* **一键完成**(`assist-onekey` / 自动规则 `assistAuto`): 游戏内那个「一键完成」面板的
+  13 项清单与状态(见 `ASSIST.md`)。只自动跑**无损**的三项(资源收取/科研工坊/文明结晶),
+  试炼招募转盘献祭那些**烧金币道具体力, 故意不自动**。
 * **打野怪**(`autoQueue` 族): 体力剩余 + 野怪等级下拉 + 等级范围 + 部队编成 + 开/停
 * **告警**: 选载荷格式、填 URL、发测试
 
@@ -412,7 +610,7 @@ world.get { x: INT, y: INT, type: INT, serverId: INT, timeStamp: INT }
 ```json
 {
   "players": {
-    "136063574002223": {"name":"元气少女李逵","index":1118663,
+    "<uid-main>": {"name":"元气少女李逵","index":1118663,
                         "x":531,"y":931,"level":30,"seen_at":1792925385}
   },
   "meta": {"updated_at":1792925385,"total_players":176,
@@ -762,6 +960,8 @@ python3 ~/workspace/me/cok/frida/gen_id_names.py \
 | `autoshield` | `{enabled:true\|false}` | 否 | 被攻击自动开罩开关 |
 | `hunt` | `{op:"set-level"\|"set-format"\|"on"\|"off"\|"find"\|"army", ...}` | 是 | 打野怪写操作 |
 | `hunt` | `{op:"auto-start"\|"auto-stop", ...}` | 是 | 自建打怪循环 |
+| **`hunt`** | `{op:"rally-state", force?:true}` | 是 | **巨型狮鹫 + 集结只读快照**(4 档时长/已知 boss/我的集结)。`force=true` 一次多扫 24 个采样点 |
+| **`hunt`** | `{op:"rally-start", index?:N, level?:N, slot:1..4, num:N}` | 是 | **发起集结**(真实扣体力 20 + 兵)。不给 `index` 就自动挑一只**没有**集结的目标 |
 | **`refresh-now`** | — | 是 | **立刻触发一轮轮询**(不是读缓存) |
 | **`locate`** | `{name, uid?, op?:"query"\|"scan", radius?}` | 是 | **按玩家名字查地图坐标**(优先查本地索引; `op:"scan"` 用 world.get 扫区域建索引, 零消耗) |
 | **`set-setting`** | `{key, value, seq}` | 否 | 保存设置(落盘, 带序号守卫) |
@@ -782,16 +982,72 @@ python3 ~/workspace/me/cok/frida/gen_id_names.py \
 | 读设置 | `autoQueue.data` | 无 | `lv` / `format` / `autoCount` / `force` / `status` |
 | 最高怪等级 | `autoQueue.levelMaxMonster` | 无 | `maxLevel`(实测 30) |
 | 设等级范围 | `autoQueue.save` | `lv:"下限;上限"` | ✅ 实测 `1;3` |
-| 设部队编成 | `autoQueue.save` | `format:"id,num\|id,num"` | ✅ 实测 |
+| 设编队(**槽位索引**) | `autoQueue.save` | `format:"1"` 或 `"1;2;3"` | ✅ 实测: 写 `"1"` 读回来还是 `"1"`, 服务端**原样存储** |
 | 开 / 停 | `autoQueue.status` | `status:1/0` | 关 ✅ / 开 ❌(见下) |
 | 找野怪坐标 | `res.tile.find` | `type:6, level:N, NoRecord:1` | ✅ 实测返回 x/y |
 | 部队清单 | `world.user.march` | 无 | ✅ 101 个兵种(id/free/speed/load/attack) |
 | **出征打野怪** | `world.march` | `point/type/soldiers/marchKey/...` | ✅ **实测成功, 体力 -9** |
 
+> ⚠️ **`autoQueue.save` 的 `format` 只能写**编队槽位索引**(`"1"` / `"1;2;3"`),
+> **绝不能写编成串**(`"107110,50|107012,50|…"`)。
+> 游戏客户端存的就是索引(客户端 `AutoQueueController:updateFormat()` →
+> `autoQueueInfo.format = atoi(formats[index])`), 服务端原样存储。
+> 写编成串会把**游戏里「自动打怪」面板的设置写坏**: 客户端读回后
+> `atoi("107110,50|…")` = 107110, 超过编队数(11) → 被**直接丢弃** → 面板显示空。
+> (本工具旧版干过这事, 2026-10-27 已修: `set-format` 只接受索引, 写编成串直接报错拒绝)
+
 ### 自动打怪(网页自带循环, 不需要周卡)
 
 网页的「自建自动打怪循环」走的是**手动出征**(`world.march` type=6), 所以
 **不需要「自动打怪周卡」, 也不碰服务端那个功能**(页面上已把周卡入口移除)。
+
+### 自动喝体力药水(2026-11-10 实测)
+
+自动打怪卡片上多了一个开关「**体力不足自动喝体力药水**」(PC 网页 + 安卓 App 都有)。
+打开后, 体力不够时控制台会**自己用背包里的体力药水**, 不用手动点。
+
+**药水道具 id**(客户端道具表 `para` 字段 = 恢复的体力点数):
+
+| 道具 id | 恢复体力 |
+|---|---|
+| `200380` | +10 |
+| `200381` | +50 |
+| `200382` | +100 |
+
+**使用命令**(真服实测):
+
+```jsonc
+{ "uuid": "<道具实例 uuid, 32 位 hex>", "num": <SFS INT> }
+```
+
+* `uuid` 是**道具实例 id**, 不是模板 id —— 传 `"200381"` → `E000000`
+* `num` **必须编码成 SFS INT**(`TypedInt(n, SFS_INT)`), 传普通 int → `E000000`
+* 实例没了 → `E100166`(没有该道具); 数量不够 → `E100165`(道具数量不足)
+* 实测: `item.use` 响应 `{"itemId":"200380","itemEffectObj":{"stamina":300},"count":1}`, 体力真的涨
+
+**道具实例 uuid 从哪来 —— `login.init` 拉背包**(详见下面「背包」章)。
+`login.init` 响应里 `items` 数组就是完整背包, 每条带 `itemId` / `count` / `uuid`。
+药水是**堆叠**的(一个实例 `count=N`), 实例 uuid 在 count 用完前稳定 ⇒ **拉一次缓存起来能长期用**。
+
+**流程**:
+
+1. 开怪前先读缓存 `accounts/<uid>.items.json` 里的药水实例
+2. 缓存里没有 → **自动拉一次背包**(`login.init`, 40~50 秒, 因为响应有 95 万字节)
+   → 拉到后立刻喝
+3. 拉过还没有 → 说明背包里确实没有药水, 提示「背包里没有体力药水」, **不再重复拉**
+   (否则每次体力不足都白等 40 秒)
+4. 喝完把缓存里的 `count` 减一; 减到 0 就丢掉这个 uuid, 下次重新拉
+
+**喝药失败不算打怪失败** —— 不计入 `fails`(那是打怪计数),
+只在 note 里写明原因。`E100166` 说明实例失效, 直接丢掉这个 uuid 等下次重学。
+
+**手动拉背包**: 卡上有个「同步体力药水」按钮(约 45 秒),
+拉完下方会显示「已抓到实例: 200380(+10体力 ×1)、200381(+50体力 ×133) · 每瓶 +50 体力」。
+安卓端在「操作」页 → 展开「自动打怪」卡片 → 同样的开关 + 「同步体力药水」按钮。
+
+> ⚠️ 服务端**自己**也有代喝药功能(`autoQueue.save {saveItems:"200380;1|200381;2"}`),
+> 但 `autoQueue.status {status:1}` 需要「自动打怪周卡」(客户端 k2=766437),
+> 4 个账号全部 `E000000` ⇒ **这条路放弃**, 控制台走自己发 `item.use`。
 
 ### 多队并行
 
@@ -799,6 +1055,8 @@ python3 ~/workspace/me/cok/frida/gen_id_names.py \
 * **每队绑定一个互不相同的兵种** —— 这是判定准确的关键:
   出发时记下该兵种 `army[].march` 的基线, 之后该兵种外勤数回到基线
   就说明这支队回来了。各队兵种不同, 彼此不会干扰。
+  ⚠️ 这条已作废(2026-11-09): 现在**同一种兵可以开多队**, 判回改用
+  **行军 uuid**(见下), 不再靠兵种基线。
 * **并发数随体力自动收缩**: 体力是**按怪**消耗的(并行 N 队 = N 倍消耗速度),
   而体力恢复只有约 1 点 / 130 秒。所以每派一队前都重新算"体力够不够再派一队",
   体力不够就少派, 不会派出打不动的队。
@@ -811,18 +1069,311 @@ python3 ~/workspace/me/cok/frida/gen_id_names.py \
 * 本地体力读数与服务端判断偶尔有出入(本地说够、服务端说不够),
   所以两条路都要拦: 本地预检 + 服务端 `E100047` 兜底。
 
+### 一次出征带多个兵种(混编) + 同兵种连续/并行出征
+
+2026-11-09 按用户要求重做, 协议规则全部**真服实测**过:
+
+| 能力 | 说明 | 实测 |
+|---|---|---|
+| **一次出征多个兵种** | 一支队 = 一个「编成」, 可带 1~4 种兵 | 标准+标准 ✅ / 活动+活动 ✅ |
+| **跨类混编被拒** | 活动限定兵种(8 位 id) + 普通兵种(6 位 `107xxx`) → `E000000` | ❌ 服务端拒绝 |
+| **同兵种并行多队** | 同一种兵可以同时开多队出征 | ✅ uuid 各不相同 |
+| **同兵种连续出征** | 一队回来后可以**再次**出征 | ✅ 66 秒连打 2 只 |
+
+* **混编只在同类里做**: `cok_hunt._army_class()` 把兵种分成
+  `std`(6 位 `107xxx`) / `act`(其它), 编排时只补同类兵种。
+* **marchKey 的多兵种拼接顺序 = 兵种 id 字典序升序**:
+  服务端自己按 key 升序遍历 `soldiers` 校验 marchKey,
+  所以写错顺序 / 写错内容 → `E000000`(实测: 倒序拼、原始顺序拼都失败)。
+* **`soldiers` 的数量必须编码成 SFS `INT`**(不是 BYTE) —— 压成 BYTE 会被拒。
+* **判回靠行军 uuid**: 每次出征服务端在 `$_monitor_log_$.uuid` 里给一个 uuid,
+  这个 uuid 从 `world.user.march` 的 `m` 列表里消失 = 这支部队到家了。
+  混编队整队共用一个 uuid, 外勤数 = 各兵种外勤数之和。
+* **判回后清空 uuid** → 同一队可以连续再出征(不清空的话, 一派出就被判"已回来")。
+* **一轮可派多队**(上限 4 队/轮 + 并发上限 + 体力约束) —— 之前 `if launched: break`
+  会把打怪串行化成一次只派一队。
+
+**页面上的「每队兵种」**(1~4, 默认 1):
+1 = 每队只用一种兵(旧行为); 2+ = 每队最多带 N 种兵(混编)。
+存在 `web-settings.json` 的 `huntMix`, 安卓端同名。
+
+队伍进度里, 混编队的「数量」列会按兵种拆开显示(`遗迹天使巨像 50 + 血鸦残虐弩手 50`)。
+
+### 打怪击杀计入「任务达成明细」
+
+* 自动打怪的**累计击杀数**按**增量**记进任务达成明细, kind = `hunt_kills`,
+  面板标签 = 「打怪击杀」。
+* **只记累计数, 不记明细**(用户 2026-11-09 明确选的): `detail` 留空,
+  面板上只显示「打怪击杀 N」, 不展开每只怪的条目。
+* 增量记账(`_record_hunt_kills`): 只有比上次多出来的部分才算新击杀,
+  否则每轮 tick 都加一次会暴涨。重新开一轮打怪时计数从 0 重新开始。
+
+### ⚠️ 找怪次数限制 —— 每天只有 6 次(2026-11-11 实测 + 修崩溃)
+
+**这是自动打怪最大的硬瓶颈**, 也是之前"打怪报错后自动停止"的根因。
+
+每次派队都要先 `res.tile.find {type:6, level:N}` 找坐标 ——
+**每派一队就消耗一次「今日找怪次数」**。实测(非 VIP 账号):
+
+```
+第1~6次  -> 正常返回 x/y
+第7次起  -> **只回 type, 没有 x/y**(errorCode 也是空!)
+```
+
+客户端 Lua(`game/command/IFFindResTileCmd.lua:handleReceive`)明确区分了两种「空」:
+
+| 服务端返回 | 含义 | 客户端提示 |
+|---|---|---|
+| **x / y 字段缺失(None)** | **今日找怪次数用完** | 113228「今日剩余使用次数不足, 激活VIP可以无限制」 |
+| **x == -1 / y == -1** | 世界上没有这个等级的怪 | 113229「现在世界上没有您想寻找的资源点或者怪物」 |
+
+次数是**按天重置**的(实测等 60 秒不恢复), 非 VIP 每天 6 次, **VIP 无限**。
+
+**服务端把次数放在 `login.init` 的 `world` 段里**(2026-11-11 实测):
+
+```
+login.init -> world.maxSearchCount  = 6    # 每日上限
+           -> world.resSearchCount  = 6    # 已用次数(用满 = res == max)
+```
+
+⇒ 剩余次数 = `maxSearchCount - resSearchCount`。`cok_stamina.fetch_bag()`
+会顺带把这两个值读出来, 自动打怪据此**提前知道**次数不够, 不用撞墙才发现。
+
+**⚠️ 之前的崩溃(已修)**:
+这两种「空」之前一律被当成成功(`ok=True, x=None, y=None`),
+后面 `point_index(None, None)` 里 `int(None)` 直接抛
+
+```
+TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+```
+
+→ 自动打怪每轮都崩 → 连续 5 次异常 → **自动停止**(用户 2026-11-11 实测遇到,
+安卓端提示「异常: int() argument ... not 'NoneType'」, 5 支队伍全卡在「待命」)。
+
+**现在的行为**:
+
+* `find_monster` 把两种「空」分类成 `SEARCH_LIMIT` / `NO_TARGET`, 都**不算打怪失败**
+  (不进 `fails`)
+* `point_index` 对 `None`/非法值返回 0 而不是抛异常
+* 次数用完 → 进入 `FIND_COOLDOWN`(10 分钟)冷却, 期间不再发 `res.tile.find`,
+  页面提示「今日找怪次数已用完, 暂停 10 分钟(非 VIP 每天 6 次, 升 VIP 无限)」
+* 本地计数(`_find_used` / `_find_limit`, 初值取服务端下发的
+  `world.resSearchCount` / `world.maxSearchCount`)到顶就**主动不发请求**
+* 打怪循环的异常处理现在会把 **traceback 记进 `state["traceback"]`** 并打印到控制台,
+  以后再出这类错能直接定位到行(之前只有一行 `str(e)`, 只能靠猜)
+* 回归: `test_hunt_find.py`(9 项, 新增) + 原 5 组测试全绿
+
+**⇒ 现实含义**: 非 VIP 账号**一天只能派 6 队**(= 6 只怪)。
+想连续挂机打怪, 要么升 VIP, 要么把每队兵力调大(一只怪吃满血)少派几队。
+可行的彻底解法是**改用 `world.get` 地图查询找怪点**(不限次数,
+`world.get` 返回的地块里 type=9 带 `mchp`(野怪血量)/`st`(存活状态)就是野怪),
+但 `world.get` 一次要 ~2.5 秒且只覆盖一小片区域, 属于后续优化。
+
+
 ### 队伍编成(不用手填 id)
 
 「队伍编成」是**下拉选择**: 每队一行 = 兵种下拉 + 数量。
 下拉数据来自 `world.user.march`, 带**中文名**和**可用数量**
 (中文名从 `id-names.json` 取, 复合名 `{{名|名|...}}` 会清洗成第一个)。
 
-只列**标准兵种**(6 位 `107xxx` 系列) —— 活动限定兵种(8 位 id)不能和普通兵种
-混编, 服务端会回 E000000。
+⚠️ 活动限定兵种(8 位 id)也能参与编排 —— 但**不能和普通兵种混编**
+(服务端回 `E000000`), 所以混编时只会在同类里补(见上面的「混编」段)。
 
 编成保存在**后端设置**(`web-settings.json` 的 `squadSpec`),
-刷新页面 / 换浏览器都不丢; 同时也会写一份到服务端 `autoQueue.save format`
-保持两边一致。
+刷新页面 / 换浏览器都不丢。
+
+> ⚠️ **网页的自动打怪不写游戏设置**: 网页自己用 `world.march` 出征
+> (不经过游戏的自动打怪队列), 因此**不会**动 `autoQueue.format`。
+> 网页侧有独立的编队(按 gameUid 分桶, 见下), 跟游戏里的编队互不干扰。
+
+### 编队预设(11 个, 对齐游戏)
+
+游戏里最多能预设 **11 个编队**(客户端 `CommonLib/commonBaseFunc.lua`
+`GgetFormationCount()`: 基础 5 个 + SVIP/特效加成, 上限 12), 网页这边也做 11 个槽位。
+
+**只保留游戏里的编队设置, 手动编排已隐藏**(2026-10-27 定的):
+
+| 元素 | 说明 |
+|---|---|
+| **每队兵数** | 输入框(默认 5000)—— 每队派多少个兵 |
+| **并行队伍** | 输入框(默认 4)—— 同时几队出征 |
+| 兵种搭配 | **网页自动**: 每队一个「编成」, 默认 1 种兵(可开「每队兵种」到 4 种做混编), 兵种按战力从高到低挑, 数量 = `min(每队兵数, 该兵可用量)` —— 库存不够就按库存来 |
+| 编队槽位(编队1~11) | **已隐藏**(2026-10-27 用户决定收回): 游戏「部队」界面的 11 个预设编队服务端不下发, 网页既读不到也用不上 |
+
+手动那套(每队一行兵种下拉+数量、「按可用兵自动编成」、「保存编成」、「刷新兵种」)
+以及编队下拉/「读游戏当前编成」/「用这个编队」都已经撤掉 —— 页面只留两个数字输入框。
+
+> **为什么不用游戏里的编队**: 服务端 `autoQueue.format` 存的是**槽位索引**
+> ("1"), 网页能读到的也只是这个索引; 编队1 里**具体是哪几个兵、各多少**
+> 服务端根本不下发(init 全量 21440 字节 / 登录响应 150 字段里都没有 formation)。
+> 所以"用游戏里的编队1 打怪"在协议层做不到, 只能网页自己按库存搭配。
+
+#### 打怪流程
+
+| 步骤 | 做什么 |
+|---|---|
+| 等级范围 | 目标野怪等级(下限), 「保存等级」会写回游戏的 `autoQueue.lv` |
+| 每队兵数 / 并行队伍 | 页面上填, 网页自己按库存搭配兵种 |
+| 「开始打怪」 | 网页自己出征(`world.march`), 不用周卡 |
+| 没周卡时 | (走游戏队列的旧路径会回 `E000000`) —— 现在网页只用自建路径 |
+
+实测(果盘国服号, 15 级野怪): 2 队各 1000 → **25 秒打 2 只**,
+体力 990→900(每只 10 点)。
+
+#### ⚠️ 坑: 重复派队会狂烧体力(2026-10-27 修)
+
+刚派出时服务端的**行军统计还没更新**(`world.user.march` 里该兵种的 `march`
+仍是 0), 这时 `march <= base_march` 成立 -> 误判"已回来" -> **立刻再派一次**
+-> 疯狂重复派出。实测一次烧掉 **574 点体力(57 只怪)而 kills 计数还是 0**。
+
+三条防线:
+
+1. `MIN_LAUNCH_GAP = 30` —— 同一支队伍两次派出之间的最小间隔,
+   派出后不足 30 秒不判"已回来"
+2. `STAMINA_BURST_LIMIT = 200` / 60 秒 —— 体力掉太快就**自动停**并说明原因
+   (正常 4 队并行大约 20~40 点/分钟)
+3. 启动新的打怪前**先停掉旧的猎人线程** —— 否则会出现两个猎人同时打,
+   同样会狂烧体力
+
+验证: 修复后同样用 1 级怪 + 1000 兵 + 不限次数跑 110 秒 ->
+打 4 只怪(kills 计数正确), 体力 288->229, 不再重复派。
+
+#### ⚠️ 坑: 同账号只允许一个连接, 网页内部自己会互踢
+
+游戏服**同账号只允许一个连接**。打怪时网页有三条路都想用这个账号:
+轮询连接 / 推送监听(`shield_watch`) / 打怪连接。三条一起用就会互相踢,
+表现是「点打怪后十几分钟没有任何动作, 最后报连接被服务端关闭」。修法:
+
+1. 轮询跳过时返回的 note **必须带"让出账号"关键字** —— `_loop` 靠它判断
+   "这轮别碰连接, 睡到下轮"。少了它就会继续走「推送监听」分支。
+2. `shield_watch` 睡眠心跳: **打怪在跑时直接 return**, 绝不 ping / 重连。
+3. 心跳异常后的**重连**也要拦: 打怪在跑时不重连(重连 = 踢掉打怪那条)。
+4. 启动打怪时**先关掉网页自己的连接**再连打怪那条 —— 任何时刻只有一个连接。
+
+打怪期间网页轮询会跳过(页面显示"自动打怪占用连接"), 这是设计内的让路;
+代价是**自动开罩在这段时间收不到推送**(打怪占着连接, 没法同时收)。
+
+#### ⚠️ 安卓端: 停不掉游戏 App + 被踢后没有退路(2026-11-01 修复)
+
+安卓端点「自动打怪」立刻退出, 现场是
+`hunt_start → hunt_step(stamina) → hunt_error("连接被服务端关闭(已收 0/3 字节)") → hunt_stopped`。
+根因**不是**打怪循环本身(实机打怪完全正常), 是**抢账号**:
+
+1. **停不掉游戏 App**: 桌面端靠 `adb shell am force-stop` 把游戏 App 停掉,
+   安卓设备上**没有 adb** -> `stop_app()` 永远失败 -> 游戏 App 继续占着账号。
+   现在安卓端改走平台钩子 `set_platform_stop_app()`:
+   `ActivityManager.killBackgroundProcesses()`(权限 `KILL_BACKGROUND_PROCESSES`,
+   普通权限)。两个坑:
+   - **Chaquopy 17 没有 `jnius` 模块**, 也没有 `Python.getContext()`;
+     只能用新 API `from com.chaquo.python import Python` +
+     `Python.getInstance().getPlatform().getApplication()`。
+   - **Android 11+ 包可见性**: 查不到游戏包时 `getApplicationInfo()` 抛异常,
+     不能拿它当前提(否则钩子等于没接上); Manifest 里用 `<queries>` 放开。
+   - 注意 `killBackgroundProcesses` 只杀 **cached(adj>=900)** 的进程;
+     游戏 App 处于 adj=100(APP 态) 时杀不掉 —— 这时靠下面的重连兜底。
+2. **被踢了没有退路**: 以前一收到致命断连就直接 `stopped`。
+   现在 `AutoHunter` 收到致命断连会调 `on_reconnect` 重建连接
+   (先再让一次路 -> 停游戏 App -> 重连), 成功就**继续打怪**。
+   实测(安卓端, 游戏 App 在线占着账号):
+   `hunt_error(Broken pipe) → hunt_reconnect → hunt_reconnected → 继续打怪`,
+   不再是 `hunt_error → hunt_stopped`。
+3. **失败要给出能照做的提示**: `stop_app()` 失败时 note 补一句
+   "游戏 App 可能仍在线, 请先完全退出游戏 App 再开始打怪"。
+
+#### ⚠️ 安卓端: 系统"冷冻"会让内嵌 Python 服务整个停摆(2026-11-01 发现)
+
+安卓 12+ 的缓存进程冷冻器(以及 OPPO 的 Hans)会把后台的控制台 App
+**冻结**(所有线程停在 `do_freezer_trap`), 于是内嵌的 HTTP 服务**完全不响应**
+(TCP 能连上但不回数据)。回到前台后立刻恢复。
+症状: App 切后台一段时间后再切回来, 页面请求全部超时。
+后台自动化规则(自动签到/天空之境自动领奖…)在冷冻期间同样不跑。
+
+#### ⚠️ 天空之境: 一个 UnboundLocalError 能带崩整轮刷新(2026-11-01 修复)
+
+`_sky_tick()` 里 `reward_result` / `explore_result` 原来只在分支内赋值,
+**"只开自动领奖不开自动探索"(探索默认关)时领完奖走到 `if explore_result:`
+直接 UnboundLocalError** —— 而 `_sky_tick` 是被裸调的, 异常一路冒到
+`_poll_locked`, 于是**后面的福利/积分/联盟/领地自动全都不跑**,
+连"每日签到"都不再入账。真实服务端复现: 领奖成功 -> UnboundLocalError。
+
+三处修复:
+
+1. `reward_result` / `explore_result` **先初始化为 None**。
+2. **领奖和记账解耦**: 领奖成功立刻调 `_record_sky_reward()`,
+   记账的异常只记日志, 绝不能改写"领奖成功"这个结论。
+3. 所有"顺风车"子任务改用 `_safe_tick()` 包一层, 单个失败不再带崩整轮。
+
+`_task_stats_view()` 的 labels 里补了 `"sky_reward": "天空之境探索奖励"`,
+安卓端「今日/本周/本月」面板才会显示中文名而不是原始 key。
+
+`autoQueue.data` 实测返回:
+
+```json
+{"format": "107110,50|107012,50|107111,50|107212,50",   ← 编成(兵种id,数量|…)
+ "lv": "15;16", "autoCount": 3, "force": 1, "status": 0,
+ "saveItems": "", "useItems": ""}
+```
+
+#### ⚠️ 三个必须讲清楚的地方(2026-10-27 实测)
+
+**① 读的是「自动打怪」当前编成, 不是「部队」界面的预设编队**
+
+`autoQueue.data` 里的 `format` 是**游戏「自动打怪」面板正在用的那一支编成**,
+但它的**格式取决于服务端存的是什么**, 有三种形态(实测):
+
+| format | 形态 | 含义 |
+|---|---|---|
+| `""` | empty | 这个号没设过「自动打怪」的编成 |
+| `"1"` / `"1;2;3"` | **index** | **游戏客户端的正常形式** —— 槽位索引, 意思就是"用游戏里的编队1" |
+| `"107110,50\|107012,50\|…"` | **army** | ⚠️ **被工具写坏的格式**(见下), 游戏客户端读回后 `atoi()` 成 107110, 超过编队数(11)被**直接丢弃** -> 面板显示空 |
+
+客户端存的是**索引**(`AutoQueueController:updateFormat()` ->
+`autoQueueInfo.format = atoi(formats[index])`), 服务端**原样存储**
+(实测: 写 `"1"` 读回来还是 `"1"`, 不展开成编成)。
+
+**但「部队」界面那 11 个预设编队(编队1~11)本身读不到**: 它们在 native
+`TroopsController` 里(客户端 `NewTroopsView` 用 `getFormatNameByIndex(i)` 取名),
+服务端下发字段名 `army_formation` **只用于锦标赛**(`TournamentController`),
+实测 **init 推送(21440 字节全量玩家数据)和登录响应(150 个字段)里都没有它**,
+也没有任何命令能读出来(`formation.getData` 只是"部队界面排序设置":
+uid/level/lvOrder/typeOrder/numOrder/percent; `formation.list` / `formation.info`
+只回 `{"success":true}` 没有数据)。
+
+👉 **所以"编队1 是哪几个兵、各多少"这件事, 网页做不到**。能做到的是:
+
+* **游戏自己用编队1 打**(网页点「用这个编队」把索引写回游戏, 然后开游戏里的
+  自动打怪) —— 需要「自动打怪周卡」
+* **网页自己打**, 用**可派兵种**自动编排(见下) —— 不需要周卡
+
+**② 页面不显示兵种/数量**
+
+游戏「部队」界面的 11 个预设编队**内容**(兵种+数量)服务端不下发, 所以
+**网页既不显示、也不让用户填** —— 用户只需要在下拉里选"用哪个编队"。
+「可派兵种」那一块(每个兵种多少可用)也一并撤掉了。
+
+**③ 编成按账号分桶, 不串号**
+
+游戏里的编成是**每个账号各自**的, 所以编队预设按 gameUid 分桶存
+(`web-settings.json` 的 `squadPresetsAcc`: `{gameUid: {槽位: 编成}}`),
+A 号读来的编成不会出现在 B 号名下。没有分桶时才回退旧的全局 `squadPresets`。
+回归测试: `python3 test_squad_isolation.py`
+
+**③ 读的时候要标明是哪个号**
+
+多账号下最容易出的错就是"在手机上给 A 号设了编队, 网页连着 B 号, 读出来自然是 B 的"。
+所以读回的响应里带 `account` / `accountKey`, 页面也会显示
+`游戏里(主号(元气少女李逵))的自动打怪设置: …`。
+读到 index 时, 页面会**自动把编队下拉定位到游戏正在用的那个编队**(编队1)。
+
+⚠ 游戏新界面的 `format` 可能是 ";" 分隔的**编队索引**(如 "3;5"), 那种解不出具体兵种
+——`read_autoqueue` 会标 `indexed=true`, 页面提示"游戏里用的是编队索引, 解不出具体兵种"。
+
+⚠ **游戏预设里的兵种, 玩家可能根本没有**: 实测游戏存的编成是
+`107110,50|107012,50|107111,50|107212,50`(狮鹫突袭者/蛮族督军/天马骑士/修罗射手),
+而玩家只有 狮鹫突袭者/天马骑士/杀戮骑兵/神圣骑士 → 蛮族督军、修罗射手**没有库存**。
+网页里这类 id 会显示成「蛮族督军 · 可用 0」而不是被静默换成第一个兵种
+(踩过这个坑: 匹配不到 option → 下拉全落到第一个选项 → 4 队全是同一个兵种 → 编成全错)。
+出征时没有库存的队会自动跳过, 页面也会提示"其中 N 个兵种你没有"。
 
 ### 页面上的进度
 
@@ -871,10 +1422,12 @@ index = (uint)point.x + 1 + (uint)((float)w1 * point.y)     // w1 = 1201
 **体力实测数据(2026-10-24)**:
 * 每打一只野怪扣 **9** 点体力(113→104, 108→99)
 * 体力**不靠战斗胜利返还**, 只随时间恢复, 约 **1 点 / 130 秒**
-* 所以满体力 100 大约能打 **11 只**, 打完约需 20 分钟回满
-* 服务端 `stamina` 实测最高到 **113**(超过 100, 可能有加成), 客户端主世界配置里
-  **没有** `staminaMax`(`login.dataconfig` 的 319 张表里它只出现在中立/帝国战场),
-  所以代码里 `STAMINA_MAX=100` 是保守值, 可用环境变量 `COK_STAMINA_MAX` 覆盖
+* **体力上限 = 1000**(不是 100!)。服务端不下发这个字段, 它在**客户端配置表**:
+  `ItemSpec id=auto_kill_monster` 的 `k4` = `1000`
+  (客户端 `AutoQueueController:getStaminaLimit()` ->
+  `getPropByIdGroup('data_config','auto_kill_monster','k4')`)。
+  之前代码里写死 `STAMINA_MAX=100`, 于是页面显示成 "154/100" / "990/100"。
+  现在从 `game-config.json` 读(可用 `COK_STAMINA_MAX` 环境变量覆盖)。
 
 **循环判据(实测)**: 战斗结算的 push 不稳定收到(有时是
 `push.general.awake.challenge.monster.lose` 这种名字), 所以**不靠 push**,
@@ -886,6 +1439,177 @@ index = (uint)point.x + 1 + (uint)((float)w1 * point.y)     // w1 = 1201
 * 网页点「开始自动打怪」: `kills:1, fails:0`, 目标怪 (545,940) → index 1129486
 
 **找怪只查坐标(不扣体力, 每天搜索次数有限, 实测 `maxSearchCount=6`)**。
+
+
+
+## 巨型狮鹫 · 联盟集结(2026-11-01 / 11-02 实测)
+
+在「打野怪」卡里多了一个 **巨型狮鹫 · 集结** 面板: 选等级 -> 选目标 -> 选集结时间 -> 发起集结。
+
+代码在 `cok_rally.py`(独立模块, `cok_hunt.py` 继续只管体力/普通野怪)。
+
+### 巨型狮鹫是什么
+
+「活动怪首领」。客户端 `ItemSpec` id = `902113`(12级) / `902114`(21级) /
+`902115`(30级) / `902150`(35级), `name=650066`, `boss="2"`。
+地图地块类型是 `t=15`(`WorldCityType.ActBossTile`), 地块里 `t1` 就是 monsterId。
+
+### ⚠️ 找怪: 不用 `res.tile.find`(那个每日次数有限)
+
+* 客户端用的是 `res.tile.find {type:7, level:N}`(活动怪搜索), 但**每日次数有限**
+  (用完回 `x=-1,y=-1`, 错误码 `113228` = 今日剩余使用次数不足)。
+  自动打怪需要**反复**找同一个怪, 所以不能用它。
+* 改用 `world.get` 读地块, **不限次**, 不消耗任何道具/资源/体力:
+  ```
+  world.get { x:INT, y:INT, type:INT(0), serverId:INT, timeStamp:INT }
+  -> points[] 里找 {"t":15, "t1":"902113", "i":<index>, "mchp":.., "mmhp":.., "st":.., "rt":..}
+  ```
+  `i` 就是发起集结时用的 `point`(= `cok_map.point_to_index`)。
+* ⚠️ **类型必须显式 INT**(`TypedInt(v, SFS_INT)`), 否则回 `E000000`。
+
+### ⚠️ 巨型狮鹫是**全图分布**的(2026-11-02 实测, 推翻早先结论)
+
+一开始以为 boss 只刷在一个小区域里(确实扫到过 137 只集中在
+x 849~1175 / y 552~797)。后来**随机取 16 个点扫, 14 个点都命中**(共 18 只),
+才确认是**全图都有**。那个"密集区"只是碰巧。
+
+⇒ 所以**不需要知道出生区域**: 全图铺一张采样网格(步长 50, 24x24 = 576 个采样点),
+每点一次 `world.get` 大约能碰到 1 只。目标列表靠**轮转扫描 + 注册表**慢慢补全。
+
+### ⚠️⚠️ 服务端的两个硬限制(2026-11-02 实测, 决定了整个扫描设计)
+
+1. **连续 `world.get` 不间隔 -> 服务端直接不响应**(客户端超时)。
+   → 每次调用之间必须隔 `SCAN_INTERVAL`(0.15s)。
+2. **连续 `world.get` 约 70 次 -> 服务端主动断开连接**
+   ("连接被服务端关闭(已收 0/3 字节)"), 之后重试全是 Broken pipe。
+   → 扫描必须能**重建连接**后继续(`cok_rally.scan_bosses(on_reconnect=...)`;
+   网页侧实现在 `cok_web.py:_rally_reconnect`)。
+
+### 扫描策略(轮转 + 注册表 + 落盘)
+
+* 平时(页面每 15 秒拉一次): 只扫 **6 个**采样点(约 4 秒), 游标往前推。
+* 点「扫描」: 一次多扫 `SCAN_BATCH=24` 个点(约 17 秒)。
+  **不是**全图 —— 全图 576 点要 7 分钟, 不能让人干等。
+* 结果并进 `boss-registry.json`(`COK_DATA_DIR` 下), 页面重启不用重扫。
+  6 小时没再见到就认为这只已经消失。
+* 页面每 15 秒单独拉一次集结状态(独立定时器), **不塞进主轮询** ——
+  主轮询 5 秒一次, 加几次 `world.get` 会明显拖慢刷新。
+
+### 发起集结: `world.march {type:4, wtIndex:N}`
+
+```
+world.march {
+  point:INT(index), type:INT(4),        # 4 = MarchMethodType.MethodRally
+  soldiers:{armyId:INT(num)},
+  generalId:"", petDragonUid:"", aormationId:"", autoQueue:0,
+  marchKey:md5(...),                     # ★ 必须按 type=4 算, 不是打野怪的 type=6
+  wtIndex:INT(1..4)                      # ★ 集结时长档位序号
+}
+-> allianceBattleTeam{ teamId, monsterId, member[], ... }
+```
+
+客户端调用链(逆向):
+`MonsterTilePopView.doAttack()` -> `AllianceManager:call("openAllianceMassView")`
+-> `AllianceMassTeamViewLua.onClickBtn` -> `openMarchDeploy(..., bType=MethodRally, tag=wtIndex)`
+-> `gameConst.lua:1354 MarchMethodType.MethodRally = 4`。
+
+### 集结时间(4 档)从哪来
+
+* 客户端**只发档位序号** `wtIndex` 1..4(按钮 `m_btn1..m_btn4`),
+  实际分钟数由**服务端配置**决定: `login.dataconfig` -> `dataConfig.world_rally`
+  的 `k1..k4`。实测区服 2223: **k1=5 / k2=10 / k3=30 / k4=60 分钟**。
+  不同区服可能不同, 所以**每次都读, 不写死**。
+* **只读交叉验证**(不用再发集结就能确认服务端按配置执行):
+  `alliance.team.ls` 里每支集结都有 `createTime` / `waitTime` / `marchTime`,
+  单位是**毫秒**; `waitTime - createTime` 就是服务端实际执行的档位时长。
+  * 实测 21 级巨型狮鹫的 3 支集结: `waitTime - createTime` = **正好 5.0 分钟**
+    (= k1) -> 证明 `wtIndex=1` -> 5 分钟。
+  * 实测本工具发起的 `wtIndex=2` 集结: `wait_minutes = 10.0`
+    (= k2) -> 证明 `wtIndex=2` -> 10 分钟。
+  * `marchTime` 是**真正出发**的时间(比 `waitTime` 晚 1~2 分钟, 集结结束后的行军)。
+* 客户端显示值还会被「集结时间」作用号修正(`JIJIE_TIME=240` / `JIJIE_SUBT=416`,
+  显示 = `k值*pro - subT`)。那是客户端本地显示, 服务端执行的是 k 值。
+
+### ⚠️ 同一目标只能有一支集结
+
+错误码 `115212` = 对同一个敌人只能创建一支队伍。
+⇒ 页面把「已经有集结」的目标标成 `[已有集结]`, 自动挑目标时跳过它们。
+判定必须用集结条目里的 **`targetId`(目标地块 index)**,
+**不能**用 `monsterId` —— 同一个等级有几十只 boss, 用 monsterId 会把整片都标成忙。
+
+### 联盟集结列表 `alliance.team.ls {side:1}`
+
+返回 `list[]` + `helplist[]`。`list` 里混着**普通行军**和**集结**, 靠
+`targetType=15`(= ActBossTile) 区分。每条集结的字段(2026-11-02 实测):
+
+| 字段 | 含义 |
+|---|---|
+| `targetType` | 15 = 目标是活动怪首领 |
+| `targetId` | **目标的地图 index**(判定"这只已有集结"用这个) |
+| `monsterId` | 902113 / 902114 / 902115 / 902150 |
+| `createTime` / `waitTime` / `marchTime` | **毫秒**时间戳 |
+| `attackId` / `attackName` | 发起人 uid / 名字 |
+| `member[]` | 参战成员(`uid` / `userId`) |
+
+判定"是不是我的集结": `attackId == 本账号 uid`, 或 `member[].uid` /
+`member[].userId == 本账号 uid`(三种都要认)。
+
+### ⚠️ 真实副作用
+
+发起集结会**真的**消耗: 体力 **20 点/次**(首领怪 `usePower`=20) + 士兵,
+并在联盟里建一个集结(别的成员能加入)。所以:
+* 做成**显式按钮**, 不塞进 `AutoHunter` 自动循环 —— 自动循环会连续撞 `115212`。
+* 页面点「发起集结」前有二次确认弹窗, 写明目标/时长/兵数/代价。
+
+### 错误码(设备 `text_zh_CN.ini` 实测)
+
+| 码 | 含义 |
+|---|---|
+| `115212` | 对同一个目标只能创建一支队伍 |
+| `115218` | 需要加入联盟才能使用集结功能 |
+| `115219` | 队伍已经出发, 不能加入 |
+| `113228` | 今日剩余使用次数不足(`res.tile.find` 用完) |
+| `E100047` | 体力不足 |
+
+### 页面用法
+
+1. 「等级」选 12 / 21 / 30(只显示地图上实际有的等级)。
+2. 「目标」选具体哪一只(带血量; 已有集结的会标出来, 默认会挑一只**没有**集结的)。
+3. 「集结时间」选 4 档之一(分钟数是服务端下发的实际值)。
+4. 「派兵」填数量(自动选可用兵种, 库存不够就按库存)。
+5. 点「发起集结」-> 二次确认 -> 真正出征。
+
+### 安卓端(2026-11-02 已装)
+
+* **原生「操作」页**有同样的面板(`OperationsScreen.kt:RallyCard`),
+  紧跟在「自动打怪」卡下面; **「完整高级控制台」**(WebView)里也有同一套网页面板。
+* 原生侧走 `ConsoleViewModel.loadRally()` / `startRally()` ->
+  `POST /api/action {action:"hunt", op:"rally-state"|"rally-start"}`。
+* 集结状态**不进 `/api/state`** —— 它要发 `world.get` 拉地块, 比主轮询慢得多。
+  原生侧只在进「操作」页时读一次, 之后靠卡片上的「刷新」手动更新,
+  **不跟主轮询抢账号连接**。
+* ⚠️ 注册表 `boss-registry.json` 是运行时文件, 安卓端必须落在 `files/cok/data`
+  (不能写进只读的 assets)。`cok_rally` 默认目录用 `accounts.DATA_ROOT`,
+  网页切账号时调 `cok_rally.set_data_dir(...)` 跟 `cok_map` 保持一致。
+
+### 命令行(不依赖网页)
+
+```bash
+# 只读: 读集结状态 + 扫 boss
+python3 cok_rally.py --account <uid-main>
+
+# 发起集结(真实消耗体力 20 + 兵)
+python3 cok_rally.py --account <uid-main> --start 12 --slot 3 --num 200
+```
+
+### 配套脚本
+
+| 脚本 | 用途 |
+|---|---|
+| `test_rally.py` | 单元测试(53 项, 不连游戏服, 零消耗) |
+| `probe_boss_zone.py` / `probe_boss_zone2.py` | 区域边界探测(带自动重连) |
+| `seed_boss_registry.py` | 灌注册表 + 全图抽样打底 |
+| `boss-registry.json` | 已知巨型狮鹫注册表(落盘, 页面重启不用重扫) |
 
 
 
@@ -938,11 +1662,39 @@ index = (uint)point.x + 1 + (uint)((float)w1 * point.y)     // w1 = 1201
 所以开启「被攻击自动开罩」时, 网页会**自动切到常驻连接**(顶栏会显示
 「常驻连接(App 会被踢)」)。这是收推送的必要代价, 页面有明确提示。
 
-判定逻辑(与 daemon 一致):
-* **有罩且未过期** → 不重复开(否则连续被攻击会瞬间烧光道具)
-* **被攻击**(force 触发) → 允许续罩
+#### ⚠⚠ 三个坑(2026-10-26 修: "开了自动开罩但被攻击了没开成")
+
+1. **"开关开着"不等于"常驻连接"** —— 以前只在**页面里勾选**的那一刻切常驻;
+   设置文件里已经开着 `autoShield` (或重启了控制台) → 连接仍退回短连接 →
+   被攻击的推送根本收不到 → **自动开罩静默失效, 一点报错都没有**。
+   现在启动时按设置强制常驻(`Engine.__init__`)。
+2. **推送要等下一轮轮询才被发现** —— 推送是在"等命令响应"时从 socket 读的,
+   不发命令就收不到; 常驻连接下被攻击了也要等 5 分钟才看到, 兵早被打完了。
+   现在睡眠期间**每 20 秒戳一下**(`cmd.ping`), 反应时间 ~20 秒。
+   `--shield-watch-interval` 可调; 页面「保护罩」卡会显示"推送监听 20s · 已 N 次"。
+3. **"没报错"不等于"开成了"** —— 槽位里没有可用道具时, 服务端**不报错也不生效**
+   (响应里 `deal` 是空的、没有 `shieldEndTime`)。现在开罩后会用
+   `show.status.item` 复核一次, 没开成会明确报"槽位里没有可用的保护罩道具"。
+
+#### 判定逻辑
+
+* **罩还剩 > 5 分钟**(`--shield-refresh-before`)→ 不重复开。
+  ⚠ 早先是"被攻击就续罩", 但保护罩是 **8 小时**的定时 buff, 罩还在时重复开
+  只是白烧道具(用户一共就 9 个) → 改成"快到期了才续"。
 * 冷却期(默认 600 秒)内不再开
 * 服务端自带冷却, 冷却期内再开会被拒(文本 105163/105164)
+
+#### 调试: 不真挨打也能验证整条链路
+
+```bash
+curl -X POST "http://127.0.0.1:8770/api/action?t=<token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"shield","op":"test-trigger"}'
+```
+
+会往推送队列里塞一条假的 `push.world.injured`, 然后走一遍
+"推送 → 判定 → onekeybuff.use → 复核 → 事件"。**罩不在的时候它会真的消耗一个道具**。
+
 
 ## 港口(码头航海贸易 / newBoat)
 
@@ -970,6 +1722,15 @@ APK 里有**三套并行**的航海贸易命令族, Lua 注释都写"码头航�
 | `newBoat.sendShip` / `recallShip` / `speedUp` / `shipReward` | `{uuid}` | 单条操作 |
 | `newBoat.select` | `{uuid, itemId, rewardConfigId}` | 选择载货(比 dockTrade 多一个参数) |
 
+码头宝箱(港口活动奖励)相关:
+
+| 来源 | 参数 | 说明 |
+|---|---|---|
+| `init` 推送的 `cargo` 字段 | — | **奖励物品 + 刷新时间**(唯一的明细来源) |
+| `cargo.open` | 无 | 只回 `{isOpen, isDouble}`(活动开关, 没有奖励明细) |
+| `cargo.reward` / `cargo.seead` | — | 领取 / 上报广告看完(**脚本不调用**, 客户端要看完广告才发) |
+| 推送 `port_advertisement_status` | — | 宝箱状态变化时的推送(收到就更新) |
+
 船只状态(`NewNavigationCtl.SHIPSTATE`, 与 `SeaTradeCtl` 一致):
 
 | 值 | 含义 |
@@ -988,17 +1749,95 @@ uuid / configId / itemId / count / cTime / endTime /
 state / speedLimit / speedTimes / type
 ```
 
-`type` **不是**货物类别, 而是**界面主题**(白天/夜晚, 见 `NewNavigationView.lua`),
-但客户端用 `type != "0"` 来判定"这艘船算不算真船":
+⚠️ **`type == 0` 的那条根本不是船**, 是「**码头宝箱**」(港口活动奖励位)。
+客户端 `NewNavigationCell:refreshCell` 明确分流:
+
+```lua
+function NewNavigationCell:refreshCell(info, idx)
+     if info.type ~= "0" then
+        self:refreshBoatCell(info,idx)      -- 普通船
+    else
+        self:refreshTimeRewardCell(info,idx) -- 码头宝箱(奖励物品 + 刷新倒计时)
+    end
+end
+```
+
+客户端还用 `type != "0"` 判定"这艘船算不算真船"(可派遣/可领奖):
 
 ```lua
 if v.type ~= "0" and tonumber(v.state) == SHIPSTATE.FREE then ... end
 if v.type ~= "0" and tonumber(v.state) == SHIPSTATE.REWARD then ... end
 ```
 
-所以 `type=0` 是**空船**(没装货), 客户端不会把它算进可派遣/可领奖。
-`cok_dock` 因此把 `type=0` 的船排除在 `idle` / `rewardable` 之外 ——
-否则页面会显示"有空闲船可派", 但点了服务端什么都不做。
+所以 `type=0` 那一格:
+* **不是**"空船"(它压根不是船), 也就**永远不是"空载"**
+* 不算进 `idle` / `rewardable`(点一键分派服务端也不会动它)
+* 游戏里那一格显示的是**码头宝箱**: 当前奖励物品 + 到下一次刷新的倒计时,
+  领完 → 倒计时几分钟后 → 换一件新物品
+
+### 码头宝箱的数据在哪(不在 newBoat.data 里!)
+
+`newBoat.data` 里**没有**宝箱的奖励信息, 它在**登录后服务端下发的 `init` 推送**里:
+
+```
+init.cargo = {rewardTime, times, rewardInfo}
+  rewardInfo = "goods,{itemId},{count}"   客户端 CargoRewardDialog:initView
+             按逗号切: [1]=道具id [2]=数量
+  rewardTime = 刷新时间(ms, 服务器时钟); <= now 表示"现在就能领"
+  times      = 次数(服务端语义未明确, 只透传)
+```
+
+客户端显示逻辑(`CargoRewardDialog:updateView`):
+
+```lua
+if targetTime > now then  按钮 = 倒计时(CC_SECTOA(targetTime-now)), 不可点
+else                      按钮 = "领取奖励", 可点
+```
+
+### 领取码头宝箱(`cargo.reward`)
+
+| 命令 | 参数 | 响应 |
+|---|---|---|
+| `cargo.reward` | **无参**(带任何参数都回 `E100148`="您未达到领取奖励的条件") | `reward.goods[]` + `cargo`(新状态) + `isDouble` |
+
+实测响应:
+
+```jsonc
+{
+ "reward": {"goods": [{"itemId": "200343", "count": 100, "para1": "158", "para2": "5000",
+                        "uuid": "70419a85..."}]},
+ "cargo": {"rewardTime": 1792997576650, "times": 2, "rewardInfo": "goods,211508,3000"},
+ "isDouble": 1
+}
+```
+
+* `cargo` 字段 = **领取后的新状态**(新物品 + 新倒计时) → 必须写回缓存,
+  否则领完页面还显示旧物品
+* `cargo.seead` 回 `E000000`, **不用发**(客户端看完广告才发它, 服务端不要求)
+* 服务端**不卡冷却**: `rewardTime` 还没到也能领 —— 所以脚本侧按客户端逻辑
+  自己设闸(`rewardTime <= now` 才领), 否则一轮轮询就能把每日次数刷光
+* 宝箱奖励是随机资源: 实测领到过 `5,000钢`×100 / `精铁`×782739 / `幸运石`×200
+* `times` = 今日已领次数(实测领一次 +1)
+
+### 网页上的行为(2026-10-26 起)
+
+* **一键领取** = 船的奖励(`newBoat.oneKeyShipReward`) **+ 码头宝箱**(`cargo.reward`)
+* **「可领时自动领」** 同上: 宝箱到时间了也会自动领
+  ⚠ 服务端不卡冷却 → 脚本自己按 `rewardTime <= now` 设闸;
+  实测宝箱一可领就会被下一轮轮询领走(每轮最多一次), `times` 会跟着涨
+* 领到的东西会并进卡片里的「上次领取」明细, 标注 `(码头宝箱)`
+* 按钮上的计数 = 可领奖的船数 + (宝箱可领 ? 1 : 0)
+* 被服务端拒(`E100148`)时**不算故障**, 不刷错误日志(只是还没到时间/次数用完)
+
+所以网页现在这样显示(2026-10-26 起):
+
+* 船表第一行: `码头宝箱` + `(可领取)` 或 `X 后刷新` + 奖励物品 `5,000钢 ×50`
+* 卡片提示行: `... · 码头宝箱 5,000钢 ×50 · 可领取`
+* 数据链路: `CokClient` 收到 `init` 推送时缓存一份(`client.init_params`),
+  `cok_dock.read_cargo()` 从中取 `cargo`; 带 `cargo` 的推送会**增量覆盖**它
+
+⚠️ 宝箱物品是**登录时的快照**: 常驻连接模式下, 如果在游戏里领了宝箱,
+要等重连(或服务端推 cargo 更新)才会刷新。
 
 ### 定时检查
 
@@ -1008,6 +1847,8 @@ if v.type ~= "0" and tonumber(v.state) == SHIPSTATE.REWARD then ... end
 * 两个开关**默认都关**, 因为一键分派会**真的派出船只**(消耗载货/资源)
 * **打怪的时候也能检查**: 港口检查会**搭打怪那条连接**(同一线程、同一 socket),
   不额外开连接, 也就不会跟自动打怪互踢
+* 码头宝箱**不在自动领取范围内**(它是广告/活动奖励, 客户端要看完广告才发
+  `cargo.reward`, 脚本这边不碰)
 
 ### 领取结果怎么展示
 
@@ -1026,27 +1867,169 @@ if v.type ~= "0" and tonumber(v.state) == SHIPSTATE.REWARD then ... end
 * 错误码会用 `id-names.json` 的 `reward_names` 翻译成中文
   (如 `102192` → `功能未开启，敬请期待`)
 
-### 实测数据(区服 2223, 2026-10-25)
+### 实测数据(区服 2223, 2026-10-25 / 2026-10-26 修正)
 
 ```
 newBoat.data → ships: 4 条, shipLimit: 4
-  #1 state=1 type=0 空载                       (空船, 不可派遣)
+  #1 state=1 type=0 —— **码头宝箱**(不是空船!)  奖励: 5,000钢 ×50
   #2 state=2 type=1 25金币 ×3                  贸易中, 剩余 ~4h53m
   #3 state=2 type=2 永夜秘典 ×2000             贸易中
   #4 state=2 type=3 引路虫·幻化 ×15            贸易中
+init.cargo → {rewardTime: 1792981663685, times: 1, rewardInfo: "goods,200343,50"}
+              (200343 = "5,000钢"; rewardTime 已过 → 可领取)
+cargo.open → {isOpen: false, isDouble: false}   (只有活动开关, 没有奖励明细)
+cargo.reward (无参) → reward.goods[0]={itemId:200343, count:100, para2:"5000"}
+                      + cargo={rewardTime:+26分钟, times:2, rewardInfo:"goods,211508,3000"}
+                      + isDouble:1
 newBoat.oneKeyShipReward → array: []          (当时无可领奖的船)
-newBoat.oneKeySendShip   → array: []          (唯一空闲船是 type=0 空船)
+newBoat.oneKeySendShip   → array: []          (没有可派遣的船: 唯一"空闲"那格是宝箱)
 ```
 
 载货道具的中文名来自 `id-names.json` 的 `item_names`(例如 `36008371` → `25金币`)。
 奖励配置表 `luaxml_new_navigation_reward` 是**运行时下发**的, 不在 APK 内,
 所以货物种类名取不到, 但**道具名**能取到。
 
+## 福利中心(日常福利 / everydayexchange + userpayreward)
+
+两个**每天都能领**的免费奖励, 客户端源码位置:
+
+| 福利 | 客户端 | 读 | 领 |
+|---|---|---|---|
+| 每日好礼 | `game/WelfareIntegrate/dailyRecharge/DailyRechargeController.lua` | `everydayexchange.data` (无参) | `everydayexchange.reward` (无参) |
+| 龙之馈赠(黑龙) | `game/activity/UserReward/UserRewardController.lua` | `userpayreward.newinfo` (无参) | `userpayreward.newaccept {exchangeId, specialReward}` |
+
+### 数据形态(实测)
+
+```
+everydayexchange.data →
+  {freeRewarded: true,      ← 今天的免费奖励领了没
+   freeReward: "256844", payRewarded: false, payReward: "256845",
+   commonExchangeIds: "765880;765881;765882;766112"}
+  ⚠ payReward 是**充值**奖励 —— 脚本不碰(要花钱)
+
+userpayreward.newinfo →
+  {currDay: 1,                                    ← 今天是周几(0=周日)
+   configArray: [{exchangeId, rewardId, day, rewards:[{type,value:{num,id}}]}],
+   processConfigArray: [...],
+   "760359": {isBuy: true, rewardDays: "0;1", specialRewardDays: "",
+              specialActivityOpen: false, process: 10, processStr: ""},   ← 黑龙
+   "764116": {isBuy: false, rewardDays: "", ...}}                        ← 蓝龙(等级10+)
+```
+
+### 谁算"能领"(客户端 `UserRewardController` 的规则)
+
+```
+活动开 + 付费   → 普通 + 尊享 两份
+活动开 + 没付费 → 只有普通
+活动没开 + 付费 → 只有普通
+活动没开 + 没付费 → 都没有
+```
+
+所以脚本的判定:
+
+* 普通奖励 = (`isBuy` 或 `specialActivityOpen`) 且 今天不在 `rewardDays` 里
+* 尊享好礼 = `isBuy` **且** `specialActivityOpen` 且 今天不在 `specialRewardDays` 里
+* 黑龙 = exchangeId `760359`(客户端 `getBlackDragonId` 的兜底值);
+  蓝龙 = `764116`(要主城 10 级)。**没买的龙不领**。
+
+### 实测错误码(2026-10-26, 参数对不对靠它们验证)
+
+| 命令 | 结果 | 说明 |
+|---|---|---|
+| `everydayexchange.reward` (无参) | `101312`「已领取」 | 命令名/参数对, 只是今天领过了 |
+| `userpayreward.newaccept {760359, false}` | `E100171`「不满足条件」 | 参数对, 今天已领 |
+| `userpayreward.newaccept {760359, true}` | `E000000` | 尊享没开 → 不发这个 |
+| `userpayreward.newaccept {764116, false}` | `E100171` | 蓝龙没买 |
+| `userpayreward.newaccept {760359}` (缺 specialReward) | `E000000` | **两个参数都要传** |
+
+### 网页上的行为
+
+* 新增「**福利中心**」卡: 每日好礼 / 龙之馈赠·黑龙 / 龙之馈赠·蓝龙 三行
+  (状态 + 今天的奖励物品 + 能不能领)
+* 「**可领时自动领**」开关: 每轮轮询读一次状态, 能领就领, 领完重读
+* 「一键领取」按钮: 手动领当天能领的
+* 「今日待办」里也会出现「福利中心有 N 项可领」
+
+⚠ **游戏日切**: 服务端按 UTC 记天, 北京时间 **08:00** 换天 —— 每日奖励是那天 08:00 刷新的。
+(页面上的"服务器日期"是服务端 UTC + 8h 算的, 跟本机时间差 8 小时, 是显示口径问题, 不影响领取)
 
 
 ## 背包(道具实例 uuid / 数量)
 
+> ✅ **2026-11-10 更新**: 直连拉全背包的命令**已定位** = **`login.init`**。
+> 下面这段「命令名仍未定位 / 只能靠 frida 读 App 内存」的旧结论**已作废**,
+> 保留仅作历史记录。**现在不需要手机、不需要 frida、不需要 root。**
+
 加速要的是**道具实例 uuid**(`queue.ccd` 的 `itemUUID`), 不是配置 id。
+
+### 直连拉背包 = `login.init`(现役方案)
+
+```bash
+# 拉一次背包, 打印体力药水
+python3 - <<'EOF'
+from cok_client import CokClient, account_lock, apply_account_types
+import cok_accounts as cas, cok_stamina
+uid = "<uid-guopan-intl>"
+acc = apply_account_types(dict(cas.get_account(uid)))
+cl = CokClient(timeout=60, account=acc)
+with account_lock(timeout=5, purpose="bag", key=uid):
+    cl.connect(); cl.bin_handshake(); cl.login()
+    ok, info = cok_stamina.fetch_bag(cl, uid)
+    print(ok, info)
+EOF
+```
+
+**协议形状**:
+
+```
+login.init  ->  {"qqq": <keyId>, "rlQW45Y": "<30 万 hex>"}
+rlQW45Y     ->  XOR(会话密钥) -> zlib -> SFS 对象(133 个顶层键, 95 万字节)
+其中 items = [{"itemId":"200381","count":40,"uuid":"94e0...","para1":"107","para2":"50"}, ...]
+```
+
+* `items` 就是**玩家背包**: 每条带 `itemId` / `count` / `uuid`(道具实例 id) /
+  `para2`(体力值) / `useDate` / `vanishTime`
+* 药水是**堆叠**的(一个实例 `count=N`), 实例 uuid 在 count 用完前**稳定**
+  ⇒ **拉一次缓存起来能长期用**, 不用反复拉
+* 实测背包规模: `<uid-guopan>` → 770 件; `<uid-main>` → 515 件;
+  `<uid-guopan-intl>` → 685 件
+
+**⚠️ 坑 1: 这个响应是「裸 zlib 流」** —— 服务端**不发帧长度**,
+帧头 3 字节直接就是 zlib 流的开头(`78 9c …`)。
+按长度字段读会读出 39936 而实际约 13 万字节, 后面**所有帧全部错位**。
+⇒ `cok_client._recv_frame` 里加了 `_is_zlib_head` / `_read_zlib_stream`,
+必须解到 zlib 流自然结束才算一帧。
+
+**⚠️ 坑 2: 服务端会发 5 字节心跳帧**(`a8 00 02` + 2 字节载荷)。
+当压缩帧解会抛 `zlib.error` —— 现在按心跳跳过。
+
+**⚠️ 坑 3: 服务端丢弃新连接的首条业务请求** —— `login.init` 第一次常常超时,
+**重发一次**才有响应(`retries=1`)。扫命令时用 `retries=0` 会全部超时, 结论无效。
+
+**⚠️ 拉背包很慢(40~50 秒)** —— 响应 95 万字节。所以只在
+「开了自动喝药且手上没有可用 uuid」时拉**一次**, 拉完缓存。
+
+**缓存文件**: `accounts/<uid>.items.json`
+(`{"updated": ts, "items": {"200381": {"uuid": "...", "count": 133}}}`)
+
+### 已排除的路线(别再试)
+
+| 路线 | 结论 |
+|---|---|
+| **服务端代喝药** `autoQueue.status {status:1}` | ❌ 需「自动打怪周卡」(客户端 k2=766437), 4 个账号全部 `E000000` |
+| `autoQueue.status {status:0}` | ✅ 能读回 stamina, 但只是关着, 不代喝 |
+| `autoQueue.data` | ✅ 可读(saveItems/useItems/status/lv/autoCount/force/format) |
+| **商城买药水** `mall.info` / `mall.data` | ❌ 这 4 个号的商城(497 条商品 / `mallId:"15"` 206 件)**不卖** 200380/200381/200382; `mall.data` 换 mallId → `E000004` |
+| `item.buy {id, num}` | 参数名是 **`id`**(传 `itemId` 报 `E000000`), 能返回 uuid, 但买不到体力药水 → `E000000` |
+| `cemetery.get.info` | ❌ 英灵殿, 不是背包 |
+| `show.status.item` | ❌ buff 状态(`statusItems`) |
+| `itemcollection.data` | ❌ 收藏 |
+| `push.item.having` | ⚠️ **增量通知**, 不是全量 |
+
+**错误码速查**: `E100047`=体力不足 / `E100165`=道具数量不足 /
+`E100166`=没有该道具 / `E000000`=参数错误 / `E000004`=对象不存在。
+
+### 旧方案(frida 读 App 内存)—— 已不推荐
 
 **数据源**: `bag-items.json` —— 由 `dump_bag.py` 采集:
 客户端的道具数据在 C++ `ToolController` 里
@@ -1062,37 +2045,19 @@ python3 dump_bag.py --launch --out bag-items.json --speedup speedup-owned.json
 * 需要设备已 root 且 `/data/local/tmp/frida-server` 在跑
 * **同账号只允许一个连接** —— 采集期间网页控制台要停着(App 也会被顶掉)
 
-**已确认的事实**:
-* 背包的**字段名是 `useritemlist`**(不是 "items"), 每条带 `uuid`。
-  静态定位: `libgame.so` 字符串表 0x2fde030; 解析函数 `0xfd9498`
-  (从消息 `params` 取 `useritemlist` 逐条入 ToolController);
-  相关 `ToolController::initGoodsGroup` 在 0xfc9700
-* **`push.item.having` 是增量通知**, 不是全量 ——
-  它的处理函数(0xb833b8)日志是 `"SendItemPush - get a item(%d) from(%s)."`
-* **init push 里没有背包**: 把 `rlQW45Y` 嵌套结构全量递归扫过,
-  带 uuid 的 dict 只有 101 个, 全是 `building[]`(建筑实例), 没有 itemId
-* **`cemetery.get.info` 不是背包** —— 它返回英灵殿(`kingdomCemetery`/`userCemetery`/`beforeDead`…)
-* `show.status.item` 是 **buff 状态**(`statusItems`); `itemcollection.data` 是**收藏**
+**历史结论(已被 `login.init` 取代)**: 当时把背包的**字段名**记成了 `useritemlist`
+(静态定位: `libgame.so` 字符串表 0x2fde030, 解析函数 `0xfd9498`,
+`ToolController::initGoodsGroup` 在 0xfc9700), 并且当时把 `rlQW45Y` 递归扫过一遍
+只看到 `building[]`(建筑实例)、没看到 itemId —— **那次扫法漏了 `items` 这一层**,
+所以才误判成「init push 里没有背包」。
+
+**仍然有效的排查经验**:
 * ⚠️ **"直连某命令被服务端踢连接" 的第一嫌疑不是协议, 是同账号双连接互踢** ——
   先 `am force-stop` 掉 App 再测, 否则会把互踢误判成"命令不被接受"
-* ⚠️ **服务端会丢弃新连接的首条业务请求**, 必须重发一次才有响应。
-  扫描命令时用 `retries=0` 会**全部超时**, 结论无效
 * ⚠️⚠️ **地图坐标是快照, 服务端会重排整张地图** —— 扫完的索引过一段时间
   坐标会**整体作废**(原位置换成别人)。详见上面「坐标是快照」那节
 * ⚠️ **"查不到某个玩家" 先怀疑索引过期, 再怀疑协议** —— 用一次 `world.get`
   查查那个坐标现在站着谁, 一步就能定性
-
-**当前结论**: 直连拉全背包的命令名**仍未定位**(2026-10-25)。
-所以背包数据目前仍来自 `dump_bag.py`(需要手机 + frida + root)。
-页面上的「背包数据来源」会明确标出这是快照还是实时, 不会让你误以为是实时值。
-
-排查用的工具(都在本目录, 都不需要设备):
-
-```bash
-python3 dump_init_push.py --out init.jsonl --find-items   # 抓 init push 找背包
-python3 probe_bag_cmd2.py                                  # 试候选命令(每条重连)
-python3 sweep_bag.py --all                                 # 全量扫客户端命令
-```
 
 **元数据**(`speedup-meta.json`, 471 条) 来自 `speedup-items.json` 的分组:
 `seconds`(时长秒) / `type2`(ItemSpdMenu 索引) / `label`(适用场景)。
@@ -1101,4 +2066,5 @@ python3 sweep_bag.py --all                                 # 全量扫客户端�
 
 * 默认只绑 `127.0.0.1`, 且带随机 token(`--no-token` 可关, 仅建议本机用)
 * 所有写操作(签到/领奖/加速/开罩/自动打怪)前端都带**二次确认**弹窗
-* 背包读取是只读的(读 App 内存), 但需要 frida + root
+* 背包读取(`login.init`)是**纯只读**的, 不需要 frida / root / 手机
+* 「喝体力药水」是**消耗性写操作**: 会真的扣掉背包里的药水, 且会占账号连接

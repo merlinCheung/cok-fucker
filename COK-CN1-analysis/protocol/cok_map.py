@@ -47,16 +47,43 @@ COVER_RADIUS = 12
 #: 步进步长: 必须 <= 覆盖直径, 否则会漏格子
 STEP = 12
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+#: 数据目录。多账号时每个账号一个子目录(坐标索引/扫描历史/pid 各存各的)。
+#: 由环境变量 COK_DATA_DIR 驱动, 子进程(scan_world.py)靠继承 env 自动对齐;
+#: 不设时就是脚本所在目录, 行为与多账号改造前完全一致。
+DATA_DIR = os.environ.get("COK_DATA_DIR") or _HERE
+
 #: 默认索引文件
-DEFAULT_INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "map-index.json")
+DEFAULT_INDEX = os.path.join(DATA_DIR, "map-index.json")
 
 #: 扫描历史文件(每次扫描一行记录, 按 id 去重更新)
-HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "scan-history.json")
+HISTORY_FILE = os.path.join(DATA_DIR, "scan-history.json")
 
 #: 扫描进程 pid 文件(网页据此判断"扫描还在跑", 网页重启也不丢)
-PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scan.pid")
+PID_FILE = os.path.join(DATA_DIR, "scan.pid")
+
+
+def set_data_dir(path):
+    """把数据目录指到 path, 并同步更新三个派生路径与 COK_DATA_DIR 环境变量。
+
+    环境变量也一并设置, 这样之后 Popen 出去的 scan_world.py 子进程会继承到
+    同一目录, 无需额外传参。path 为空则回退到脚本所在目录(单账号行为)。
+    """
+    global DATA_DIR, DEFAULT_INDEX, HISTORY_FILE, PID_FILE
+    DATA_DIR = path or _HERE
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+    except OSError:
+        pass
+    DEFAULT_INDEX = os.path.join(DATA_DIR, "map-index.json")
+    HISTORY_FILE = os.path.join(DATA_DIR, "scan-history.json")
+    PID_FILE = os.path.join(DATA_DIR, "scan.pid")
+    if path:
+        os.environ["COK_DATA_DIR"] = DATA_DIR
+    else:
+        os.environ.pop("COK_DATA_DIR", None)
+    return DATA_DIR
 
 
 def load_history(path=None):
@@ -265,12 +292,17 @@ def fetch_area(client, x, y, server_id=2223, timestamp=None, attempts=4):
             "mismatched": mismatched}
 
 
-def load_index(path=DEFAULT_INDEX):
+def load_index(path=None):
     """读本地索引。返回 {players: {uid: {...}}, meta: {...}}
 
     读出来时会把每个玩家的坐标**校正成众数观测点**(见 resolve_point),
     所以不管索引是刚写的还是老的, 消费方拿到的都是"最可信"的那个坐标。
+
+    path=None 时用**当前**的 DEFAULT_INDEX(set_data_dir 之后能生效) ——
+    不能把 DEFAULT_INDEX 写进默认参数, 那样会在定义时就绑死旧目录。
     """
+    if path is None:
+        path = DEFAULT_INDEX
     try:
         with open(path, encoding="utf-8") as f:
             doc = json.load(f)
@@ -292,7 +324,9 @@ def load_index(path=DEFAULT_INDEX):
     return doc
 
 
-def save_index(doc, path=DEFAULT_INDEX):
+def save_index(doc, path=None):
+    if path is None:
+        path = DEFAULT_INDEX
     # ⚠️ 临时文件名要**带 pid**: 多个进程同时写同一个索引时, 共用
     # "<path>.tmp" 会互相抢文件 —— os.replace 报 FileNotFoundError,
     # 扫描器因此崩掉、而且旧索引会把新索引覆盖回去。
@@ -388,7 +422,7 @@ def merge_players(index, players, center=None):
 
 
 def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
-              index=None, path=DEFAULT_INDEX, progress=None,
+              index=None, path=None, progress=None,
               max_requests=None, own_uid=None, delay=0.0, resume_y=None,
               reconnect=None, reconnect_every=200):
     """扫描一个矩形区域, 把玩家写进本地索引。
@@ -403,6 +437,8 @@ def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
               长连接偶尔会进入"既不返回也不断连"的半死状态, 表现为扫描
               长时间卡在同一个中心; 定期重连能把影响限制在少量请求内。
     """
+    if path is None:
+        path = DEFAULT_INDEX
     index = index if index is not None else load_index(path)
     stats = {"requests": 0, "tiles": 0, "players": 0, "new": 0,
              "errors": 0, "elapsed": 0.0}
@@ -486,9 +522,11 @@ def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
 
 
 def scan_world(client, server_id=2223, step=STEP, index=None,
-               path=DEFAULT_INDEX, progress=None, max_requests=None,
+               path=None, progress=None, max_requests=None,
                size=WORLD_SIZE):
     """扫描整张世界地图(1201×1201)。"""
+    if path is None:
+        path = DEFAULT_INDEX
     return scan_area(client, 0, 0, size - 1, size - 1,
                      server_id=server_id, step=step, index=index,
                      path=path, progress=progress,

@@ -30,6 +30,7 @@ sys.path.insert(0, HERE)
 
 import cok_client  # noqa: E402
 import cok_map  # noqa: E402
+import cok_accounts as accounts  # noqa: E402
 
 #: NPC 名字形如 "Empire01a8c#2223" —— 以 #<数字> 结尾的都是 NPC/怪物城
 _NPC_RE = re.compile(r"#\d+$")
@@ -60,26 +61,39 @@ def stop_app():
         return False
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=cok_map.DEFAULT_INDEX, help="索引文件")
-    ap.add_argument("--radius", type=int, default=0,
-                    help="只扫自己周围 N 格(0 = 全图)")
-    ap.add_argument("--step", type=int, default=cok_map.STEP)
-    ap.add_argument("--max-requests", type=int, default=0,
-                    help="本次最多请求数(0 = 不限)")
-    ap.add_argument("--resume", action="store_true", help="从索引记录的断点继续")
-    ap.add_argument("--server", type=int, default=2223)
-    ap.add_argument("--keep-app", action="store_true",
-                    help="不要停掉手机上的游戏 App(同账号双连接会被服务端互踢)")
-    ap.add_argument("--reconnect-every", type=int, default=200,
-                    help="每 N 个中心重连一次(看门狗, 0 = 不重连)")
-    ap.add_argument("--delay", type=float, default=0.0,
-                    help="每个中心之间的额外停顿秒数(限速, 避免服务端降速)")
-    ap.add_argument("--fresh", action="store_true",
-                    help="全图重扫: 归档旧索引并从空白索引开始(旧数据属于"
-                         "上一次地图布局, 混进来会让众数投票选错)")
-    args = ap.parse_args()
+class _Args:
+    """run_scan 的轻量参数容器(等价于 argparse.Namespace)。"""
+
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def run_scan(args, stop_event=None, install_signals=True,
+             stop_app_fn=None, log=print):
+    """执行一次扫描。CLI(独立进程)和安卓(进程内线程)共用这一份实现。
+
+    args: 带以下字段的对象(见 _Args / argparse.Namespace):
+      out, account_key, radius, step, max_requests, resume, server,
+      keep_app, reconnect_every, delay, fresh
+    stop_event: 可选 threading.Event —— 置位后在下一个中心点抛 KeyboardInterrupt
+      优雅收尾(断点已随 progress 落盘)。安卓端没有信号可用, 靠它停止。
+    install_signals: 是否注册 SIGTERM/SIGINT(只有主线程能注册; 工作线程传 False)。
+    stop_app_fn: 可选"停游戏 App"实现。安卓端没有 adb, 传平台钩子(ActivityManager);
+      不传则退回模块级 stop_app()(adb, 桌面端)。
+    log: 进度/状态输出函数(默认 print; 安卓端可改成写日志文件)。
+    """
+    # ⚠️ 账号必须在读索引/定 --out **之前**确定下来:
+    #   * account_key 给了 -> 用账号库的凭据, 并把数据目录隔离到该账号子目录
+    #   * 没给           -> 沿用环境里的 COK_DATA_DIR(父进程网页已设好)或默认目录
+    account = None
+    if getattr(args, "account_key", None):
+        account = accounts.get_account(args.account_key)
+        if not account:
+            log("[!] 账号库里没有 %s" % args.account_key)
+            return 2
+        cok_map.set_data_dir(accounts.data_dir(args.account_key))
+    if getattr(args, "out", None) is None:
+        args.out = cok_map.DEFAULT_INDEX
 
     # ⚠️ 全图重扫必须从**空白索引**开始: 旧索引里的坐标属于**上一次地图布局**
     # (服务端会重排地图), 混进新扫描后, 旧坐标的票数可能反而更多 ——
@@ -88,9 +102,9 @@ def main():
         bak = "%s.bak-%s" % (args.out, time.strftime("%Y%m%d-%H%M%S"))
         try:
             os.replace(args.out, bak)
-            print("  旧索引已归档: %s" % os.path.basename(bak), flush=True)
+            log("  旧索引已归档: %s" % os.path.basename(bak))
         except OSError as e:
-            print("  [!] 归档旧索引失败(继续): %s" % e, flush=True)
+            log("  [!] 归档旧索引失败(继续): %s" % e)
 
     index = cok_map.load_index(args.out)
     meta = index.get("meta") or {}
@@ -99,15 +113,15 @@ def main():
     run_id = time.strftime("%Y%m%d-%H%M%S")
     cok_map.write_scan_pid(os.getpid())
 
-    def _on_term(signum, frame):
-        # 抛异常让 scan_area 的 finally 收尾(写断点 + meta), 再由外层记历史
-        raise KeyboardInterrupt
-
-    try:
-        signal.signal(signal.SIGTERM, _on_term)
-        signal.signal(signal.SIGINT, _on_term)
-    except (ValueError, OSError):
-        pass
+    if install_signals:
+        def _on_term(signum, frame):
+            # 抛异常让 scan_area 的 finally 收尾(写断点 + meta), 再由外层记历史
+            raise KeyboardInterrupt
+        try:
+            signal.signal(signal.SIGTERM, _on_term)
+            signal.signal(signal.SIGINT, _on_term)
+        except (ValueError, OSError):
+            pass
 
     cok_map.record_scan({
         "id": run_id,
@@ -145,12 +159,16 @@ def main():
 
     # 自己的 uid(用于自动记录自己坐标)
     own_uid = str((cok_client.ACCOUNT or {}).get("gameUid") or "")
-    try:
-        from cok_account import load_account as _la
-        acc = _la() or {}
-        own_uid = str(acc.get("gameUid") or own_uid)
-    except Exception:
-        pass
+    if account:
+        # 指定了账号库账号 -> 直接用它的 gameUid, 不去读设备(设备上可能是别的号)
+        own_uid = str(account.get("gameUid") or own_uid)
+    else:
+        try:
+            from cok_account import load_account as _la
+            acc = _la() or {}
+            own_uid = str(acc.get("gameUid") or own_uid)
+        except Exception:
+            pass
 
     # 中心点: 用索引里记录的 self_point(扫描时自动记录的, 不写死坐标)
     # ⚠️ 先读本次的索引, 再退回正式索引 —— 不能写成 for/else, 那样
@@ -175,7 +193,7 @@ def main():
         x1 = min(cok_map.WORLD_SIZE - 1, cx + args.radius)
         y1 = min(cok_map.WORLD_SIZE - 1, cy + args.radius)
         if cx == 0 and cy == 0:
-            print("[!] 还没有自己的坐标, 先跑一次小范围扫描定位", flush=True)
+            log("[!] 还没有自己的坐标, 先跑一次小范围扫描定位")
     else:
         x0 = y0 = 0
         x1 = y1 = cok_map.WORLD_SIZE - 1
@@ -188,42 +206,43 @@ def main():
         # 早先这里把 y0 也设成了 next_y, 那样会漏掉 "x>断点列 且 y<断点y" 的整片区域,
         # 而那部分**还没扫过**(日志会显示成 "区域: x 204~1200 y 432~1200")。
         resume_y = int(meta.get("next_y") or 0)
-        print("[*] 从断点继续: x=%d, 第一列从 y=%d 开始(后续列从 y=%d 起)" % (
-            x0, resume_y, y0), flush=True)
+        log("[*] 从断点继续: x=%d, 第一列从 y=%d 开始(后续列从 y=%d 起)" % (
+            x0, resume_y, y0))
 
     # ⚠️ 区域可能是长方形(续扫时), 必须是 列数 × 行数, 不能用平方
     total = ((x1 - x0) // args.step + 1) * ((y1 - y0) // args.step + 1)
-    print("=" * 68, flush=True)
-    print("  COK 全图扫描", flush=True)
-    print("  区域: x %d~%d  y %d~%d  步长 %d" % (x0, x1, y0, y1, args.step), flush=True)
-    print("  预计请求数: %d  (约 %s)" % (
-        total, fmt_dur(total * 0.2)), flush=True)
-    print("  索引: %s" % args.out, flush=True)
-    print("=" * 68, flush=True)
+    log("=" * 68)
+    log("  COK 全图扫描")
+    log("  区域: x %d~%d  y %d~%d  步长 %d" % (x0, x1, y0, y1, args.step))
+    log("  预计请求数: %d  (约 %s)" % (total, fmt_dur(total * 0.2)))
+    log("  索引: %s" % args.out)
+    log("=" * 68)
 
     t_start = time.time()
-    last_print = 0.0
+    last_print = [0.0]
 
     # ⚠️ 必须先把手机上的游戏 App 停掉: 同账号只允许一个连接, App 在线时
     # 扫描器这条连接会被服务端主动断开(表现为"连接被服务端关闭(已收 0/3 字节)")。
-    # 网页的"自动打怪"也是这么做的, 扫描器以前漏了这步 —— 害我误判成"配额"。
     if not args.keep_app:
-        stopped = stop_app()
-        print("  停 App: %s" % ("已停止" if stopped else "没找到/没权限(继续试)"), flush=True)
+        stopper = stop_app_fn or stop_app
+        try:
+            stopped = bool(stopper(account.get("packageName")
+                                   if account else None)) \
+                if stop_app_fn else bool(stopper())
+        except TypeError:
+            # 平台钩子可能是无参/有参两种签名, 容错一下
+            stopped = bool(stop_app_fn()) if stop_app_fn else bool(stop_app())
+        except Exception:  # noqa: BLE001
+            stopped = False
+        log("  停 App: %s" % ("已停止" if stopped else "没找到/没权限(继续试)"))
         time.sleep(1.5)
 
+    def _should_stop():
+        return bool(stop_event is not None and stop_event.is_set())
+
     def progress(px, py, st):
-        nonlocal last_print
         now = time.time()
-        if now - last_print < 5.0 and not st.get("done"):
-            return
-        last_print = now
-        done = st["requests"]
-        eta = (total - done) * 0.2
-        print("  [%5d/%5d] 中心(%d,%d) 玩家 %d 新增 %d 索引 %d  剩余约 %s" % (
-            done, total, px, py, st["players"], st["new"],
-            len(index.get("players") or {}), fmt_dur(eta)), flush=True)
-        # 实时落盘(扫描中也能查到已扫到的)
+        # 实时落盘(扫描中也能查到已扫到的), 并记录断点
         meta2 = dict(index.get("meta") or {})
         meta2.update({"updated_at": int(time.time()), "partial": True,
                       "next_x": px, "next_y": py,
@@ -232,12 +251,23 @@ def main():
                       "requests_total": total})
         index["meta"] = meta2
         cok_map.save_index(index, args.out)
+        if now - last_print[0] >= 5.0 or st.get("done"):
+            last_print[0] = now
+            done = st["requests"]
+            eta = (total - done) * 0.2
+            log("  [%5d/%5d] 中心(%d,%d) 玩家 %d 新增 %d 索引 %d  剩余约 %s" % (
+                done, total, px, py, st["players"], st["new"],
+                len(index.get("players") or {}), fmt_dur(eta)))
+        # ⚠️ 协作式停止: 安卓端没有信号, 靠这里抛 KeyboardInterrupt ——
+        # scan_area 的 finally 会把断点+meta 收尾, 外层 except 记"中断"历史。
+        if _should_stop():
+            raise KeyboardInterrupt
 
     def make_conn():
         """建一条干净连接(登录 + 预热)。"""
         # ⚠️ 超时要**短**(20 秒): 服务端偶尔会让某条请求既不返回也不断连,
         # 60 秒 × 4 次重试 = 卡 4 分钟才放弃。正常响应只要 0.2~1 秒。
-        cc = cok_client.CokClient(timeout=20.0).connect()
+        cc = cok_client.CokClient(timeout=20.0, account=account).connect()
         cc.bin_handshake()
         cc.login()
         # ⚠️ 新连接的第一条业务请求会被服务端丢弃 -> 补发一条把连接"热"起来
@@ -249,7 +279,9 @@ def main():
         return cc
 
     try:
-        with cok_client.account_lock(timeout=120.0, purpose="scan-world"):
+        # 多账号: 锁 key 用账号 id, 不同账号互不阻塞; 没指定账号则默认全局锁。
+        with cok_client.account_lock(timeout=120.0, purpose="scan-world",
+                                     key=args.account_key):
             c = make_conn()
             try:
                 st = cok_map.scan_area(
@@ -257,15 +289,18 @@ def main():
                     index=index, path=args.out, progress=progress,
                     max_requests=args.max_requests or None, own_uid=own_uid,
                     resume_y=resume_y,
-                    # 看门狗: 长连接偶尔半死(既不返回也不断连), 定期重连
                     reconnect=make_conn, reconnect_every=args.reconnect_every,
                     delay=args.delay)
             finally:
                 c.close()
     except KeyboardInterrupt:
-        print("\n[!] 被中断 —— 断点已保存, 下次加 --resume 可接着扫", flush=True)
+        log("\n[!] 被中断 —— 断点已保存, 下次续扫可接着扫")
         _finish_history("interrupted")
         return 130
+    except Exception as e:  # noqa: BLE001
+        log("\n[!] 扫描出错: %s" % str(e)[:200])
+        _finish_history("interrupted")
+        return 1
 
     idx = cok_map.load_index(args.out)
     meta = idx.get("meta") or {}
@@ -274,21 +309,53 @@ def main():
                  if not _NPC_RE.search(str(v.get("name") or "")))
     # ---- 写扫描历史 ----
     _finish_history("interrupted" if meta.get("partial") else "completed")
-    print("=" * 68, flush=True)
-    print("  扫描完成", flush=True)
-    print("  请求 %d 次, 耗时 %s" % (st["requests"], fmt_dur(st["elapsed"])), flush=True)
-    print("  地块 %d, 玩家条目 %d, 新增 %d" % (
-        st["tiles"], st["players"], st["new"]), flush=True)
-    print("  索引总数: %d 名玩家(其中真实玩家 %d)" % (len(players), real_n), flush=True)
+    log("=" * 68)
+    log("  扫描完成")
+    log("  请求 %d 次, 耗时 %s" % (st["requests"], fmt_dur(st["elapsed"])))
+    log("  地块 %d, 玩家条目 %d, 新增 %d" % (
+        st["tiles"], st["players"], st["new"]))
+    log("  索引总数: %d 名玩家(其中真实玩家 %d)" % (len(players), real_n))
     if st.get("mismatched"):
-        print("  ⚠️ 响应与请求对不上(已丢弃重发): %d 次" % st["mismatched"], flush=True)
+        log("  ⚠️ 响应与请求对不上(已丢弃重发): %d 次" % st["mismatched"])
     if meta.get("dropped_out_of_range"):
-        print("  ⚠️ 剔除越界点(坐标不可信): %d 个" % meta["dropped_out_of_range"], flush=True)
+        log("  ⚠️ 剔除越界点(坐标不可信): %d 个" % meta["dropped_out_of_range"])
     if st.get("errors"):
-        print("  失败请求: %d" % st["errors"], flush=True)
-    print("  索引文件: %s" % args.out, flush=True)
-    print("=" * 68, flush=True)
+        log("  失败请求: %d" % st["errors"])
+    log("  索引文件: %s" % args.out)
+    log("=" * 68)
     return 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default=None,
+                    help="索引文件(默认用当前账号的数据目录下 map-index.json)")
+    ap.add_argument("--account-key", default=None,
+                    help="账号库里的账号 id(gameUid); 给了就用该账号连接并隔离数据目录")
+    ap.add_argument("--radius", type=int, default=0,
+                    help="只扫自己周围 N 格(0 = 全图)")
+    ap.add_argument("--step", type=int, default=cok_map.STEP)
+    ap.add_argument("--max-requests", type=int, default=0,
+                    help="本次最多请求数(0 = 不限)")
+    ap.add_argument("--resume", action="store_true", help="从索引记录的断点继续")
+    ap.add_argument("--server", type=int, default=2223)
+    ap.add_argument("--keep-app", action="store_true",
+                    help="不要停掉手机上的游戏 App(同账号双连接会被服务端互踢)")
+    ap.add_argument("--reconnect-every", type=int, default=200,
+                    help="每 N 个中心重连一次(看门狗, 0 = 不重连)")
+    ap.add_argument("--delay", type=float, default=0.0,
+                    help="每个中心之间的额外停顿秒数(限速, 避免服务端降速)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="全图重扫: 归档旧索引并从空白索引开始(旧数据属于"
+                         "上一次地图布局, 混进来会让众数投票选错)")
+    args = ap.parse_args()
+
+    def _p(msg):
+        print(msg, flush=True)
+
+    # CLI(独立进程)直接走共享实现: 装信号处理器、用 adb 停 App。
+    return run_scan(args, stop_event=None, install_signals=True,
+                    stop_app_fn=None, log=_p)
 
 
 if __name__ == "__main__":

@@ -944,7 +944,7 @@
    "success"
   ],
   "params_sent": {
-   "sC": "02aad0f0e9c4323135bd50af79bcd20d",
+   "sC": "<signCode>",
    "bS": "2-1-1-0-34-100-0.34|2-1-1-0-32-100-0.32|2-1-1-0-32-100-0.32|2-1-1-0-33-100-0.33|2-1-1-0-33",
    "cP": "0"
   }
@@ -954,6 +954,15 @@
   "errorCode": null,
   "fields": [
    "success"
+  ],
+  "params_sent": {}
+ },
+ "cargo.open": {
+  "status": "OK",
+  "errorCode": null,
+  "fields": [
+   "isOpen",
+   "isDouble"
   ],
   "params_sent": {}
  }

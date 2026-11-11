@@ -24,7 +24,7 @@ def check(name, cond, detail=""):
 def sample_index():
     return {
         "players": {
-            "136063574002223": {"name": "元气少女李逵", "index": 1118663,
+            "<uid-main>": {"name": "元气少女李逵", "index": 1118663,
                                 "x": 531, "y": 931, "level": 30,
                                 "seen_at": int(time.time())},
             "151482316002223": {"name": "种田小龙龙", "index": 1116261,
@@ -86,7 +86,7 @@ def main():
         if row:
             r = row[0]
             ok &= check("坐标数据正确",
-                        r[0] == "136063574002223" and r[3] == 531 and r[4] == 931
+                        r[0] == "<uid-main>" and r[3] == 531 and r[4] == 931
                         and r[5] == 1118663 and r[6] == 30 and r[2] == "玩家", str(r))
         ws2 = wb["区域分布"]
         d2 = list(ws2.iter_rows(values_only=True))

@@ -1,0 +1,46 @@
+openjdk version "21.0.10" 2026-01-20 LTS
+OpenJDK Runtime Environment Microsoft-13106411 (build 21.0.10+7-LTS)
+OpenJDK 64-Bit Server VM Microsoft-13106411 (build 21.0.10+7-LTS, mixed mode)
+INFO  Using log config file: jar:file:/Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: /Users/a1234/Library/ghidra/ghidra_12.1.4_PUBLIC/application.log (LoggingInitialization)  
+INFO  Loading user preferences: /Users/a1234/Library/ghidra/ghidra_12.1.4_PUBLIC/preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (1032 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: NativePRNGNonBlocking (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (2190 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 59 extension points (20 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/Base/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/FunctionID/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Processors/PIC/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Debug/Debugger/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/PyGhidra/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/VersionTracking/ghidra_scripts
+    /Users/a1234/workspace/me/local/apk/COK-CN1-analysis/scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/PDB/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Processors/JVM/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/FileFormats/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/WildcardAssembler/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/SystemEmulation/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/Decompiler/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Processors/DATA/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/SwiftDemangler/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/BytePatterns/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Debug/Debugger-rmi-trace/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/GnuDemangler/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Processors/8051/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Processors/Atmel/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/BSim/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/MicrosoftCodeAnalyzer/ghidra_scripts
+    /Users/a1234/Applications/ghidra_12.1.4_PUBLIC/Ghidra/Features/DecompilerDependent/ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: /Users/a1234/workspace/me/local/apk/COK-CN1-analysis/ghidra-project/COK (HeadlessAnalyzer)  
+INFO  Opening project: /Users/a1234/workspace/me/local/apk/COK-CN1-analysis/ghidra-project/COK (HeadlessProject)  
+INFO  REPORT: Processing project file: /libgame.so (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: /Users/a1234/workspace/me/local/apk/COK-CN1-analysis/scripts/DecompileTargets.java '/Users/a1234/workspace/me/local/apk/COK-CN1-analysis/native/sfs-serializer-decompiled.c' '0x000000000294c908' '0x000000000294decc' '0x0000000002950854' '0x0000000002951f14' 'DefaultSFSDataSerializer' 'SFSObject' 'SFSArray'  (HeadlessAnalyzer)  
+INFO  SCRIPT: /Users/a1234/workspace/me/local/apk/COK-CN1-analysis/scripts/DecompileTargets.java (HeadlessAnalyzer)  
+INFO  DecompileTargets.java> DecompileTargets -> /Users/a1234/workspace/me/local/apk/COK-CN1-analysis/native/sfs-serializer-decompiled.c (matched 454, thunk-resolved 16) (GhidraScript)  
+INFO  REPORT: Save succeeded for processed file: /libgame.so (HeadlessAnalyzer)  

@@ -75,9 +75,12 @@ class FakeDaemon(object):
     def ctx(self):
         return {"today": 1, "month": 1, "now": 0, "date": "2026-01-01"}
 
-    def poll_once(self):
+    def poll_once(self, on_state=None):
         self.polling.set()
         time.sleep(self.delay)
+        if on_state is not None:
+            for name, state in self.last_state.items():
+                on_state(name, state)
 
     def connect(self):
         self.client = object()
@@ -167,6 +170,33 @@ def main():
                     and "autoSign" not in (snap2.get("shield") or {}),
                     "shield=%r" % (snap2.get("shield"),))
 
+        # --- 6b) 自动打怪必须停掉当前账号所属的渠道包，而不是固定国服包 ---
+        # 否则果盘等渠道客户端继续持有同账号连接，会把猎人连接互踢下线。
+        stop_calls = []
+        original_run = cok_web.subprocess.run
+
+        class _StopResult(object):
+            returncode = 0
+
+        def _fake_stop_run(cmd, **kwargs):
+            stop_calls.append((cmd, kwargs))
+            return _StopResult()
+
+        cok_web.subprocess.run = _fake_stop_run
+        try:
+            guopan = "com.hcg.cok.ewanqf.guopan"
+            stopped = cok_web.Engine(make_args(account={"packageName": guopan})).stop_app()
+            ok &= check("停游戏使用当前账号的果盘包名",
+                        stopped and stop_calls and stop_calls[0][0][-1] == guopan,
+                        repr(stop_calls[:1]))
+            stop_calls[:] = []
+            stopped = cok_web.Engine(make_args(account={})).stop_app()
+            ok &= check("账号未提供包名时回退默认国服包",
+                        stopped and stop_calls and stop_calls[0][0][-1] == cok_web.GAME_PKG,
+                        repr(stop_calls[:1]))
+        finally:
+            cok_web.subprocess.run = original_run
+
         # --- 7) 账号缺失时给出明确原因, 而不是去连游戏服 ---
         eng2 = cok_web.Engine(make_args())
         eng2.daemon = FakeDaemon(make_args())
@@ -176,6 +206,93 @@ def main():
         ok2, note = eng2._poll_once()
         ok &= check("设备未连接时不连游戏服且给出原因",
                     (not ok2) and "设备未连接" in note, note)
+
+        # --- 7b) 猎人建连交接期也必须让轮询避让 ---
+        # hunter.run() 还没来得及把 state.running 置 True 时，轮询若再建一条
+        # 连接，同账号服务端会把其中一条踢掉。_hunter_starting 填补这个空窗。
+        before_poll = eng.daemon.polling.is_set()
+        eng._hunter_starting = True
+        try:
+            ok3, note3 = eng._poll_once()
+        finally:
+            eng._hunter_starting = False
+        ok &= check("猎人启动交接期轮询不建连",
+                    (not ok3) and "让出账号" in note3
+                    and eng.daemon.polling.is_set() == before_poll,
+                    note3)
+
+        # --- 7c) 即使旧默认引擎尚未入库，也必须与账号引擎用同一 uid 锁 ---
+        # 否则旧引擎拿全局锁、新引擎拿 uid 锁，两个线程会同时连同一账号。
+        eng.account_key = "<uid-guopan-intl>"
+        eng.account_isolated = False
+        ok &= check("未入库账号按 gameUid 取锁",
+                    eng._lock_key() == "<uid-guopan-intl>", str(eng._lock_key()))
+
+        # --- 7d) 自动打怪接管连接后，状态回读走内存快照，不能并发读 socket ---
+        # AutoHunter 正在同一条 CokClient 上收发命令；HTTP 线程若也 call()，响应会串。
+        eng.hunt = {"lv": "1;1", "format": "107110;500"}
+        eng.daemon.client = None
+        eng.hunter = {"running": True, "stamina": 230, "stamina_max": 1000,
+                      "status": 1}
+        old_snapshot = cok_web.cok_hunt.snapshot
+        try:
+            cok_web.cok_hunt.snapshot = lambda client: (_ for _ in ()).throw(
+                AssertionError("打野期间不应读取游戏服 socket"))
+            hunt = eng._hunt_state()
+        finally:
+            cok_web.cok_hunt.snapshot = old_snapshot
+            eng.hunter = None
+        ok &= check("打野期间状态回读使用猎人内存快照",
+                    hunt.get("stamina") == 230 and hunt.get("stamina_max") == 1000
+                    and hunt.get("lv") == "1;1",
+                    json.dumps(hunt, ensure_ascii=False))
+
+        # --- 7e) 任务统计：**按真实领取事件计数**, 不再用快照差分 ---
+        #   旧做法把"可领"当成"已达成", 跨天/跨周重复记、首日漏记。现在计数源是
+        #   daemon 的 sign / claim_result 事件(真的领到才记)。
+        eng.task_stats = {"version": 1, "started_at": 1, "baseline": {},
+                          "current": {}, "events": []}
+        eng._save_task_stats = lambda: None
+        # 快照刷新只维护 current, 绝不产生事件(哪怕满屏"可领")
+        state_ready = {"dailySign": {"今日已签": True},
+                       "dailyQuest": {"可领日常任务": [{"id": "d1"}, {"id": "d2"}],
+                                      "周任务可领奖励": ["w1"]},
+                       "lordTask": {"已领档位数": 3, "未完成任务数": 0},
+                       "storyTask": {"任务数": 2, "任务": [{"id": "s1", "state": 1}]}}
+        eng._update_task_stats(state_ready, "2026-01-01")
+        eng._update_task_stats(state_ready, "2026-01-02")  # 跨天再刷一次
+        ok &= check("刷新快照不再凭'可领'产生统计事件", not eng.task_stats["events"],
+                    json.dumps(eng.task_stats["events"], ensure_ascii=False))
+        # 真实签到事件 -> 记一次; 当天重复的签到事件不叠加
+        eng._record_from_event("sign", {"today": 1, "reward": [{"itemId": "1", "num": 1}]})
+        eng._record_from_event("sign", {"today": 1, "reward": [{"itemId": "1", "num": 1}]})
+        # 真实领奖事件 -> 按 taskKind 归类; 没领到(award 空)不记
+        eng._record_from_event("claim_result", {"rewardId": "L", "taskKind": "lord_milestone",
+                                                 "award": [{"itemId": "1", "num": 5}]})
+        eng._record_from_event("claim_result", {"rewardId": "w1", "taskKind": "weekly_reward",
+                                                 "award": [{"itemId": "1", "num": 1}]})
+        eng._record_from_event("claim_result", {"rewardId": "s1", "taskKind": "story_task",
+                                                 "award": [{"itemId": "1", "num": 1}]})
+        eng._record_from_event("claim_result", {"rewardId": "empty", "taskKind": "weekly_reward",
+                                                 "award": []})
+        counted = {}
+        for x in eng.task_stats["events"]:
+            counted[x["kind"]] = counted.get(x["kind"], 0) + x["count"]
+        ok &= check("按真实领取事件计数(签到不重复, 空领不记)",
+                    counted == {"sign": 1, "lord_milestone": 1, "weekly_reward": 1,
+                                "story_task": 1},
+                    json.dumps(counted, ensure_ascii=False))
+        eng._record_task_completion("dock_reward", 2, "港口船只奖励 金币 ×100")
+        eng._record_task_completion("welfare_daily", 1, "每日好礼 木材 ×10")
+        detailed = eng._task_stats_view()["periods"]["day"]
+        dock = next((item for item in detailed["breakdown"] if item["key"] == "dock_reward"), {})
+        welfare = next((item for item in detailed["breakdown"] if item["key"] == "welfare_daily"), {})
+        ok &= check("任务统计保留港口领取次数与奖励明细",
+                    dock.get("count") == 2 and dock.get("details") == [{"label": "港口船只奖励 金币 ×100", "count": 2}],
+                    json.dumps(dock, ensure_ascii=False))
+        ok &= check("任务统计保留福利领取内容",
+                    welfare.get("count") == 1 and welfare.get("details") == [{"label": "每日好礼 木材 ×10", "count": 1}],
+                    json.dumps(welfare, ensure_ascii=False))
 
         # --- 9) 账号锁: 同进程嵌套可重入(网页 action() 持锁时, 里面的
         #            _hunter_start 要继续持有锁到打怪结束) ---
@@ -244,17 +361,22 @@ def main():
                         bool(r.get("players")) and r["players"][0].get("x") == 531
                         and r["players"][0].get("y") == 931,
                         json.dumps(r.get("players"), ensure_ascii=False)[:120])
-            # 2) 验证失败(地图已被重排) -> 降级到现场扫描
+            # 2) 验证失败(地图已被重排) -> 仍返回索引坐标, 但标记 stale
+            #    (实现已改: 不再自动降级去现场扫描 —— 扫描很贵, 索引坐标
+            #     仍可用, 只提示"可能已迁移", 由用户决定要不要重扫)
             cok_web.cok_map.fetch_area = lambda c, x, y, **k: {
                 "ok": True, "tiles": [], "players": []}
             cok_web.cok_map.scan_area = lambda *a, **k: {
                 "requests": 1, "tiles": 0, "players": 0, "new": 0,
                 "errors": 0, "elapsed": 0.0}
             r2 = eng._locate_action({"name": "元气少女李逵"})
-            ok &= check("索引坐标已失效 -> 降级到现场扫描",
-                        r2.get("source") == "scan", str(r2.get("source")))
+            ok &= check("索引坐标已失效 -> 仍返回索引坐标",
+                        r2.get("source") == "index", str(r2.get("source")))
             ok &= check("降级时带 stale 标记",
                         r2.get("stale") is True, str(r2.get("stale")))
+            ok &= check("stale 时仍带索引里的坐标",
+                        bool(r2.get("players")) and r2["players"][0].get("x") == 1023,
+                        json.dumps(r2.get("players"), ensure_ascii=False)[:120])
         finally:
             (cok_web.cok_map.load_index, cok_web.cok_map.fetch_area,
              cok_web.cok_map.scan_area) = orig

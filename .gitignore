@@ -6,23 +6,55 @@ ghidra-project/
 
 # 运行时产物
 map-index*.json
+map-index*.bak*
 map-index.backup-*.json
+map-index.json.bak-*
 scan-history.json
 scan.pid
 .cok-account.lock
+.cok-account-*.lock
 .cok-web-token
+.cok-account-*.json
 scan.log
 *.xlsx
 *.csv
+automation-history.json
+boss-zone.json
+game-config.json
+web-settings.json
 
-# frida 抓包产物(体积大)
-*.jsonl
-*.log
+# 多账号注册表(**含凭据**: signCode / 平台 token / uuid, 不要提交)
+COK-CN1-analysis/protocol/accounts/
+COK-CN1-analysis/protocol/data/
+
+# 抓包证据与会话密钥(含运行时会话 XOR 密钥, 不要提交)
+COK-CN1-analysis/protocol/evidence-sample.txt
+COK-CN1-analysis/protocol/evidence/
+frida/*.jsonl
+frida/*.log
+frida/trace-cmds-*.json
+frida/devlib/
+frida/frida-server-*
+*.so
+
+# 备份文件(不应入库)
+*.bak
+*.bak*
+
+# 旧索引备份(已入库的要从跟踪移除)
+map-index*.bak*
+map-index.backup-*.json
+map-index.json.bak-*
 
 # 第三方二进制与提取产物(可从 APK / 官方渠道重新获取)
 frida/devlib/
 frida/frida-server-*
 *.so
+
+# 安卓构建产物
+android-app/app/build/
+android-app/.gradle/
+android-app/.kotlin/
 
 # Python
 __pycache__/

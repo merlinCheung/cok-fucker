@@ -25,7 +25,7 @@ import time
 import frida
 
 ADB = "/Users/a1234/Library/Android/sdk/platform-tools/adb"
-PKG = "com.hcg.cok.nearme.gamecenter"
+PKG = os.environ.get("COK_PKG", "com.hcg.cok.nearme.gamecenter")
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # 注入的 Lua: 遍历多种 type 取道具 id, 逐个读 uuid/数量
@@ -57,10 +57,17 @@ function findExport(name) {
   try { const m = Process.findModuleByName(MODULE);
         const s = m.enumerateSymbols().filter(function (x) { return x.name === name; });
         if (s.length) return s[0].address; } catch (e) {}
+  try { const p = Module.findGlobalExportByName(name); if (p) return p; } catch (e) {}
+  try {
+    const mods = Process.enumerateModules();
+    for (let i = 0; i < mods.length; i++) {
+      if (mods[i].name.indexOf('libgame') < 0) continue;
+      try { const p = mods[i].getExportByName(name); if (p) return p; } catch (e) {}
+    }
+  } catch (e) {}
   return null;
 }
-Process.attachModuleObserver({ onAdded(module) {
-  if (module.name !== MODULE) return;
+function setup() {
   setTimeout(function () {
     const pLoad = findExport('luaL_loadstring');
     const pCall = findExport('lua_pcall');
@@ -76,33 +83,78 @@ Process.attachModuleObserver({ onAdded(module) {
       const code = __CODE__;
       let ok = 0;
       try { ok = luaL_loadstring(L, Memory.allocUtf8String(code)); } catch (e) {}
-      if (ok !== 0) { emit({t:'try', n:tried, load:'fail'}); return; }
-      try { lua_pcall(L, 0, 1, 0); } catch (e) { emit({t:'try', n:tried, pcall:String(e).slice(0,120)}); return; }
+      if (ok !== 0) { emit({t: 'try', n:tried, load:'fail'}); return; }
+      try { lua_pcall(L, 0, 1, 0); } catch (e) { emit({t: 'try', n:tried, pcall:String(e).slice(0,120)}); return; }
       let out = null;
       try { const ps = lua_tolstring(L, -1, NULL); if (ps) out = ps.readCString(); } catch (e) {}
-      emit({t:'bag', n:tried, out: out});
-      if (out && out.indexOf('\\t') >= 0) done = true;
+      emit({t: 'bag', n:tried, out: out});
+      if (out && out.indexOf('\t') >= 0) done = true;
     }
-    Interceptor.attach(pCall, {
-      onEnter(args) { if (!L) L = args[0]; },
-      onLeave() {
-        if (done || !L) return;
-        setTimeout(function () { try { run(); } catch (e) { emit({t:'err', msg:String(e).slice(0,160)}); } }, 4000);
-      }
+    // App 已进主城时 lua_pcall 可能不再触发: 额外挂几个会被周期性调用的
+    // Lua API 抓 lua_State, 再用定时器持续重试注入。
+    ['lua_gettop', 'lua_call', 'luaL_loadstring', 'lua_pushnil', 'lua_settop',
+     'lua_getfield', 'lua_setfield', 'lua_pushstring', 'lua_pushvalue',
+     'lua_rawgeti', 'lua_gettable', 'lua_settable', 'lua_createtable',
+     'lua_newtable', 'lua_pushcclosure', 'lua_tolstring'].forEach(function (nm) {
+      try {
+        const p = findExport(nm);
+        if (!p) return;
+        Interceptor.attach(p, { onEnter(args) { if (!L) L = args[0]; } });
+      } catch (e) {}
     });
-    emit({t:'hooked'});
+    // 诊断: 把 lua 符号的查找结果发出来(找不到就是 so 没导出 lua API)
+    try {
+      const found = ['lua_gettop', 'lua_call', 'lua_pcall', 'luaL_loadstring']
+        .map(function (n) { return n + '=' + (findExport(n) ? 'Y' : 'N'); }).join(' ');
+      emit({t: 'diag', luaExports: found});
+    } catch (e) {}
+    const timer = setInterval(function () {
+      if (done) { clearInterval(timer); return; }
+      try { run(); } catch (e) { emit({t: 'err', msg: String(e).slice(0,160)}); }
+    }, 2500);
+    emit({t: 'hooked'});
   }, 800);
+}
+
+Process.attachModuleObserver({ onAdded(module) {
+  if (module.name !== MODULE) return;
+  setup();
 }});
+
+// attach 时 libgame.so 往往**已经加载完**(App 早就在跑), observer 不会再触发,
+// 所以这里主动查一次并直接 setup。
+setTimeout(function () {
+  try {
+    const m = Process.findModuleByName(MODULE);
+    if (m) setup();
+  } catch (e) { emit({t: 'err', msg: 'findModule: ' + String(e).slice(0,120)}); }
+}, 400);
 """
 
 
 def app_pid():
+    """游戏主进程的 pid。
+
+    ⚠️ `pidof <pkg>` 会把 `:core` 之类的子进程也列出来, 而 **libgame.so 只在
+    主进程里**(实测: ewanqf 的 :core 进程 maps 里没有 libgame.so)。
+    attach 到错的进程就永远读不到 ToolController。
+    """
     try:
         out = subprocess.run([ADB, "shell", "pidof", PKG], capture_output=True,
                              text=True, timeout=6).stdout.strip()
-        return int(out.split()[0]) if out else 0
+        pids = [int(x) for x in out.split() if x.strip().isdigit()]
     except Exception:
         return 0
+    for pid in pids:
+        try:
+            maps = subprocess.run(
+                [ADB, "shell", "su", "-c", "grep -c libgame.so /proc/%d/maps" % pid],
+                capture_output=True, text=True, timeout=8).stdout.strip()
+            if maps and int(maps.splitlines()[-1].strip() or 0) > 0:
+                return pid
+        except Exception:
+            continue
+    return pids[0] if pids else 0
 
 
 def main():
@@ -153,8 +205,8 @@ def main():
                         result.setdefault("out", out)
                     else:
                         result.setdefault("empty", p.get("n"))
-            elif p.get("t") in ("hooked", "fatal", "err"):
-                print("[hook]", json.dumps(p, ensure_ascii=False)[:160], flush=True)
+            else:
+                print("[hook]", json.dumps(p, ensure_ascii=False)[:200], flush=True)
 
     script.on("message", on_message)
     script.load()

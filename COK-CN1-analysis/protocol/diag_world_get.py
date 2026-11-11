@@ -11,7 +11,7 @@
 用法:
   python3 diag_world_get.py                 # 默认查 (531,931) 三次
   python3 diag_world_get.py 531 931 5       # 查 (531,931) 五次
-  python3 diag_world_get.py 531 931 5 136063574002223   # 指定要盯的 uid
+  python3 diag_world_get.py 531 931 5 <uid-main>   # 指定要盯的 uid
 """
 import os
 import sys
@@ -35,7 +35,7 @@ def main():
     cx = int(sys.argv[1]) if len(sys.argv) > 1 else 531
     cy = int(sys.argv[2]) if len(sys.argv) > 2 else 931
     times = int(sys.argv[3]) if len(sys.argv) > 3 else 3
-    own = sys.argv[4] if len(sys.argv) > 4 else "136063574002223"
+    own = sys.argv[4] if len(sys.argv) > 4 else "<uid-main>"
 
     print("查中心 (%d,%d) 共 %d 次, 盯 uid=%s" % (cx, cy, times, own))
     print("=" * 72)

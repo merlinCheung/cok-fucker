@@ -56,7 +56,7 @@ def main():
 
     # ---- 2) fetch_area 解析 ----
     tiles = [
-        {"i": 1118663, "uid": "136063574002223", "o": "元气少女李逵",
+        {"i": 1118663, "uid": "<uid-main>", "o": "元气少女李逵",
          "t": 1, "l": 30},
         {"i": 1116261, "uid": "151482316002223", "o": "种田小龙龙",
          "t": 1, "l": 30},
@@ -69,7 +69,7 @@ def main():
     ok &= check("解析出 2 个玩家", len(res["players"]) == 2, str(len(res["players"])))
     p0 = res["players"][0]
     ok &= check("玩家带 uid/名字/坐标",
-                p0["uid"] == "136063574002223" and p0["name"] == "元气少女李逵"
+                p0["uid"] == "<uid-main>" and p0["name"] == "元气少女李逵"
                 and p0["x"] == 531 and p0["y"] == 931,
                 json.dumps(p0, ensure_ascii=False))
     ok &= check("参数类型是 INT(0x04)",
@@ -101,7 +101,7 @@ def main():
 
     # ---- 6) 按名字查找 ----
     hits = cok_map.find_players(idx, "李逵")
-    ok &= check("按名字命中", len(hits) == 1 and hits[0]["uid"] == "136063574002223",
+    ok &= check("按名字命中", len(hits) == 1 and hits[0]["uid"] == "<uid-main>",
                 str([h["name"] for h in hits]))
     hits2 = cok_map.find_players(idx, "136063574")
     ok &= check("按 uid 片段命中", len(hits2) == 1, str(len(hits2)))

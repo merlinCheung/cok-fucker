@@ -1,0 +1,41 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 普通权限: 允许结束游戏 App 的后台进程, 把游戏服的账号位让给控制台。
+         安卓设备上没有 adb, 这是唯一可行的途径(同账号只允许一个连接)。 -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+
+    <!-- Android 11+ 的包可见性: 不声明 <queries> 就查不到游戏包,
+         连"结束它的进程"都做不了(2026-11-01 实测: 钩子等于没接上)。 -->
+    <queries>
+        <package android:name="com.hcg.cok.nearme.gamecenter" />
+        <package android:name="com.hcg.cok.ewanqf.guopan" />
+        <package android:name="com.hcg.cok.nearme" />
+        <package android:name="com.hcg.cok.ewanqf" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="COK 控制台"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.CokConsole">
+        <service
+            android:name=".BackgroundMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled COK game risk monitoring with a persistent status notification." />
+        </service>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
