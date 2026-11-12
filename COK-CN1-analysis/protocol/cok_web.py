@@ -44,6 +44,7 @@ import cok_welfare  # noqa: E402
 import cok_scoremall  # noqa: E402
 import cok_alliance  # noqa: E402
 import cok_assist  # noqa: E402
+import cok_daily_quest  # noqa: E402
 import cok_map  # noqa: E402
 import cok_excel  # noqa: E402
 from cok_account import load_account  # noqa: E402
@@ -1737,7 +1738,21 @@ class Engine(object):
         steps = r.get("steps") or []
         done = [s for s in steps if s.get("结果") == "完成"]
         bad = [s for s in steps if s.get("结果") not in ("完成", "无可收取")]
-        note = "每日一键完成 · 已执行 %d 项" % len(done)
+        # 一键完成后，顺手领取每日任务活跃宝箱（不消耗道具，安全）。
+        try:
+            box_res = cok_daily_quest.claim_all_boxes(cli)
+            if box_res.get("ok"):
+                claimed = box_res.get("claimed") or []
+                if claimed:
+                    box_ids = ",".join(b.get("id", "") for b in claimed)
+                    note = "每日一键完成 · 已执行 %d 项 · 已领活跃宝箱 [%s]" % (len(done), box_ids)
+                else:
+                    note = "每日一键完成 · 已执行 %d 项 · 活跃宝箱无可领" % len(done)
+            else:
+                note = "每日一键完成 · 已执行 %d 项 · 活跃宝箱: %s" % (
+                    len(done), box_res.get("error") or "未领取")
+        except Exception as e:  # noqa: BLE001
+            note = "每日一键完成 · 已执行 %d 项 · 活跃宝箱: 异常 %s" % (len(done), str(e)[:80])
         if costly:
             note += "(含消耗项)"
         if bad:
@@ -2692,6 +2707,20 @@ class Engine(object):
             return {"ok": False, "error": r.get("error") or "一键完成失败"}
         with self.lock:
             self.assist_panel = r.get("panel") or []
+        # 一键完成后，顺手领取每日任务活跃宝箱（不消耗道具，安全）。
+        # 失败不影响一键完成本身，只写进 note 提示。
+        try:
+            box_res = cok_daily_quest.claim_all_boxes(cli)
+            if box_res.get("ok"):
+                claimed = box_res.get("claimed") or []
+                if claimed:
+                    box_ids = ",".join(b.get("id", "") for b in claimed)
+                    r["note"] = (r.get("note") or "一键完成") + " · 已领活跃宝箱 [%s]" % box_ids
+            else:
+                r["note"] = (r.get("note") or "一键完成") + " · 活跃宝箱: %s" % (
+                    box_res.get("error") or "未领取")
+        except Exception as e:  # noqa: BLE001
+            r["note"] = (r.get("note") or "一键完成") + " · 活跃宝箱: 异常 %s" % str(e)[:80]
         return {"ok": True, "steps": r.get("steps") or [],
                 "panel": r.get("panel") or [],
                 "note": r.get("note") or "一键完成",
