@@ -4,7 +4,7 @@
 自动打怪、港口贸易、联盟集结、网页控制台 —— **桌面端和安卓 App 共用同一套
 Python 核心**。
 
-区服 2223 · 客户端 12.06.0(海尔渠道包) · 协议 SmartFoxServer 2X (SFS) over TCP
+区服 2223 · 客户端 12.06.0(渠道包) · 协议 SmartFoxServer 2X (SFS) over TCP
 
 ---
 
