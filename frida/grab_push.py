@@ -1,5 +1,5 @@
 import json, sys, time
-PROTO="/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol"
+PROTO="/Users/a1234/workspace/me/cok/cok"
 sys.path.insert(0,PROTO)
 from cok_client import CokClient
 import cok_account

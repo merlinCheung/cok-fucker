@@ -10,7 +10,7 @@ import json
 import os
 import sys
 
-PROTO = "/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol"
+PROTO = "/Users/a1234/workspace/me/cok/cok"
 sys.path.insert(0, PROTO)
 from cok_client import CokClient  # noqa: E402
 from cok_sfs import TypedInt, SFS_INT, SFS_BYTE, SFS_LONG  # noqa: E402

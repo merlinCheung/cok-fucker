@@ -5,7 +5,7 @@ import collections
 import json
 import sys
 
-sys.path.insert(0, "/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol")
+sys.path.insert(0, "/Users/a1234/workspace/me/cok/cok")
 from cok_sfs import parse_packet, flatten, read_value, Reader, xor_buf  # noqa: E402
 
 

@@ -18,7 +18,7 @@ import os
 import re
 import sys
 
-BASE = "/Users/a1234/workspace/me/cok/COK-CN1-analysis"
+BASE = "/Users/a1234/workspace/me/cok/reverse"
 CFG = "/tmp/database.local.xml"
 TXT = os.path.join(BASE, "apk-extract/assets/local/text_zh_CN.ini")
 LUA = os.path.join(BASE, "apktool/assets/lua_static/game/utility/gameConst.lua")

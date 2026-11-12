@@ -23,7 +23,7 @@ import time
 import frida
 
 PROTO = os.path.expanduser(
-    "~/workspace/me/cok/COK-CN1-analysis/protocol")
+    "~/workspace/me/cok/cok")
 sys.path.insert(0, PROTO)
 from cok_sfs import parse_best  # noqa: E402
 

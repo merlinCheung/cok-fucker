@@ -64,7 +64,7 @@ def parse_seconds(d):
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else "/tmp/database.local.xml"
     out = sys.argv[2] if len(sys.argv) > 2 else \
-        "/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol/speedup-items.json"
+        "/Users/a1234/workspace/me/cok/cok/speedup-items.json"
 
     data = open(src, encoding="utf-8", errors="replace").read()
     pat = re.compile(r'<(\w+)\s+([^>]*?type2="([^"]*)"[^>]*?)/>')

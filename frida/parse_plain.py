@@ -12,7 +12,7 @@ import json
 import sys
 import zlib
 
-PROTO = "/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol"
+PROTO = "/Users/a1234/workspace/me/cok/cok"
 sys.path.insert(0, PROTO)
 from cok_sfs import parse_best, flatten  # noqa: E402
 

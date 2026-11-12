@@ -21,7 +21,7 @@ import sys
 # cok_sfs 在 protocol/ 目录里
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.expanduser(
-    "~/workspace/me/cok/COK-CN1-analysis/protocol"))
+    "~/workspace/me/cok/cok"))
 from cok_sfs import Reader, read_value, xor_buf  # noqa: E402
 
 

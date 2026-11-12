@@ -91,9 +91,22 @@ def start(files_dir, port, token):
 
     # These values are read while the original modules import. Keeping every
     # writable item under filesDir avoids writes to the packaged Python assets.
+    #
+    # ⚠ COK_DATA_ROOT 是**所有**可写文件的根: 账号库、地图索引、web-settings、
+    #    token、账号锁全在它下面。以前这里指向 <files>/cok/data 而账号库另走
+    #    COK_ACCOUNTS_DIR, 两个根各管一半 —— 现在统一成一个, 少一层心智负担。
+    os.environ["COK_DATA_ROOT"] = data_dir
     os.environ["COK_ACCOUNTS_DIR"] = os.path.join(data_dir, "accounts")
-    os.environ["COK_DATA_ROOT"] = os.path.join(data_dir, "data")
     os.environ["COK_ACCOUNT_LOCK_FILE"] = os.path.join(data_dir, ".account.lock")
+    # 资源目录: Chaquopy 把 cok/resources 里的文件解到 assets 根, 与模块同级。
+    # 显式指出来, 免得 cok_paths 去仓库里找(手机上不存在仓库)。
+    _res_dir = os.path.dirname(os.path.abspath(__file__))
+    # 桌面: <flat>/cok/resources 才是真资源目录。
+    # Chaquopy 扁平布局: 资源文件与 .py 模块同级, 没有 resources 子目录。
+    if os.path.isdir(os.path.join(_res_dir, "resources")):
+        os.environ["COK_RESOURCES_DIR"] = os.path.join(_res_dir, "resources")
+    elif os.path.isfile(os.path.join(_res_dir, "cok_webui.html")):
+        os.environ["COK_RESOURCES_DIR"] = _res_dir
 
     with _start_lock:
         # Android may recreate MainActivity without killing the process. The

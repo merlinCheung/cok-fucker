@@ -21,7 +21,7 @@ import subprocess
 import sys
 import time
 
-sys.path.insert(0, "/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol")
+sys.path.insert(0, "/Users/a1234/workspace/me/cok/cok")
 from cok_client import CokClient  # noqa: E402
 
 LIB = "/Users/a1234/workspace/me/cok/frida/devlib/lib/arm64-v8a/libgame.so"

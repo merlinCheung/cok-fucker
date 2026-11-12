@@ -21,9 +21,9 @@ import frida
 ADB = "/Users/a1234/Library/Android/sdk/platform-tools/adb"
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)                      # .../cok
-PROTO = os.path.join(ROOT, "COK-CN1-analysis", "protocol")
+PROTO = os.path.join(ROOT, "cok")
 
-SOCKET_HOOK = os.path.join(PROTO, "frida", "cmd_trace_both.js")
+SOCKET_HOOK = os.path.join(ROOT, "reverse", "hooks", "cmd_trace_both.js")
 NATIVE_HOOK = os.path.join(HERE, "native_cmd.js")
 
 

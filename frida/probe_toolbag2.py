@@ -1,6 +1,6 @@
 """每个命令之间重连, 找返回道具实例 uuid 的接口。"""
 import json, re, sys
-PROTO="/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol"
+PROTO="/Users/a1234/workspace/me/cok/cok"
 sys.path.insert(0,PROTO)
 from cok_client import CokClient
 import cok_account

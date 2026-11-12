@@ -1,6 +1,6 @@
 """把登录响应明文全字段打出来(找背包/道具初始下发)。"""
 import json, sys, random
-PROTO="/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol"
+PROTO="/Users/a1234/workspace/me/cok/cok"
 sys.path.insert(0,PROTO)
 import cok_client
 from cok_client import CokClient, TypedInt

@@ -1,35 +1,28 @@
-# 大体积分析素材(可从 APK 重新生成)
-*.apk
-apk-extract/
-apktool/
-ghidra-project/
+# ── 运行时数据(账号凭据 / 地图索引 / token / 锁) ────────────────────────
+# 整个 cok/data/ 都是「随账号/设备走」的，不入库。
+# 需要入库的只有目录占位，靠 ! 例外放行。
+cok/data/**
+!cok/data/.gitkeep
 
-# 运行时产物
-map-index*.json
-map-index*.bak*
-map-index.backup-*.json
-map-index.json.bak-*
-scan-history.json
-scan.pid
-.cok-account.lock
-.cok-account-*.lock
-.cok-web-token
-.cok-account-*.json
-scan.log
-*.xlsx
-*.csv
-automation-history.json
-boss-zone.json
-game-config.json
-web-settings.json
-
-# 多账号注册表(**含凭据**: signCode / 平台 token / uuid, 不要提交)
+# 历史遗留(旧结构还在时)
+/data/
 COK-CN1-analysis/protocol/accounts/
 COK-CN1-analysis/protocol/data/
 
-# 抓包证据与会话密钥(含运行时会话 XOR 密钥, 不要提交)
-COK-CN1-analysis/protocol/evidence-sample.txt
-COK-CN1-analysis/protocol/evidence/
+# ── 大体积分析素材(可从 APK 重新生成) ─────────────────────────────────
+*.apk
+apk-material/
+reverse/apk-extract/
+reverse/apktool/
+reverse/ghidra-project/
+reverse/native/*.so
+reverse/native/*.bin
+reverse/exports/
+
+# ── 抓包证据与会话密钥(含运行时会话 XOR 密钥，不要提交) ───────────────
+reverse/evidence/
+reverse/shots/
+reverse/evidence-sample.txt
 frida/*.jsonl
 frida/*.log
 frida/trace-cmds-*.json
@@ -37,30 +30,44 @@ frida/devlib/
 frida/frida-server-*
 *.so
 
-# 备份文件(不应入库)
-*.bak
-*.bak*
-
-# 旧索引备份(已入库的要从跟踪移除)
+# ── 运行时产物 ────────────────────────────────────────────────────────
+map-index*.json
 map-index*.bak*
 map-index.backup-*.json
 map-index.json.bak-*
+scan-history.json
+scan.pid
+scan.log
+.cok-account.lock
+.cok-account-*.lock
+.cok-account-*.json
+.cok-web-token
+*.xlsx
+*.csv
+automation-history.json
+boss-zone.json
+boss-registry.json
+game-config.json
+web-settings.json
+automation-settings.json
+task-stats.json
 
-# 第三方二进制与提取产物(可从 APK / 官方渠道重新获取)
-frida/devlib/
-frida/frida-server-*
-*.so
+# ── 备份文件 ──────────────────────────────────────────────────────────
+*.bak
+*.bak*
 
-# 安卓构建产物
+# ── 安卓构建产物 ──────────────────────────────────────────────────────
 android-app/app/build/
 android-app/.gradle/
 android-app/.kotlin/
+android-app/local.properties
+android-app/local-seed/
 
-# Python
+# ── Python / 系统 / IDE ───────────────────────────────────────────────
 __pycache__/
 *.pyc
 .venv/
 venv/
-
-# 系统
 .DS_Store
+.idea/
+.vscode/

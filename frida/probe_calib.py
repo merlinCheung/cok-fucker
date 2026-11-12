@@ -10,7 +10,7 @@ import os
 import sys
 import time
 
-sys.path.insert(0, "/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol")
+sys.path.insert(0, "/Users/a1234/workspace/me/cok/cok")
 from cok_client import CokClient  # noqa: E402
 
 CASES = [

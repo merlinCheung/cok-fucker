@@ -74,7 +74,7 @@ unzip -p /tmp/app.imy cok_client.py | grep -E 'nearme:g[0-9]+|cokc38|buildCode.*
 ## 巨型狮鹫 · 联盟集结(2026-11-02)
 
 自动打怪之外新增了「巨型狮鹫 · 集结」: 选等级 -> 选目标 -> 选集结时间 -> 发起集结。
-协议细节见 `COK-CN1-analysis/protocol/WEB.md` 的「巨型狮鹫 · 联盟集结」一节。
+协议细节见 `cok/docs/WEB.md` 的「巨型狮鹫 · 联盟集结」一节。
 
 * **两个入口**: 原生「操作」页(紧跟「自动打怪」卡下面) + 「完整高级控制台」
   (WebView, 同一套 `cok_webui.html`)。两边都能用。

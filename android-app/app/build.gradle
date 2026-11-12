@@ -4,11 +4,18 @@ plugins {
     id 'com.chaquo.python'
 }
 
-def protocolSource = file("${rootDir}/../COK-CN1-analysis/protocol")
+// 仓库根 = android-app/ 的上一级。
+// 注意 rootDir 在这里是 android-app/(Gradle 的 rootDir 指 settings 所在目录),
+// 所以要往上走一级 —— 早先写成 rootDir.parentFile 反而指到了仓库根的上一层。
+def repoRoot = rootDir.parentFile
+def cokRoot = new File(repoRoot, "cok")
+def protocolSource = new File(cokRoot, "core")
+def resourcesDir = new File(cokRoot, "resources")
 def generatedPython = layout.buildDirectory.dir("generated/python")
 
 tasks.register("preparePythonSources") {
     inputs.dir(protocolSource)
+    inputs.dir(resourcesDir)
     inputs.files(
         file("${rootDir}/mobile-console.css"),
         file("${rootDir}/mobile-console.js"),
@@ -19,14 +26,45 @@ tasks.register("preparePythonSources") {
         def output = generatedPython.get().asFile
         delete(output)
         copy {
+            // 只带**运行期真正 import 的**模块, 不是全部 cok_*.py:
+            // 逆向期的登录实验脚本(cok_elex_account / cok_emu_login / ...)
+            // 在手机上没有任何入口, 带进去只是白占体积。
             from(protocolSource) {
-                include "cok_*.py"
-                // 全图扫描核心: 安卓端进程内线程调用 scan_world.run_scan(), 必须进包
+                include "cok_sfs.py"           // 协议编解码(所有模块的底座)
+                include "cok_paths.py"         // 路径适配层(安卓端必读)
+                include "cok_client.py"        // 连接/登录/账号锁
+                include "cok_account.py"       // 账号读写
+                include "cok_accounts.py"      // 多账号注册表 + 公共字段真值
+                include "cok_users.py"         // 多用户(网页端登录)
+                include "cok_gamesvc.py"       // 渠道身份 -> 角色解析
+                include "cok_channel_login.py" // 渠道账号密码登录
+                include "cok_hunt.py"          // 自动打怪
+                include "cok_stamina.py"       // 体力
+                include "cok_rally.py"         // 联盟集结
+                include "cok_dock.py"          // 港口贸易
+                include "cok_sky.py"           // 天空城
+                include "cok_welfare.py"       // 福利
+                include "cok_scoremall.py"     // 积分商城
+                include "cok_alliance.py"      // 联盟
+                include "cok_assist.py"        // 协助
+                include "cok_daily_quest.py"   // 每日任务
+                include "cok_map.py"           // 地图索引
+                include "cok_excel.py"         // Excel 导出
+                include "cok_locate.py"        // 按名字查坐标
+                include "cok_speedup.py"       // 加速
+                include "cok_daemon.py"        // 轮询/推送引擎
+                include "cok_web.py"           // 本地控制台(安卓端被 WebView 加载)
+            }
+            // 全图扫描核心: 安卓端进程内线程调用 scan_world.run_scan(), 必须进包
+            from(new File(cokRoot, "tools")) {
                 include "scan_world.py"
+            }
+            from(resourcesDir) {
                 include "id-names.json"
                 include "bag-items.json"
                 include "speedup-items.json"
                 include "speedup-meta.json"
+                include "speedup-owned.json"
                 include "shield-specs.json"
                 include "game-config.json"
                 include "monster-levels.json"
@@ -94,6 +132,95 @@ tasks.register("preparePythonSources") {
     },
 }
 '''
+        // ---- 把协议公共字段/渠道 signCode 的**真值**烘焙进 APK ------------------
+        //
+        // 为什么必须烘焙: 公开仓库里 baseActiveKey 是脱敏占位符, signCode 是空串。
+        // 不烘焙的话, 别人**直接装这个 APK** 会遇到:
+        //   * signCode 空 -> 加号被判"凭据不完整(缺 signCode)", 加不进去
+        //   * baseActiveKey 空 -> 服务端丢弃所有加密指令 -> "登录成功但界面全空"
+        // 真值只存在于**本地 gitignored 缓存**(不会被提交进仓库), 但会进构建产物。
+        //
+        // 种子来源(按顺序找第一个存在的):
+        //   1. COK-CN1-analysis/protocol/data/public-fields.json (桌面端本地缓存)
+        //   2. android-app/local-seed/public-fields.json (发给要自己打包的人)
+        def seedCandidates = [
+            new File(cokRoot, "data/public-fields.json"),
+            new File(rootDir, "local-seed/public-fields.json"),
+        ]
+        def seedFile = seedCandidates.find { it.exists() }
+        if (seedFile == null) {
+            throw new GradleException(
+                "APK 种子缺失: 找不到 public-fields.json(协议公共字段真值)。\n" +
+                "已找过: " + seedCandidates.collect { it.path }.join(", ") + "\n" +
+                "没有它打包出来的 APK 会'登录成功但界面全空'(baseActiveKey 空)。\n" +
+                "请先在桌面端真机登录一次让程序学到真值, 或手工放一份到上面任一路径。")
+        }
+        def seedText = seedFile.getText("UTF-8")
+        def signSeedFile = new File(seedFile.parentFile, "sign-codes.json")
+        def signSeedText = signSeedFile.exists() ? signSeedFile.getText("UTF-8") : "{}"
+        // 渠道 signCode: 缓存文件优先; 缓存没有/是空的就从**账号库**现派生
+        // (同 packageName 取**最新**入库的那个 —— 渠道包换证书后 signCode 会变)。
+        def signJson = new groovy.json.JsonSlurper().parseText(signSeedText)
+        if (!signJson) {
+            def accountsDir = new File(cokRoot, "data/accounts")
+            if (accountsDir.exists()) {
+                def newest = [:]
+                accountsDir.eachFile { f ->
+                    if (!f.isFile() || !f.name.endsWith(".json")) return
+                    if (f.name.endsWith(".items.json") || f.name.startsWith(".")) return
+                    try {
+                        def a = new groovy.json.JsonSlurper().parseText(f.getText("UTF-8"))
+                        if (!(a instanceof Map)) return
+                        def pkg = (a["packageName"] ?: "").toString()
+                        def code = (a["signCode"] ?: "").toString().trim()
+                        if (!pkg || !code || code.startsWith("<")) return
+                        def added = (a["added"] ?: "").toString()
+                        if (!newest.containsKey(pkg) || added > newest[pkg][0]) {
+                            newest[pkg] = [added, code]
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+                if (newest) {
+                    signJson = newest.collectEntries { k, v -> [(k.toString()): v[1].toString()] }
+                }
+            }
+        }
+
+        // 注入真 baseActiveKey 到 ACCOUNT 模板(占位符 -> 真值)。
+        // 只注入**协议级公共字段**, 不碰任何账号身份字段。
+        def seedJson = new groovy.json.JsonSlurper().parseText(seedText)
+        def realKey = (seedJson["baseActiveKey"] ?: "").toString()
+        if (!realKey || realKey.startsWith("<")) {
+            throw new GradleException(
+                "APK 种子无效: ${seedFile} 里的 baseActiveKey 是空的或占位符(${realKey})。\n" +
+                "请放一份含**真值**的 public-fields.json。")
+        }
+        def safeAccountReal = safeAccount.replace(
+            '"baseActiveKey": "<baseActiveKey>"',
+            '"baseActiveKey": "' + realKey.replace("\\", "\\\\").replace('"', '\\"') + '"')
+        if (safeAccountReal.contains("<baseActiveKey>")) {
+            throw new GradleException(
+                "APK 种子注入失败: ACCOUNT 模板里的 baseActiveKey 占位符没被替换。")
+        }
+
+        // 生成 cok_seed.json 运行时兜底(APK 内置真值)。
+        // 运行时优先级: 账号库 > 本地缓存 > APK 内置种子 > 模板占位符。
+        if (!signJson) {
+            throw new GradleException(
+                "APK 种子里没有任何渠道 signCode。\n" +
+                "没有它, 别人直接装 APK 后加号必然被判「凭据不完整(缺 signCode)」。\n" +
+                "请先在桌面端真机登录一次果盘账号(学到 signCode), 或手工放一份\n" +
+                "sign-codes.json 放到 ${seedFile.parentFile}。")
+        }
+        def payload = [
+            public_fields: seedJson.collectEntries { k, v -> [(k.toString()): v.toString()] },
+            sign_codes   : signJson.collectEntries { k, v -> [(k.toString()): v.toString()] },
+        ]
+        new File(output, "cok_seed.json").setText(
+            groovy.json.JsonOutput.prettyPrint(
+                groovy.json.JsonOutput.toJson(payload)), "UTF-8")
+
         // ⚠ 正则必须带 MULTILINE(?sm): `^}` 要匹配"行首的 }"这种 ACCOUNT 块的结尾。
         //    少了 m 的话 `^` 只匹配字符串开头, 正则匹配不到 -> 替换静默失败,
         //    **桌面端的游戏账号凭据会被原样打进 APK**(2026-10-31 踩过这个坑)。
@@ -102,7 +229,7 @@ tasks.register("preparePythonSources") {
         //    都会让正则匹配不上, 替换静默失败(2026-11-12 又踩了一次,
         //    靠下面那句"APK 安全自检"拦住的, 但别去踩)。
         //    嵌套的 device_info 字典收尾是缩进的 `    },`, 不会误匹配。
-        client.text = client.text.replaceFirst(/(?sm)^ACCOUNT = \{.*?^\}\n/, safeAccount)
+        client.text = client.text.replaceFirst(/(?sm)^ACCOUNT = \{.*?^\}\n/, safeAccountReal)
         // 打包后**自检**: 整个产物里不能残留任何桌面端账号凭据。
         //   1) cok_client.py 的内置账号必须被清空
         //   2) 所有文件里都不能出现源账号的真实凭据串

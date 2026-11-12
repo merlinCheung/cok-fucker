@@ -10,7 +10,7 @@ import re
 import sys
 
 XML = sys.argv[1] if len(sys.argv) > 1 else "/tmp/database.local.xml"
-specs = json.load(open("/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol/shield-specs.json"))
+specs = json.load(open("/Users/a1234/workspace/me/cok/cok/shield-specs.json"))
 text_ids = specs.get("shield_text_ids") or {}
 print("要查的文本 id:", text_ids)
 
@@ -39,7 +39,7 @@ for tid, label in text_ids.items():
 # 顺带查所有 name 含"守护"文本 id 的道具
 print("\n=== 名字里带'守护'的道具(用 id-names 反查) ===")
 try:
-    names = json.load(open("/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol/id-names.json"))
+    names = json.load(open("/Users/a1234/workspace/me/cok/cok/id-names.json"))
     items = names.get("item_names") or {}
     for iid, label in items.items():
         if isinstance(label, str) and "守护" in label and "战场" not in label:

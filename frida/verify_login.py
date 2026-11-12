@@ -12,7 +12,7 @@ import hashlib
 import json
 import sys
 
-sys.path.insert(0, "/Users/a1234/workspace/me/cok/COK-CN1-analysis/protocol")
+sys.path.insert(0, "/Users/a1234/workspace/me/cok/cok")
 from cok_sfs import parse_packet, flatten, derive_login_fields, sign_code_from_cert  # noqa: E402
 
 CERT_DER = "/tmp/cert0.der"
