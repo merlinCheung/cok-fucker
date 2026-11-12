@@ -163,19 +163,94 @@ def _task_type_label(gotype, go):
 def task_protocol_viable(gotype, go):
     """判断该任务是否能通过直连协议"完成"（非道具快速完成）。
 
-    当前结论：直连协议**只能做两件事**：
-      1) dailyQuest2025.data —— 只读，拉取每个任务的进度/完成状态
-      2) dailyQuest2025.reward / weekReward —— 领取已完成任务对应的活跃宝箱
-         （不消耗道具，前提是 activePoints/weeklyActivePoints 足够且未领过）
-
-    其余 18 个未完成任务的"正常完成"（如建造、研究、签到、龙塔试炼等）
-    需在游戏 App 内手动点页面跳转执行，直连工具**无法模拟 UI 点击**。
-    immediateTask / immediateAllTask 虽可直连调用，但**消耗道具**，用户已排除。
-
     返回: (viable: bool, reason: str)
+      viable=True 表示能通过直连协议触发该任务的完成动作；
+      viable=False 表示无法通过协议直接完成，需在 App 内手动执行。
+
+    每个任务的 gotype/go 对应具体的协议命令（来自 JumpHandler.lua +
+    协议实测报告）。可协议触发的只读命令（res.tile.find、build.info、
+    allianceNewBoss.bossMainInfo 等）仅能"读进度/找坐标"，不能替用户
+    完成击杀/升级/购买等真实操作；会消耗真实资源/道具/次数的写操作
+    (build.upgrade、al.renderhelp、newgeneral.recruit、hot.item.v2.buy、
+    dragontower.quickbattle 等) 用户已排除自动化，viable=False。
     """
-    # 只有已完成的任务对应的宝箱，能通过协议"一键完成"（领奖，不算任务本身完成）
-    # 任务完成本身（hasCom 从 false 变 true）不能通过协议触发（非道具路径）
+    try:
+        gt = int(gotype)
+    except (TypeError, ValueError):
+        gt = None
+
+    # ------ gotype=1：主城建筑升级（build.upgrade）------
+    if gt == 1:
+        return (False,
+            "主城建筑 go=%s：build.info 取建筑 uuid，再发 build.upgrade(消耗资源，"
+            "参数未完全反出，未实测)；无法直连一键完成" % go)
+
+    # ------ gotype=7：功能跳转，按 go 细分 ------
+    if gt == 7:
+        labels = {
+            "18": ("龙塔试炼",
+                "dragontower.quickbattle {dealObject:'auto'} 扫荡消耗真实次数，"
+                "用户已排除自动化"),
+            "23": ("旅行商人",
+                "hot.item.v2.buy / hot.item.v3.buy {itemId,itemNum,price,priceType,num} "
+                "购买消耗真实货币，用户已排除自动化"),
+            "25": ("英雄招募",
+                "newgeneral.recruit {id} 消耗招募道具，用户已排除自动化"),
+            "26": ("皇家角斗场",
+                "arena.apply 无参数(仅进入界面)；完成需参战，协议无法直接触发"),
+            "28": ("日常奖励-签到",
+                "签到类任务，无直连完成命令(已完成的任务可领 dailyQuest2025.reward 宝箱)"),
+            "65": ("SVIP 界面",
+                "纯 UI 跳转，无对应协议完成命令"),
+            "117": ("福利界面某一页",
+                "纯 UI 跳转(WelfareIntegrateMainView firstViewKey)，无对应协议完成命令"),
+            "125": ("天空之境",
+                "newHeaven.info / heaven.task.info 仅查看数据；进入界面≠完成任务，"
+                "无直连完成命令"),
+        }
+        if str(go) in labels:
+            label, reason = labels[str(go)]
+            return False, "功能跳转→%s：%s" % (label, reason)
+        return False, "功能跳转(go=%s)：纯 UI 跳转，无直连完成命令" % go
+
+    # ------ gotype=16：大地图搜索（res.tile.find 只读，击杀/采集需 world.march）------
+    if gt == 16:
+        labels = {
+            "2": "粮食采集",
+            "7": "巨型狮鹫",
+            "8": "普通怪",
+            "10": "奇迹宝藏",
+            "11": "超级营地",
+        }
+        label = labels.get(str(go), "未知目标(go=%s)" % go)
+        return (False,
+            "大地图→%s：res.tile.find {type,%s,level,NoRecord:1} 仅寻找坐标(每日限6次，"
+            "只读)；击杀/采集需 world.march 行军，参数未定位，无法直连完成"
+            % (label, go))
+
+    # ------ gotype=105：联盟帮助（al.renderhelp，消耗帮助次数）------
+    if gt == 105:
+        return (False,
+            "联盟帮助：al.renderhelp {helpId} 帮助成员消耗帮助次数，用户已排除自动化")
+
+    # ------ gotype=106：联盟 boss（bossMainInfo 只读，summon/donate 写操作）------
+    if gt == 106:
+        return (False,
+            "联盟 boss：allianceNewBoss.bossMainInfo 仅查看 boss 信息(只读)；"
+            "allianceNewBoss.summon {uid} / donate {uid,count} 消耗道具，"
+            "实际击杀需战斗，无法直连完成")
+
+    # ------ gotype=107：联盟宝藏（无直接协议完成命令）------
+    if gt == 107:
+        return (False,
+            "联盟宝藏：无直接协议完成命令，需进入 AllianceDailyPublishView 界面挖掘")
+
+    # ------ gotype=109：联盟科技（al.targetscience.set 仅推荐，非研究）------
+    if gt == 109:
+        return (False,
+            "联盟科技：al.targetscience.set {scienceId,isuse} 仅推荐科技；"
+            "真正的研究命令 science.research 未定位，无法直连完成")
+
     return False, "任务完成需在 App 内手动执行对应页面操作；直连仅支持读进度与领已完成任务的宝箱"
 
 
@@ -183,8 +258,8 @@ def analyze_tasks(result):
     """把 read_daily_quest() 的返回值逐项分析，给出每个任务的：
       - gotype/go 对应的具体操作（来自本地 XML 配置表 + JumpHandler.lua）
       - 是否可通过直连协议完成（非道具）
-      - 可用的协议命令
-    返回列表，每项：{id, name, type_label, complete, progress, viable, reason, cmd}
+      - 可用的协议命令（读/写，含参数模板）
+    返回列表，每项：{id, name, type_label, complete, progress, viable, reason, cmd, cmd_detail}
     """
     out = []
     for t in result.get("tasks", []):
@@ -203,11 +278,63 @@ def analyze_tasks(result):
             "point": t.get("point"),
         }
         if t.get("complete"):
-            item["cmd"] = "dailyQuest2025.reward {id} / weekReward {id}  # 领对应活跃宝箱(不消耗道具)"
+            item["cmd"] = "dailyQuest2025.reward {id} / weekReward {id}"
+            item["cmd_detail"] = "# 领对应活跃宝箱(不消耗道具，任务本身已完成)"
         else:
-            item["cmd"] = "（无直连完成命令；需在 App 内手动执行 %s）" % item["type_label"]
+            item["cmd"] = _task_protocol_cmd(gotype, go)
+            item["cmd_detail"] = reason
         out.append(item)
     return out
+
+
+def _task_protocol_cmd(gotype, go):
+    """给出单个未完成任务对应的协议命令模板（读/写），或“无直连完成命令"。
+
+    注意：只有读命令（如 res.tile.find、build.info、bossMainInfo）能直连调用；
+    真正的完成动作（击杀、升级、购买等）要么参数未知、要么会消耗真实
+    资源/次数，用户已排除自动化，因此 viable=False。
+    """
+    try:
+        gt = int(gotype)
+    except (TypeError, ValueError):
+        gt = None
+
+    if gt == 1:
+        return ("build.info（读取建筑 uuid）→ build.upgrade {uuid, cmd:'build.upgrade', "
+                "param:2, multySpeedType:0}  # 消耗资源，参数未完全反出，未实测")
+
+    if gt == 7:
+        cmds = {
+            "18": "dragontower.quickbattle {dealObject:'auto'}  # 消耗真实次数，已排除自动化",
+            "23": "hot.item.v2.buy / hot.item.v3.buy {itemId,itemNum,price,priceType,num}  # 消耗货币，已排除自动化",
+            "25": "newgeneral.recruit {id}  # 消耗招募道具，已排除自动化",
+            "26": "arena.apply（无参数，仅进入界面；完成需参战）",
+            "28": "（无直连完成命令；已完成后可用 dailyQuest2025.reward 领宝箱）",
+            "65": "（纯 UI 跳转 SVIP 界面，无对应协议完成命令）",
+            "117": "（纯 UI 跳转 WelfareIntegrateMainView，无对应协议完成命令）",
+            "125": "newHeaven.info / heaven.task.info（仅查看天空之境数据，无完成命令）",
+        }
+        return cmds.get(str(go), "（纯 UI 跳转(go=%s)，无对应协议完成命令）" % go)
+
+    if gt == 16:
+        return ("res.tile.find {type:%s, level:<int>, NoRecord:1}  # 仅寻找坐标(每日限6次，只读)；"
+                "击杀/采集需 world.march 行军，参数未定位" % go)
+
+    if gt == 105:
+        return "al.renderhelp {helpId}  # 帮助联盟成员(消耗帮助次数)，已排除自动化"
+
+    if gt == 106:
+        return ("allianceNewBoss.bossMainInfo（只读，查看 boss 信息）；"
+                "allianceNewBoss.summon {uid} / donate {uid,count} 消耗道具，已排除自动化")
+
+    if gt == 107:
+        return "（联盟宝藏：无直接协议完成命令，需进入 AllianceDailyPublishView 界面挖掘）"
+
+    if gt == 109:
+        return ("al.targetscience.set {scienceId,isuse}  # 仅推荐科技；"
+                "真正的研究命令 science.research 未定位")
+
+    return "（无直连完成命令；需在 App 内手动执行 %s）" % _task_type_label(gotype, go)
 
 
 def print_analysis(result):
@@ -224,11 +351,11 @@ def print_analysis(result):
         print("[%s] %s(id=%s) 进度:%s 类型:%s 状态:%s" % (
             mark, t["name"] or t["id"], t["id"], t["progress"], t["type_label"], viable))
         print("      协议: %s" % t["cmd"])
-        print("      说明: %s" % t["reason"])
+        print("      说明: %s" % t["cmd_detail"])
     print()
     print("结论：直连协议目前唯一可安全'一键完成'的操作是领取已完成任务对应的")
     print("活跃宝箱（dailyQuest2025.reward / weekReward，不消耗道具）。其余未完成任务")
-    print("需在游戏 App 内手动点页面跳转执行，直连工具只能拉取进度展示。")
+    print("的协议命令见上表；会消耗真实资源/次数/道具的写操作已排除自动化。")
 
 
 def _enrich_task(q):

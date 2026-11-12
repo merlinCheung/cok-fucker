@@ -1196,5 +1196,159 @@
  "world.scout.detail": [],
  "world.favo.get": [],
  "world.refresh": [],
- "world.leave": []
+ "world.leave": [],
+ "arena.apply": [],
+ "dragontower.quickbattle": [
+  {
+   "key": "dealObject",
+   "type": "STRING",
+   "value": "auto"
+  }
+ ],
+ "allianceNewBoss.bossMainInfo": [],
+ "allianceNewBoss.summon": [
+  {
+   "key": "uid",
+   "type": "STRING",
+   "value": ""
+  }
+ ],
+ "allianceNewBoss.donate": [
+  {
+   "key": "uid",
+   "type": "STRING",
+   "value": ""
+  },
+  {
+   "key": "count",
+   "type": "INT",
+   "value": 1
+  }
+ ],
+ "al.renderhelp": [
+  {
+   "key": "helpId",
+   "type": "STRING",
+   "value": ""
+  }
+ ],
+ "al.targetscience.set": [
+  {
+   "key": "scienceId",
+   "type": "STRING",
+   "value": ""
+  },
+  {
+   "key": "isuse",
+   "type": "INT",
+   "value": 0
+  }
+ ],
+ "newgeneral.recruit": [
+  {
+   "key": "id",
+   "type": "INT",
+   "value": 0
+  }
+ ],
+ "hot.item.v2.buy": [
+  {
+   "key": "itemId",
+   "type": "STRING",
+   "value": ""
+  },
+  {
+   "key": "itemNum",
+   "type": "INT",
+   "value": 1
+  },
+  {
+   "key": "price",
+   "type": "INT",
+   "value": 0
+  },
+  {
+   "key": "priceType",
+   "type": "INT",
+   "value": 0
+  },
+  {
+   "key": "num",
+   "type": "INT",
+   "value": 1
+  }
+ ],
+ "hot.item.v3.buy": [
+  {
+   "key": "itemId",
+   "type": "STRING",
+   "value": ""
+  },
+  {
+   "key": "itemNum",
+   "type": "INT",
+   "value": 1
+  },
+  {
+   "key": "price",
+   "type": "INT",
+   "value": 0
+  },
+  {
+   "key": "priceType",
+   "type": "INT",
+   "value": 0
+  },
+  {
+   "key": "num",
+   "type": "INT",
+   "value": 1
+  }
+ ],
+ "mall.buy": [
+  {
+   "key": "mallId",
+   "type": "STRING",
+   "value": ""
+  },
+  {
+   "key": "targetId",
+   "type": "STRING",
+   "value": ""
+  },
+  {
+   "key": "num",
+   "type": "INT",
+   "value": 1
+  },
+  {
+   "key": "forceBuy",
+   "type": "INT",
+   "value": 0
+  }
+ ],
+ "res.tile.find": [
+  {
+   "key": "type",
+   "type": "INT",
+   "value": 0
+  },
+  {
+   "key": "level",
+   "type": "INT",
+   "value": 0
+  },
+  {
+   "key": "NoRecord",
+   "type": "INT",
+   "value": 1
+  },
+  {
+   "key": "item",
+   "type": "STRING",
+   "value": ""
+  }
+ ],
+ "newHeaven.info": [],
+ "heaven.task.info": []
 }
