@@ -48,10 +48,23 @@ import cok_map  # noqa: E402
 import cok_excel  # noqa: E402
 from cok_account import load_account  # noqa: E402
 import cok_accounts as accounts  # noqa: E402
+#: 渠道登录模块的导入失败信息(给页面显示用)。
+#:
+#: ⚠ 这里**曾经**只写 `except Exception: channel = None`, 把真实异常静默吞掉,
+#:   结果安卓端只看到一句"渠道登录模块未加载", 完全查不到是哪一行炸了。
+#:   2026-11-12 终于定位: cok_channel_login.py 里有个**没闭合的字符串**
+#:   (公开仓库脱敏时写坏的), SyntaxError 让整个模块 import 不了 ——
+#:   PC 和安卓**一起**挂掉。
+#: 现在把真实原因留住, 页面直接显示, 不用再猜。
+CHANNEL_IMPORT_ERROR = ""
+CHANNEL_IMPORT_REASON = ""
 try:
     import cok_channel_login as channel  # noqa: E402  渠道账号密码登录(果盘)
-except Exception:  # noqa: BLE001  模块缺失不应拖垮整个网页服务
+except Exception as _chan_exc:  # noqa: BLE001  模块缺失不应拖垮整个网页服务
     channel = None
+    import traceback
+    CHANNEL_IMPORT_ERROR = traceback.format_exc()
+    CHANNEL_IMPORT_REASON = "%s: %s" % (type(_chan_exc).__name__, _chan_exc)
 
 TOKEN_FILE = os.path.join(HERE, ".cok-web-token")
 MAX_EVENTS = 300
@@ -377,6 +390,13 @@ class Engine(object):
                     "账号 %s 的凭据不完整(缺 %s); 请在「账号」页重新添加该账号, "
                     "不要让它回退到别的账号"
                     % (accounts.account_label(reg) or active, ", ".join(reg_missing)))
+                # 补一句"怎么补" —— 少了这一步用户只能干瞪眼:
+                # signCode 来自渠道包的签名证书, 删掉这个号、用「果盘账号登录」
+                # 重新添加(或从手机「本机导入」)就能自动带回。
+                if "signCode" in reg_missing:
+                    self.account_error += (
+                        "; signCode 跟渠道包的签名证书有关, 删掉这个号再用"
+                        "「果盘账号登录」重新添加即可自动补上")
                 return False
         acc = {}
         try:
@@ -3211,7 +3231,19 @@ class Engine(object):
         except Exception:
             pass
 
-    def _hunter_stop(self):
+    def _hunter_stop(self, refresh=True):
+        """停止自动打怪。
+
+        ⚠️⚠️ **本方法必须能在"没有账号锁"的情况下调用**(2026-11-12 修):
+        打怪线程正持有那把**跨进程账号锁**, 如果"停止"这个请求也先去抢锁,
+        就变成**自己等自己** —— 永远拿不到, 页面报
+        「账号正被占用(同账号只允许一个连接)」, **停止按钮完全失灵**。
+
+        所以这里的顺序必须是:
+            停线程 → 关猎人连接 → **先把锁还回去** → 再(可选)回读体力。
+        回读体力(`_hunt_state`)要连游戏服, 所以**放在释放锁之后**,
+        否则又会卡在同一把锁上。
+        """
         with self.lock:
             hunter = self.hunter
         if not hunter:
@@ -3226,15 +3258,16 @@ class Engine(object):
             pass
         with self.lock:
             self.hunter_client = None
-        self._release_hunter_lock()
+        self._release_hunter_lock()      # ← 先把跨进程账号锁还回去
         self._set_hunter_starting(False)
-        try:
-            hunt = self._hunt_state()   # 停完立刻回读一次体力/设置
-        except Exception:
-            hunt = None
-        if hunt is not None:
-            with self.lock:
-                self.hunt = hunt
+        if refresh:
+            try:
+                hunt = self._hunt_state()   # 锁已释放, 这里才连得上
+            except Exception:
+                hunt = None
+            if hunt is not None:
+                with self.lock:
+                    self.hunt = hunt
         return {"ok": True, "note": "已停止"}
 
     def _hunter_state(self):
@@ -3924,6 +3957,28 @@ class Engine(object):
                 # _action_locked 里还会再确保连接, 这里只为拿到 account_key。
                 self._ensure_account()
                 lk = self._lock_key()
+                # ⚠️⚠️ **「停止打怪」必须先于账号锁执行**(2026-11-12 修):
+                # 打怪线程正持有那把跨进程账号锁, 而"停止"请求如果也去抢锁,
+                # 就是**自己等自己** —— 永远拿不到, 页面报
+                # 「账号正被占用(同账号只允许一个连接)」, 停止按钮完全失灵。
+                # 这里先把猎人停掉(它自己会把锁还回去), 再走正常流程。
+                if act == "hunt" and str(body.get("op") or "") == "auto-stop":
+                    result = self._hunter_stop(refresh=False)
+                    self._record_manual_action(act, result)
+                    # 猎人锁**已经还回去了**, 现在可以正常拿锁 ->
+                    # 把网页的常驻连接接回来, 并回读一次体力/设置
+                    # (失败不影响"已停止"这个结果本身)。
+                    try:
+                        with cok_client.account_lock(timeout=2.0, purpose="web-action",
+                                                     key=lk):
+                            self._ensure_client()
+                            hunt = self._hunt_state()
+                            if hunt and not hunt.get("error"):
+                                with self.lock:
+                                    self.hunt = hunt
+                    except Exception:
+                        pass
+                    return result
                 # 跨进程账号锁: 别的进程(命令扫描/采集)正在用这个账号就跳过
                 with cok_client.account_lock(timeout=2.0, purpose="web-action",
                                              key=lk):
@@ -4692,7 +4747,10 @@ class Engine(object):
         只要有 pfId, 剩下的凭据游戏服会自己发。
         """
         if channel is None:
-            return {"ok": False, "error": "渠道登录模块未加载(cok_channel_login.py 缺失或导入失败)"}
+            return {"ok": False,
+                    "error": "渠道登录模块未加载(cok_channel_login.py 缺失或导入失败): %s"
+                             % (CHANNEL_IMPORT_REASON or "未知原因"),
+                    "detail": CHANNEL_IMPORT_ERROR}
         account = str((body or {}).get("account") or "").strip()
         password = str((body or {}).get("password") or "")
         if not account or not password:
@@ -4785,7 +4843,10 @@ class Engine(object):
     def _channel_add(self, body):
         """把选中的小号加入账号库(用户挑过之后才写)。"""
         if channel is None:
-            return {"ok": False, "error": "渠道登录模块未加载"}
+            return {"ok": False,
+                    "error": "渠道登录模块未加载: %s"
+                             % (CHANNEL_IMPORT_REASON or "未知原因"),
+                    "detail": CHANNEL_IMPORT_ERROR}
         body = body or {}
         sid = str(body.get("sessionId") or "").strip()
         want = [str(x) for x in (body.get("perGameIds") or []) if str(x).strip()]
@@ -4824,6 +4885,12 @@ class Engine(object):
                 skipped.append("%s: 游戏服没解析出角色" % per)
                 continue
             acc["channelAccount"] = sess.get("account")
+            # 入库前先看凭据齐不齐: 缺字段的号切过去时只会报
+            # "凭据不完整(缺 xxx)" —— 那时用户根本不知道是哪一步缺的。
+            # 这里提前记下来, 随添加结果一起回给界面。
+            missing = [k for k in ACCOUNT_REQUIRED if not acc.get(k)]
+            if missing:
+                acc["incompleteFields"] = ",".join(missing)
             try:
                 key = accounts.save_account(acc, label=label or None)
             except Exception as e:  # noqa: BLE001
@@ -4833,14 +4900,22 @@ class Engine(object):
                           "label": accounts.account_label(accounts.get_account(key)),
                           "gameUid": acc.get("gameUid"),
                           "roleName": acc.get("roleName") or it.get("name"),
-                          "zone": acc.get("zn")})
+                          "zone": acc.get("zn"),
+                          "missing": missing,
+                          "signCodeSource": acc.get("signCodeSource") or ""})
         if not added:
             return {"ok": False, "error": "没有可添加的游戏号", "detail": skipped}
         if label and len(added) == 1:
             accounts.set_label(added[0]["key"], label)
-        return {"ok": True, "added": added, "skipped": skipped,
-                "note": "已加入账号库: %s" % ", ".join(a["label"] or a["key"]
-                                                    for a in added)}
+        note = "已加入账号库: %s" % ", ".join(a["label"] or a["key"]
+                                            for a in added)
+        bad = [a for a in added if a.get("missing")]
+        if bad:
+            note += ("; 但 %s 的凭据不完整(缺 %s) —— 切到它会连不上, "
+                     "请检查 signCode 是否取到" % (
+                         ", ".join(a["label"] or a["key"] for a in bad),
+                         ", ".join(sorted({m for a in bad for m in a["missing"]}))))
+        return {"ok": True, "added": added, "skipped": skipped, "note": note}
 
     # ---------------- 全图扫描(独立进程) ----------------
 

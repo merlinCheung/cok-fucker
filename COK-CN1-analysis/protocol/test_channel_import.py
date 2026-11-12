@@ -84,14 +84,34 @@ def main():
         # Early Android packages saved empty protocol-wide fields. They must
         # inherit safe package defaults rather than overwrite them with blanks,
         # otherwise login looks successful while every later command times out.
+        #
+        # ⚠ 2026-11-12: 默认值**不能是脱敏占位符**。公开仓库里
+        #   cok_client.ACCOUNT["baseActiveKey"] 是 "<baseActiveKey>" ——
+        #   把它当默认值回填 = 给服务端发一个假字段, 服务端会丢弃所有
+        #   加密指令(表现是"连上了但界面全空")。真值只能来自
+        #   本地缓存/账号库(见 cok_accounts.public_fields)。
         repaired = cok_client.CokClient(account={
             "pfId": "ewanqf:1084PROFILE", "baseActiveKey": "",
             "parseRegisterId": "", "device_info": {},
         })
-        assert repaired.account["baseActiveKey"] == cok_client.ACCOUNT["baseActiveKey"]
+        assert not accounts.is_placeholder(repaired.account["baseActiveKey"]), \
+            repaired.account["baseActiveKey"]
         assert repaired.account["parseRegisterId"]
         assert repaired.account["device_info"]
-        print("[PASS] 空协议公共字段会回填，旧安卓导入可继续使用")
+        # 有真值来源时必须回填**真值**
+        accounts._save_public_cache({"baseActiveKey": "SEEDED_PUBLIC_KEY"})
+        try:
+            seeded = cok_client.CokClient(account={
+                "pfId": "ewanqf:1084PROFILE", "baseActiveKey": "",
+            })
+            assert seeded.account["baseActiveKey"] == "SEEDED_PUBLIC_KEY", \
+                seeded.account["baseActiveKey"]
+        finally:
+            try:
+                os.remove(accounts.PUBLIC_FIELDS_FILE)
+            except OSError:
+                pass
+        print("[PASS] 空协议公共字段会回填真值，旧安卓导入可继续使用")
 
         legacy_android_profile = cok_client.CokClient(account={
             "pfId": "ewanqf:1084PROFILE",

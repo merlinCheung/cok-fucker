@@ -27,6 +27,8 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cok_client import CokClient  # noqa: E402
+from cok_daily_quest import (read_daily_quest, claim_daily_box, claim_weekly_box,
+                             _as_int)  # noqa: E402
 
 # 告警规则
 RULE_SIGN = "sign"        # 每日签到完成
@@ -567,6 +569,45 @@ class Daemon(object):
             except Exception as e:  # noqa: BLE001
                 self.emit("claim_result", {"rewardId": rid, "error": str(e)[:100]})
 
+    def daily_quest_cmd(self, ctx):
+        """每日任务一键：拉取任务列表、逐项显示每个任务项、领取可领的活跃宝箱。
+
+        不消耗道具。只读任务列表 + 领取已完成任务对应的活跃宝箱。
+        """
+        result = read_daily_quest(self.client)
+        if not result.get("ok"):
+            self.emit("daily_quest_error", {"error": result.get("error") or result.get("errorCode")})
+            return
+        active = result.get("activePoints") or 0
+        weekly = result.get("weeklyActivePoints") or 0
+        self.emit("daily_quest", {
+            "activePoints": active,
+            "weeklyActivePoints": weekly,
+            "tasks": result.get("tasks", []),
+            "boxes": result.get("boxes", []),
+            "weekly_boxes": result.get("weekly_boxes", []),
+        })
+        # 领取可领的日活跃宝箱
+        got_daily = set(str(x) for x in str(result.get("dailyTaskId2025") or "").split(";") if x)
+        got_weekly = set(str(x) for x in str(result.get("weekTaskRewardId2025") or "").split(";") if x)
+        for b in result.get("boxes", []):
+            bid = str(b.get("id"))
+            bpoint = _as_int(b.get("point"))
+            if bid not in got_daily and active >= bpoint:
+                res = claim_daily_box(self.client, bid)
+                self.emit("daily_box_claim", {"boxId": bid,
+                                              "ok": res.get("ok"),
+                                              "error": res.get("error") or res.get("errorCode")})
+        # 领取可领的周活跃宝箱
+        for wb in result.get("weekly_boxes", []):
+            wid = str(wb.get("id"))
+            wpoint = _as_int(wb.get("point"))
+            if wid not in got_weekly and weekly >= wpoint:
+                res = claim_weekly_box(self.client, wid)
+                self.emit("weekly_box_claim", {"boxId": wid,
+                                               "ok": res.get("ok"),
+                                               "error": res.get("error") or res.get("errorCode")})
+
     def refresh_shield_state(self):
         """拉取当前保护罩到期时间。
 
@@ -799,6 +840,8 @@ class Daemon(object):
                 self.auto_sign(self.ctx())
             if self.args.claim:
                 self.claim(self.ctx())
+            if self.args.daily_quest:
+                self.daily_quest_cmd(self.ctx())
             if self.args.speedup:
                 self.speedup(self.ctx())
             if self.args.autoshield:
@@ -861,6 +904,8 @@ def main():
     ap.add_argument("--claim-limit", type=int, default=5, help="单轮最多领几个")
     ap.add_argument("--claim-max-total", type=int, default=20,
                     help="本次运行累计最多领几个(安全上限)")
+    ap.add_argument("--daily-quest", action="store_true",
+                    help="每日任务一键：拉取任务列表、逐项显示每个任务项、领取可领的活跃宝箱(不消耗道具)")
     ap.add_argument("--retry-delay", type=float, default=10.0)
     ap.add_argument("--auto-sign", action="store_true", help="自动每日签到(幂等)")
     ap.add_argument("--speedup", action="store_true",

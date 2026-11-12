@@ -97,16 +97,16 @@ STAMINA_BURST_WINDOW = 60.0
 #: (两轮之内), 又不会把 find 打爆。
 MAX_LAUNCH_PER_ROUND = 4
 
-#: **每日找怪次数上限**(非 VIP)。2026-11-11 实测: 连打 6 次 `res.tile.find`
-#: 之后, 服务端开始返回"x/y 字段缺失"(= 今日次数用完), 客户端提示 113228
-#: 「今日剩余使用次数不足, 激活VIP可以无限制」。
-#: ⇒ **每派一队就消耗一次找怪次数** —— 这是自建打怪循环的硬瓶颈。
+#: 非 VIP 账号的**每日找怪次数**(服务端 `world.maxSearchCount` 也是这个值)。
+#:
+#: ⚠️⚠️ **不要拿它当拦截阈值**(2026-11-12 修):
+#: 服务端对 **SVIP 账号不限次数**(客户端提示 113230「激活VIP可以无限制」),
+#: 但下发的 `world.maxSearchCount` **照样是 6** —— 用它硬拦会把 SVIP 号卡死。
+#: 之前就因为这个把 SVIP 号打几轮就卡成「今日找怪次数已用完」。
+#:
+#: ⇒ **服务端才是唯一权威**: 只有服务端真的返回空坐标(次数用完)才算数,
+#: 本地计数只用来**显示**「今日已用 N 次」, 绝不用来拦。
 FIND_LIMIT_DAILY = 6
-
-#: 找怪次数用完后的**冷却**(秒)。这段时间内不再发 `res.tile.find`。
-#: 次数是**按天重置**的(实测等 60 秒不恢复), 所以冷却只是别再空转,
-#: 真正恢复要等跨天。
-FIND_COOLDOWN = 600.0
 
 #: 每打一只野怪消耗的体力(实测 9: 113->104, 108->99)
 STAMINA_COST = 9
@@ -619,7 +619,8 @@ def find_monster(client, level):
     x, y = p.get("x"), p.get("y")
     if x is None or y is None:
         return {"ok": False, "errorCode": "SEARCH_LIMIT",
-                "note": "今日找怪次数已用完(非 VIP 每天 %d 次), 升 VIP 无限" % FIND_LIMIT_DAILY}
+                "note": "今日找怪次数已用完(非 VIP 每天 %d 次, 每日重置; SVIP 无限)"
+                        % FIND_LIMIT_DAILY}
     try:
         ix, iy = int(x), int(y)
     except (TypeError, ValueError):
@@ -910,14 +911,13 @@ class AutoHunter(object):
         self._fatal_streak = 0
         self._squads = []          # 运行期的队伍对象
         self._last_find = 0.0      # 上次找怪的时间(找怪有服务端节流)
-        #: 找怪次数用完后的冷却截止时间(time.time())。
-        #: 次数**按天重置**, 所以这里只是"别再空转", 真正恢复要等跨天。
-        self._find_blocked_until = 0.0
-        #: 本进程内已用的找怪次数 / 服务端下发的每日上限。
-        #: `login.init` 的 `world.maxSearchCount` / `world.resSearchCount`
-        #: (2026-11-11 实测: 非 VIP 每天 6 次, VIP 无限)。
+        #: **本进程内**已用的找怪次数 —— 只用来**显示**「今日已用 N 次」,
+        #: **绝不用来拦截**(2026-11-12 改):
+        #: 服务端对 SVIP 账号不限次数, 但 `world.maxSearchCount` 照样下发 6,
+        #: 拿它当阈值会把 SVIP 号卡死。服务端返回空坐标才算数。
         self._find_used = 0
-        self._find_limit = FIND_LIMIT_DAILY
+        #: 服务端下发的 `world.resSearchCount`(已用次数, 只作显示参考)。
+        self._find_used_server = 0
 
     def _emit(self, kind, payload):
         if self.on_event:
@@ -992,12 +992,12 @@ class AutoHunter(object):
             if ok:
                 for k, ent in (info.get("potions") or {}).items():
                     self.stamina_items[k] = dict(ent)
-                # 顺带把服务端下发的「今日找怪次数」学过来,
-                # 这样后面能**提前知道**次数不够, 不用撞墙才发现。
+                # 顺带把服务端下发的「今日已用找怪次数」记下来(**只作显示**)。
+                # ⚠️ **不用 `maxSearchCount` 做拦截**: SVIP 账号服务端不限次数,
+                #    但那个字段照样下发 6(2026-11-12 实测)。
                 srch = info.get("search") or {}
-                if srch.get("max"):
-                    self._find_limit = int(srch["max"])
-                    self._find_used = max(self._find_used, int(srch.get("used") or 0))
+                if srch.get("used") is not None:
+                    self._find_used_server = int(srch.get("used") or 0)
             iid, uuid = cok_stamina.pick_stamina(self.stamina_items)
         if not uuid:
             self.state["note"] = ("体力不足, 但背包里没有体力药水"
@@ -1182,21 +1182,19 @@ class AutoHunter(object):
         if not f.get("ok"):
             code = str(f.get("errorCode") or "")
             # ⚠️ **这三种都不是"打怪失败"**, 别计入 fails(否则计数全是噪音):
-            #   * SEARCH_LIMIT = 今日找怪次数用完(每派一队消耗一次, 非 VIP 每天 6 次)
+            #   * SEARCH_LIMIT = 服务端说今日找怪次数用完(非 VIP; **SVIP 不会发生**)
             #   * NO_TARGET   = 世界上没有这个等级的怪
             #   * BAD_COORD   = 服务端返回了非法坐标
             if code in ("SEARCH_LIMIT", "NO_TARGET", "BAD_COORD"):
-                if code == "SEARCH_LIMIT":
-                    # 服务端说次数用完了 -> 本地计数直接拉满
-                    self._find_used = max(self._find_used, self._find_limit)
                 sq["note"] = f.get("note") or ("没找到怪: %s" % code)
                 return False, {"error": sq["note"], "errorCode": code}
             sq["note"] = "没找到怪"
             sq["fails"] += 1
             self.state["fails"] += 1
             return False, {"error": "没找到怪: %s" % code}
-        # 这次 find 消耗了 1 次「今日找怪次数」
+        # 这次 find 消耗了 1 次「今日找怪次数」(**只用于显示**)
         self._find_used += 1
+        self.state["find_used"] = self._find_used
         idx = point_index(f["x"], f["y"])
         if not idx:
             sq["note"] = "坐标换算出错"
@@ -1417,33 +1415,12 @@ class AutoHunter(object):
                 #   * **并发上限**(已经在外面的队 + 本轮新派的 <= 队伍数);
                 #   * 找怪节流: 每派一队都要一次 `res.tile.find`, 连续太多次
                 #     会被服务端节流, 所以每轮最多派 `MAX_LAUNCH_PER_ROUND` 队。
-                # ⚠️ **找怪次数用完的冷却**(2026-11-11 加):
-                # `res.tile.find` 每天只有有限次(非 VIP 6 次), 用完之后
-                # 服务端只回空坐标。再发请求纯属空转 + 白白报错。
-                if self._find_blocked_until > time.time():
-                    left = int(self._find_blocked_until - time.time())
-                    round_note = "今日找怪次数已用完, 还剩 %d 秒冷却" % left
-                    self._sync_squads(all_army, marches)
-                    self.state["note"] = round_note or self.state["wait_for"] or "打怪中"
-                    self._emit("tick", dict(self.state))
-                    self._maybe_tick()
-                    time.sleep(min(self.poll * 5, 30))
-                    continue
-                # ⚠️ **主动拦**: 本地已知的找怪次数用完了就别再发请求。
-                # 服务端的计数是**按天**的(跨进程/跨设备共享), 所以本地计数
-                # 只能当"下限"用 —— 但至少能省掉注定返回空坐标的请求。
-                if self._find_used >= self._find_limit:
-                    self._find_blocked_until = time.time() + FIND_COOLDOWN
-                    round_note = ("今日找怪次数已用完(%d/%d), 暂停 %d 分钟"
-                                  " (非 VIP 每天 %d 次, 升 VIP 无限)" % (
-                                      self._find_used, self._find_limit,
-                                      int(FIND_COOLDOWN // 60), FIND_LIMIT_DAILY))
-                    self._sync_squads(all_army, marches)
-                    self.state["note"] = round_note
-                    self._emit("tick", dict(self.state))
-                    self._maybe_tick()
-                    time.sleep(min(self.poll * 5, 30))
-                    continue
+                # ⚠️ **这里不做任何"找怪次数"拦截**(2026-11-12 改):
+                # 服务端对 **SVIP 账号不限次数**, 但下发的 `world.maxSearchCount`
+                # 照样是 6 —— 之前拿这个值硬拦, 把 SVIP 号打几轮就卡成
+                # 「今日找怪次数已用完」。**服务端才是唯一权威**:
+                # 只有它真的返回空坐标才算次数用完(见 `_launch` 的 SEARCH_LIMIT)。
+                # 本地 `_find_used` 只用来显示「今日已用 N 次」。
                 idle = [s for s in self._squads if s["state"] in ("idle", "done")]
                 launched = 0
                 round_note = ""
@@ -1473,11 +1450,11 @@ class AutoHunter(object):
                         break
                     elif str(info.get("errorCode")) == "SEARCH_LIMIT":
                         # ⚠️ **今日找怪次数用完了**(每派一队消耗一次, 非 VIP 每天 6 次)。
-                        # 次数按天重置, 再打也是空的 —— 进冷却, 别再空转。
-                        self._find_blocked_until = time.time() + FIND_COOLDOWN
-                        round_note = ("今日找怪次数已用完, 暂停 %d 分钟"
-                                      " (非 VIP 每天 %d 次, 升 VIP 无限)" % (
-                                          int(FIND_COOLDOWN // 60), FIND_LIMIT_DAILY))
+                        # 次数按天重置, 再打也是空的 —— **直接停**, 别空转。
+                        # (不再做 10 分钟倒计时冷却: 那个倒计时对"按天重置"
+                        #  的限制毫无意义, 只会让用户盯着一个永远到不了的倒计时。)
+                        self.stop("今日找怪次数已用完(非 VIP 每天 %d 次, 每日重置; "
+                                  "SVIP 无限)。已停止, 明天再来" % FIND_LIMIT_DAILY)
                         break
                     elif str(info.get("errorCode")) in ("NO_TARGET", "BAD_COORD"):
                         # 世界上没有这个等级的怪 / 坐标非法 —— 不是失败, 但也派不出去。

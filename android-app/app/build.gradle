@@ -97,7 +97,12 @@ tasks.register("preparePythonSources") {
         // ⚠ 正则必须带 MULTILINE(?sm): `^}` 要匹配"行首的 }"这种 ACCOUNT 块的结尾。
         //    少了 m 的话 `^` 只匹配字符串开头, 正则匹配不到 -> 替换静默失败,
         //    **桌面端的游戏账号凭据会被原样打进 APK**(2026-10-31 踩过这个坑)。
-        client.text = client.text.replaceFirst(/(?sm)ACCOUNT = \{.*?^\}\n(?=\n\ndef log)/, safeAccount)
+        //    结尾锚在"行首的 }"上, **不要**再额外要求后面紧跟 `def log` ——
+        //    那样一来在 ACCOUNT 和 def log 之间插任何东西(哪怕一个函数)
+        //    都会让正则匹配不上, 替换静默失败(2026-11-12 又踩了一次,
+        //    靠下面那句"APK 安全自检"拦住的, 但别去踩)。
+        //    嵌套的 device_info 字典收尾是缩进的 `    },`, 不会误匹配。
+        client.text = client.text.replaceFirst(/(?sm)^ACCOUNT = \{.*?^\}\n/, safeAccount)
         // 打包后**自检**: 整个产物里不能残留任何桌面端账号凭据。
         //   1) cok_client.py 的内置账号必须被清空
         //   2) 所有文件里都不能出现源账号的真实凭据串

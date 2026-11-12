@@ -379,10 +379,12 @@ client.call("item.use", {"uuid": uuid, "num": TypedInt(1, SFS_INT)}, retries=1)
 **找怪次数(每日)**:
 
 * 服务端在 `login.init` 的 `world` 段里下发:
-  `world.maxSearchCount` = 每日上限, `world.resSearchCount` = 已用次数
-  (实测非 VIP: max=6, 用满后 res=6)
-* **每派一队消耗一次** ⇒ 非 VIP **一天只能派 6 队**
-* 次数**按天重置**(实测等 60 秒不恢复); **VIP 无限**(客户端 113230)
+  `world.maxSearchCount` = 每日上限字段, `world.resSearchCount` = 已用次数
+* ⚠️ **`maxSearchCount` 对 SVIP 账号也照样下发 6** —— 它**不代表**实际上限!
+  **SVIP 无限找怪**(客户端提示 113230), 普通号 6 次(113228)。
+  ⇒ **绝不能拿 `maxSearchCount` 当拦截阈值**(2026-11-12 教训: 拿它硬拦,
+  把 SVIP 号打几轮就卡成「今日找怪次数已用完」)。**服务端才是唯一权威**。
+* **每派一队消耗一次**; 次数**按天重置**(次日 `resSearchCount` 归 0)
 
 **找怪类型枚举**(客户端 `game/WorldMapView/FindResTileViewV4_41.lua`):
 `0木材 1粮食 2铁矿 3石头 4金币 5怪 6普通怪 7活动怪 8营地 9奇迹宝藏 10超级营地 …`

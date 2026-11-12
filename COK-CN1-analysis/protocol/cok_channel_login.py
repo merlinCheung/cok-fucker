@@ -770,24 +770,90 @@ def selftest(verbose=True):
 # ================= 一键"账号密码 -> 可直连的游戏服凭据" =================
 # 果盘渠道的公共参数(与包绑定, 不随账号变化)。区服相关字段必须以
 # getserverlist.php 按 pfId 返回的结果为准，角色可能迁服。
-# 注意: signCode 是渠道包公共值，提交公开仓库前请替换为占位符。
+#
+# ⚠ signCode **不在这里写死**:
+#   signCode = md5(hashCode(certDER) + "." + hex(certDER)), 只跟**渠道包的签名证书**有关,
+#   而渠道包会换证书 —— 实测 66手游(com.hcg.cok.ewanqf.guopan)包 2026-11-10 更新后
+#   证书就变了, signCode 从 76ea103d... 变成 84869a86...。
+#   写死的值一过期就登不上, 所以运行时从账号库(存的是真机登录复原的真值)取,
+#   见 _resolve_sign_code()。
 CHANNEL_TEMPLATE = {
     "pf": "cn_ewanqf",
     "channel": "cn_ewanqf",
     "packageName": "com.hcg.cok.ewanqf.guopan",
-    "signCode": "<果盘渠道公共 signCode(32 位 hex)>,
+    "signCode": "",
     "host": "txaia-cok.elexapp.com",
     "port": 32231,
 }
 
 
-def _account_template():
-    """cok_client.ACCOUNT 模板(协议版本/baseActiveKey/device_info 等公共字段)。"""
+def _resolve_sign_code(package_name=None, fallback="", pf=None):
+    """渠道包的 signCode —— 从账号库里取真值。
+
+    为什么不在代码里写死: 渠道包更新会换签名证书, signCode 跟着变
+    (见 CHANNEL_TEMPLATE 上面的注释)。账号库里存的是从真机登录复原的
+    真值, 那是唯一可靠的来源。
+
+    取值顺序(越靠前越准):
+      1. **同 packageName** 的账号 —— 就是这个渠道包签发的
+      2. **同 pf 渠道** 的账号(如 cn_ewanqf) —— 同一发行渠道
+      3. **任意**账号的 signCode —— 服务端不严格校验, 有一个总比空强
+         (空 signCode 会让账号被判"凭据不完整", 直接连不上)
+
+    同一个 packageName 下可能有多个号(包换过证书, signCode 跟着变),
+    按**入库时间取最新**的, 它最接近当前装的包。
+
+    返回 (signCode, 来源说明); 找不到返回 (fallback, "")。
+    """
     try:
-        from cok_client import ACCOUNT
-        return dict(ACCOUNT)
+        import cok_accounts as accounts
     except Exception:  # noqa: BLE001
-        return {}
+        return fallback, ""
+    try:
+        stored = accounts.stored_accounts()
+    except Exception:  # noqa: BLE001
+        return fallback, ""
+
+    by_pkg, by_pf, by_any = [], [], []
+    for _key, acc in stored:
+        if not isinstance(acc, dict):
+            continue
+        code = str(acc.get("signCode") or "").strip()
+        if not code or accounts.is_placeholder(code):
+            continue
+        added = str(acc.get("added") or "")
+        item = (added, code)
+        by_any.append(item)
+        if package_name and acc.get("packageName") == package_name:
+            by_pkg.append(item)
+        elif pf and acc.get("pf") == pf:
+            by_pf.append(item)
+    for bucket, src in ((by_pkg, "同包账号"), (by_pf, "同渠道账号"),
+                        (by_any, "其它账号")):
+        if not bucket:
+            continue
+        bucket.sort(key=lambda x: x[0], reverse=True)
+        return bucket[0][1], src
+    return fallback, ""
+
+
+def _account_template():
+    """账号模板(协议版本/baseActiveKey/device_info 等公共字段)。
+
+    ⚠ 不能直接用 cok_client.ACCOUNT: 公开仓库里它是**脱敏占位符**
+    ("<baseActiveKey>" 之类), 直接拿来当凭据, 服务端会丢弃所有加密指令
+    (表现是"连上了但界面全空")。cok_accounts.template_account() 会把占位符
+    清掉, 并从账号库里把公共字段的真值补回来。
+    """
+    try:
+        import cok_accounts as accounts
+        return accounts.template_account()
+    except Exception:  # noqa: BLE001
+        try:
+            from cok_client import ACCOUNT
+            return dict(ACCOUNT)
+        except Exception:  # noqa: BLE001
+            return {}
 
 
 def build_account_from_pf_id(pf_id, platform_token="", device_id=None, gamesvc=None):
@@ -806,6 +872,9 @@ def build_account_from_pf_id(pf_id, platform_token="", device_id=None, gamesvc=N
     if not gamesvc.get("ok"):
         return None, gamesvc
     acc = _account_template()
+    sign_code, sign_src = _resolve_sign_code(
+        CHANNEL_TEMPLATE["packageName"], CHANNEL_TEMPLATE["signCode"],
+        CHANNEL_TEMPLATE["pf"])
     acc.update({
         "pfId": pf_id,
         "platformUid": pf_id,
@@ -821,7 +890,10 @@ def build_account_from_pf_id(pf_id, platform_token="", device_id=None, gamesvc=N
         # socket. The TCP port varies per zone and follows serverId.
         "port": gamesvc.get("gamePort") or CHANNEL_TEMPLATE["port"],
         "packageName": CHANNEL_TEMPLATE["packageName"],
-        "signCode": CHANNEL_TEMPLATE["signCode"],
+        "signCode": sign_code,
+        # 记一笔 signCode 是从哪来的 —— 下次排查"这个号为什么登不上"时,
+        # 一眼能看出它是不是"同包/同渠道/兜底"拿来的。
+        "signCodeSource": sign_src,
         "deviceId": device_id or _os.urandom(8).hex(),
         "roleName": gamesvc.get("gameUserName") or "",
     })

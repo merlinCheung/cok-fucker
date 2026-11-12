@@ -103,8 +103,25 @@ def test_registry_get_account_typed():
     check(isinstance((got.get("device_info") or {}).get("screen_h"), TypedInt),
           "账号库读出的 device_info.screen_h 带类型")
     # 入库时自动垫上内置模板 -> 存的是完整凭据, 不依赖设备
-    check(got.get("baseActiveKey") and got.get("appVersion"),
+    check(got.get("appVersion") and got.get("luaVersion"),
           "入库时自动补齐内置模板字段(不依赖设备)")
+    # baseActiveKey 是**协议级公共字段**, 公开仓库的模板里是脱敏占位符,
+    # 真值只能从本地缓存/账号库里取(见 cok_accounts.public_fields)。
+    # 这里验证"有来源时必须补上真值", 而不是补上占位符。
+    check(got.get("baseActiveKey") != "<baseActiveKey>"
+          and not A.is_placeholder(got.get("baseActiveKey")),
+          "入库的凭据里不能残留 baseActiveKey 占位符")
+    A._save_public_cache({"baseActiveKey": "SEEDED_BASE_ACTIVE_KEY"})
+    try:
+        key2 = A.save_account({"gameUid": "777700002224", "roleName": "公共字段测试号"})
+        got2 = A.get_account(key2)
+        check(got2.get("baseActiveKey") == "SEEDED_BASE_ACTIVE_KEY",
+              "公共字段从本地缓存回填真值(%r)" % (got2.get("baseActiveKey"),))
+    finally:
+        try:
+            os.remove(A.PUBLIC_FIELDS_FILE)
+        except OSError:
+            pass
 
 
 def test_login_request_encoding():

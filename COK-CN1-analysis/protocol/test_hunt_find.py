@@ -34,6 +34,8 @@ class FakeClient(object):
         self.calls.append((cmd, params))
         if cmd == "res.tile.find":
             return {"__params__": dict(self.params)}
+        if cmd == "world.march":
+            return {"__params__": {"$_monitor_log_$": {"uuid": "a" * 32}}}
         raise AssertionError("unexpected cmd %r" % cmd)
 
 
@@ -101,9 +103,8 @@ class TestLaunchSearchLimit(unittest.TestCase):
         h.squad_max = 4
         h.mix = 1
         h.min_stamina = 9
-        h._find_blocked_until = 0.0
         h._find_used = 0
-        h._find_limit = 6
+        h._find_used_server = 0
         h.stamina_items = {}
         h._stamina_bag_tried = False
         return h
@@ -119,6 +120,25 @@ class TestLaunchSearchLimit(unittest.TestCase):
         self.assertEqual(info.get("errorCode"), "SEARCH_LIMIT")
         self.assertEqual(sq["fails"], 0)          # 不算失败
         self.assertEqual(h.state["fails"], 0)      # 不算失败
+
+    def test_local_counter_never_blocks(self):
+        """⚠️ 回归(2026-11-12): 本地计数**不能**当拦截阈值。
+
+        服务端对 **SVIP 账号不限次数**, 但 `world.maxSearchCount` 照样下发 6。
+        之前拿它硬拦 → SVIP 号打几轮就被卡成「今日找怪次数已用完」。
+        本地计数已经远超 6 时, 仍然要正常去找怪。
+        """
+        h = self._hunter()
+        h._find_used = 999          # 本地计数远超"每日 6 次"
+        h.client = FakeClient({"x": 1005, "y": 673, "type": 6})
+        army = [{"id": "107012", "free": 1000, "march": 0, "speed": 1, "load": 1}]
+        sq = {"army_id": "107012", "num": 100, "state": "idle",
+              "troops": [{"army_id": "107012", "num": 100,
+                          "speed": 1, "load": 1}], "fails": 0, "note": ""}
+        ok, info = h._launch(sq, army)
+        # 走到 find 这一步就够了(后面 march 需要真服务端, 这里只验证没被本地拦)
+        self.assertNotEqual(info.get("errorCode"), "SEARCH_LIMIT")
+        self.assertEqual(h._find_used, 1000)      # 计数照常递增, 但不拦
 
 
 if __name__ == "__main__":

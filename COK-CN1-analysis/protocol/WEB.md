@@ -175,6 +175,61 @@ python3 cok_channel_login.py --selftest
 > ⚠️ nearme/OPPO 渠道的 pfId 仍拿不到(OPPO SDK 原生 + 风控), 只能用**账号密码**的果盘渠道;
 > 果盘账号已经玩过 COK 的号可以直接接管, **没玩过的**需要先在游戏里开号。
 
+### ⚠️ 坑四: 脱敏占位符会把模块**整个打死**(2026-11-12)
+
+页面报 **「渠道登录模块未加载(cok_channel_login.py 缺失或导入失败)」** 时,
+**不要去查 APK 里文件在不在** —— 文件在, 是**文件本身有问题**。
+
+2026-11-12 的真因: 公开仓库脱敏时把 `signCode` 占位符写成了**没闭合的字符串**
+
+```python
+"signCode": "<果盘渠道公共 signCode(32 位 hex)>,   # ← 少一个右引号
+```
+
+→ `SyntaxError: EOL while scanning string literal`
+→ `import cok_channel_login` **整个模块导不进来**
+→ `cok_web.py` 的 `except Exception: channel = None` 把异常**静默吞掉**
+→ **PC 和安卓一起挂**, 而且只给一句"模块未加载", 完全查不到哪一行炸了。
+
+现在改成三件事一起做:
+
+1. **错误信息带真实原因**: `cok_web.CHANNEL_IMPORT_REASON` 保留 traceback,
+   页面直接显示 `SyntaxError: ...`, 不用再猜。
+2. **占位符当假值处理**: `cok_accounts.is_placeholder()` 认出 `<...>` 形态,
+   `template_account()` 一律**清空**它 —— 占位符不是凭据, 拿它发包,
+   服务端会丢弃所有加密指令(表现是"登录成功但界面全空")。
+3. **公共字段从账号库/缓存取真值**: `baseActiveKey` 是协议级公共字段
+   (实测所有账号同值), 真值来源优先级:
+   **本地缓存 `data/public-fields.json` → 账号库 → 模板**(模板里是占位符, 不可用)。
+   学到真值就写进缓存, 账号删了也不丢。
+
+### ⚠️ 渠道 `signCode` 不能写死(渠道包会换证书)
+
+`signCode = md5(hashCode(certDER) + "." + hex(certDER))`, 只跟**渠道包的签名证书**有关。
+实测 66手游包(`com.hcg.cok.ewanqf.guopan`)**2026-11-10 更新后证书就换了**,
+`signCode` 从 `76ea103d...` 变成 `84869a86...` —— 写死的值一过期就登不上。
+
+所以 `CHANNEL_TEMPLATE["signCode"]` 留空, 运行时由
+`cok_channel_login._resolve_sign_code(packageName, fallback, pf)` 从账号库取真值,
+取值顺序 **同 packageName → 同 pf 渠道 → 任意账号(兜底)**(同档内按入库时间取最新)。
+取到的是哪一档会记进账号的 `signCodeSource` 字段, 排查时一眼可见。
+
+⚠ **空 signCode 会把账号判成"凭据不完整", 直接连不上** —— 所以兜底那一档也要给,
+不能"找不到就算了"。
+
+⚠ 配套的坑: `cok_accounts.save_account()` 合并时, **空字符串不能覆盖已有真值**。
+渠道导入的账号带着模板里的空 signCode, 一旦覆盖掉账号库里同渠道号的真值,
+后面再导入新号就再也取不到真值了(2026-11-12 真机踩过)。
+
+服务端对 `signCode` **不严格校验**(装的是新证书、账号里留的是旧证书值, 照样在线跑命令),
+但 `baseActiveKey` 缺了是真会出事, 两者别混为一谈。
+
+### ⚠️ 账号列表里混进 `<uid>.items.json`(背包缓存)
+
+账号目录里除了 `<gameUid>.json`, 还放着 `<gameUid>.items.json`(背包缓存)。
+早期版本把它当账号列进了下拉框, 用户能看到一堆 `xxx.items` 垃圾条目。
+`list_accounts()` / `stored_accounts()` 现在都跳过 `.items.json`。
+
 ### ⚠️ 坑一: JSON 存盘会丢 SFS 整数类型(踩了就一个号都登不上)
 
 `gmLogin` 和 `device_info` 里的数字是 **`TypedInt(INT)`**, 而 `TypedInt` 是
@@ -1001,6 +1056,41 @@ python3 ~/workspace/me/cok/frida/gen_id_names.py \
 网页的「自建自动打怪循环」走的是**手动出征**(`world.march` type=6), 所以
 **不需要「自动打怪周卡」, 也不碰服务端那个功能**(页面上已把周卡入口移除)。
 
+### ⚠️ 「停止打怪」必须在抢账号锁**之前**执行(2026-11-12 修)
+
+**症状**: 打怪进行中点「停止打怪」→ 一直报
+「账号正被占用(同账号只允许一个连接)」, **停止按钮完全失灵**。
+
+**根因**(自己等自己):
+
+```
+打怪线程  ──持有──►  跨进程账号锁 (flock)
+停止请求  ──也要──►  同一把锁  ✗ 拿不到
+```
+
+* 打怪在 `_hunter_start` 里 `account_lock(purpose="auto-hunt")` 拿锁, **一直持有到打怪结束**
+* 而 `action()` 对**所有**操作都先 `account_lock(purpose="web-action")`
+* `account_lock` 的**可重入判定按 thread id** —— 停止请求是**另一个线程**,
+  不算 nested ⇒ 真去 flock ⇒ **同进程另一个 fd 也会冲突**(EAGAIN) ⇒ `AccountBusy`
+
+**修法**: 「停止打怪」这个操作**先于账号锁执行** ——
+先把猎人停掉(它自己会把锁还回去), 再走正常流程拿锁回读体力:
+
+```python
+if act == "hunt" and body.get("op") == "auto-stop":
+    result = self._hunter_stop(refresh=False)   # 停线程 + 关连接 + 还锁
+    # 锁已还回去 -> 现在才能正常拿锁, 把网页连接接回来并回读体力
+    with account_lock(timeout=2.0, purpose="web-action", key=lk):
+        self._ensure_client(); self._hunt_state()
+```
+
+⚠️ `_hunter_stop()` 里的顺序也必须是:
+**停线程 → 关猎人连接 → 先释放锁 → 再回读体力**(回读要连游戏服, 放最后)。
+
+* 回归: `test_web_hunt_stop.py`(6 项)—— 回退修复会复现出**一模一样**的
+  「账号正被占用(同账号只允许一个连接); web-action」
+* PC 网页 + 安卓 App 都走这条路径(`action=hunt, op=auto-stop`), 一处修复两端生效
+
 ### 自动喝体力药水(2026-11-10 实测)
 
 自动打怪卡片上多了一个开关「**体力不足自动喝体力药水**」(PC 网页 + 安卓 App 都有)。
@@ -1108,36 +1198,39 @@ python3 ~/workspace/me/cok/frida/gen_id_names.py \
 * 增量记账(`_record_hunt_kills`): 只有比上次多出来的部分才算新击杀,
   否则每轮 tick 都加一次会暴涨。重新开一轮打怪时计数从 0 重新开始。
 
-### ⚠️ 找怪次数限制 —— 每天只有 6 次(2026-11-11 实测 + 修崩溃)
+### ⚠️ 找怪次数 —— **SVIP 无限**, 非 VIP 每天 6 次(2026-11-11/12 实测 + 修崩溃)
 
-**这是自动打怪最大的硬瓶颈**, 也是之前"打怪报错后自动停止"的根因。
+**找怪坐标靠 `res.tile.find {type:6, level:N}`**, 每派一队消耗一次「今日找怪次数」。
 
-每次派队都要先 `res.tile.find {type:6, level:N}` 找坐标 ——
-**每派一队就消耗一次「今日找怪次数」**。实测(非 VIP 账号):
-
-```
-第1~6次  -> 正常返回 x/y
-第7次起  -> **只回 type, 没有 x/y**(errorCode 也是空!)
-```
-
-客户端 Lua(`game/command/IFFindResTileCmd.lua:handleReceive`)明确区分了两种「空」:
-
-| 服务端返回 | 含义 | 客户端提示 |
+| 账号类型 | 每日次数 | 客户端提示 |
 |---|---|---|
-| **x / y 字段缺失(None)** | **今日找怪次数用完** | 113228「今日剩余使用次数不足, 激活VIP可以无限制」 |
-| **x == -1 / y == -1** | 世界上没有这个等级的怪 | 113229「现在世界上没有您想寻找的资源点或者怪物」 |
+| **SVIP** | **无限** | 113230「激活VIP可以无限制」 |
+| 普通 | 6 次 | 113228「今日剩余使用次数不足, 激活VIP可以无限制」 |
 
-次数是**按天重置**的(实测等 60 秒不恢复), 非 VIP 每天 6 次, **VIP 无限**。
+次数**按天重置**(实测次日 `world.resSearchCount` 归 0)。
 
-**服务端把次数放在 `login.init` 的 `world` 段里**(2026-11-11 实测):
+**服务端把次数放在 `login.init` 的 `world` 段**:
 
 ```
 login.init -> world.maxSearchCount  = 6    # 每日上限
-           -> world.resSearchCount  = 6    # 已用次数(用满 = res == max)
+           -> world.resSearchCount  = 0    # 已用次数
 ```
 
-⇒ 剩余次数 = `maxSearchCount - resSearchCount`。`cok_stamina.fetch_bag()`
-会顺带把这两个值读出来, 自动打怪据此**提前知道**次数不够, 不用撞墙才发现。
+⚠️⚠️ **`maxSearchCount` 对 SVIP 账号也照样下发 6** —— 它**不代表**这个号实际的上限!
+**绝不能拿它当拦截阈值**: 2026-11-12 就因为拿它硬拦, 把 SVIP 号打几轮就卡成
+「今日找怪次数已用完, 还剩 xxx 秒冷却」(用户实测反馈)。
+⇒ **服务端才是唯一权威**: 只有它真的返回空坐标才算次数用完。
+本地计数只用来**显示**「今日已用 N 次」。
+
+**服务端"没找到"的两种空形态**(客户端 Lua
+`game/command/IFFindResTileCmd.lua:handleReceive` 明确区分):
+
+| 服务端返回 | 含义 | 客户端提示 |
+|---|---|---|
+| **x / y 字段缺失(None)** | **今日找怪次数用完** | 113228 |
+| **x == -1 / y == -1** | 世界上没有这个等级的怪 | 113229 |
+
+两种都**没有 errorCode**, 所以**不能只看 errorCode 判断成功**。
 
 **⚠️ 之前的崩溃(已修)**:
 这两种「空」之前一律被当成成功(`ok=True, x=None, y=None`),
@@ -1147,27 +1240,25 @@ login.init -> world.maxSearchCount  = 6    # 每日上限
 TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
 ```
 
-→ 自动打怪每轮都崩 → 连续 5 次异常 → **自动停止**(用户 2026-11-11 实测遇到,
-安卓端提示「异常: int() argument ... not 'NoneType'」, 5 支队伍全卡在「待命」)。
+→ 自动打怪每轮都崩 → 连续 5 次异常 → **自动停止**(安卓端提示
+「异常: int() argument ... not 'NoneType'」, 5 支队伍全卡在「待命」)。
 
 **现在的行为**:
 
 * `find_monster` 把两种「空」分类成 `SEARCH_LIMIT` / `NO_TARGET`, 都**不算打怪失败**
   (不进 `fails`)
 * `point_index` 对 `None`/非法值返回 0 而不是抛异常
-* 次数用完 → 进入 `FIND_COOLDOWN`(10 分钟)冷却, 期间不再发 `res.tile.find`,
-  页面提示「今日找怪次数已用完, 暂停 10 分钟(非 VIP 每天 6 次, 升 VIP 无限)」
-* 本地计数(`_find_used` / `_find_limit`, 初值取服务端下发的
-  `world.resSearchCount` / `world.maxSearchCount`)到顶就**主动不发请求**
-* 打怪循环的异常处理现在会把 **traceback 记进 `state["traceback"]`** 并打印到控制台,
+* **不做任何本地次数拦截**(SVIP 号必须能一直打); 本地计数只显示在
+  队伍进度里的「今日已用 N 次」
+* 服务端真的回 `SEARCH_LIMIT`(只可能发生在非 VIP 号)→ **直接停止**并说明
+  「今日找怪次数已用完(非 VIP 每天 6 次, 每日重置; SVIP 无限)。已停止, 明天再来」
+  (不再做倒计时冷却 —— 次数按天重置, 倒计时毫无意义)
+* 打怪循环的异常处理会把 **traceback 记进 `state["traceback"]`** 并打印到控制台,
   以后再出这类错能直接定位到行(之前只有一行 `str(e)`, 只能靠猜)
-* 回归: `test_hunt_find.py`(9 项, 新增) + 原 5 组测试全绿
+* 回归: `test_hunt_find.py`(10 项, 含「本地计数永不拦截」用例) + 原 5 组测试全绿
 
-**⇒ 现实含义**: 非 VIP 账号**一天只能派 6 队**(= 6 只怪)。
-想连续挂机打怪, 要么升 VIP, 要么把每队兵力调大(一只怪吃满血)少派几队。
-可行的彻底解法是**改用 `world.get` 地图查询找怪点**(不限次数,
-`world.get` 返回的地块里 type=9 带 `mchp`(野怪血量)/`st`(存活状态)就是野怪),
-但 `world.get` 一次要 ~2.5 秒且只覆盖一小片区域, 属于后续优化。
+**⇒ SVIP 号的实际限制**: 没有次数限制, 只有**体力**(每队 9 点)和**服务器节流**
+(`res.tile.find` 连续太多次会被节流, 所以一轮最多派 `MAX_LAUNCH_PER_ROUND`=4 队)。
 
 
 ### 队伍编成(不用手填 id)

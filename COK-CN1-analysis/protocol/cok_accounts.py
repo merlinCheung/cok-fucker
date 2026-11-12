@@ -68,6 +68,27 @@ def account_label(acc):
                or acc.get("gameUid") or "").strip()
 
 
+#: 脱敏占位符形态: 形如 "<baseActiveKey>" / "<签名码(32 位 hex)>"。
+#: 公开仓库把真值换成了这种字符串, 它**不是凭据**, 当真值用会让服务端
+#: 丢弃所有加密指令(连上了但界面全空), 所以入库/发包前必须清掉。
+_PLACEHOLDER_RE = re.compile(r"^<.*>$", re.S)
+
+
+def is_placeholder(value):
+    """判断一个值是不是脱敏占位符(形如 "<baseActiveKey>")。"""
+    return isinstance(value, str) and bool(_PLACEHOLDER_RE.match(value.strip()))
+
+
+#: **账号身份**字段: 每个号都不一样, 绝不能从别的账号继承。
+#: (公共字段如 baseActiveKey 才是所有账号共享的)
+IDENTITY_FIELDS = frozenset((
+    "pfId", "platformToken", "platformUid", "gameUid", "uuid", "deviceId",
+    "buildCode", "signCode", "parseRegisterId", "gaid", "pfSign", "pfchild",
+    "gmUid", "afUID", "linkname", "instantAppCookie", "pw", "channelAccount",
+    "roleName", "zn", "serverId", "owner", "label",
+))
+
+
 def _ensure_dir(path):
     try:
         os.makedirs(path, exist_ok=True)
@@ -112,10 +133,16 @@ def list_accounts(owner=None):
     for fn in names:
         if not fn.endswith(".json") or fn.startswith("."):
             continue
+        # `<uid>.items.json` 是背包缓存, 不是账号 —— 早期版本把它当账号
+        # 列进了账号下拉框, 用户能看到一堆 "xxx.items" 垃圾条目。
+        if fn.endswith(".items.json"):
+            continue
         try:
             with open(os.path.join(ACCOUNTS_DIR, fn), encoding="utf-8") as fh:
                 acc = json.load(fh)
         except (OSError, ValueError):
+            continue
+        if not isinstance(acc, dict):
             continue
         key = account_key(acc) or fn[:-5]
         if owner is not None and (acc.get("owner") or "") != (owner or ""):
@@ -134,17 +161,142 @@ def list_accounts(owner=None):
     return out
 
 
-def _template_account():
-    """内置凭据模板(cok_client.ACCOUNT) —— 公共字段的兜底。
+def stored_accounts():
+    """遍历账号库里**真实账号**的完整凭据, 返回 [(key, acc), ...]。
 
-    账号库里存的是**完整凭据**: 渠道包读到的字段覆盖模板, 模板补齐
-    服务器地址 / 协议版本 / baseActiveKey / device_info 这些公共字段。
+    与 list_accounts 的区别: 这里给的是**完整凭据 dict**(不是摘要),
+    用来取协议公共字段的真值(见 public_fields)。
+    """
+    out = []
+    try:
+        names = sorted(os.listdir(ACCOUNTS_DIR))
+    except OSError:
+        return out
+    for fn in names:
+        if not fn.endswith(".json") or fn.startswith("."):
+            continue
+        if fn.endswith(".items.json"):  # 背包缓存, 不是账号
+            continue
+        acc = get_account(fn[:-5])
+        if isinstance(acc, dict) and acc:
+            out.append((fn[:-5], acc))
+    return out
+
+
+#: 协议公共字段的本地缓存(gitignored)。
+#:
+#: 为什么要它: 公开仓库里 cok_client.ACCOUNT 的 baseActiveKey 是**脱敏占位符**,
+#: 而 baseActiveKey 缺了 = 服务端丢弃所有加密指令(登录成功但界面全空)。
+#: 账号库里存着从真机登录复原的真值, 但**账号库是空的**时就没有来源了 ——
+#: 这份缓存就是那时的兜底: 学到真值就写下来, 账号删了也不丢。
+PUBLIC_FIELDS_FILE = os.path.join(DATA_ROOT, "public-fields.json")
+
+#: 协议级公共字段(所有账号共享同一个值)
+PUBLIC_FIELD_KEYS = (
+    "baseActiveKey", "appVersion", "luaVersion", "channelSign", "isSmall",
+    "isHDLogin", "lang", "region", "fromCountry", "subscriberId",
+    "phoneDevice", "host",
+)
+
+#: 账号库 harvest 的短缓存(CokClient 构造频繁, 每次重读所有账号文件太浪费)
+_public_fields_cache = {"at": 0.0, "value": {}}
+
+
+def _load_public_cache():
+    try:
+        with open(PUBLIC_FIELDS_FILE, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_public_cache(fields):
+    try:
+        _ensure_dir(DATA_ROOT)
+        _atomic_write_json(PUBLIC_FIELDS_FILE, fields)
+        return True
+    except OSError:
+        return False
+
+
+def _harvest_public_fields(max_age=5.0):
+    """扫账号库捞公共字段真值(带短 TTL 缓存)。
+
+    CokClient 构造很频繁, 每次都重读 N 个账号文件太浪费;
+    但 TTL 不能太长 —— 刚入的账号要马上能用。
+    """
+    now = time.time()
+    cache = _public_fields_cache
+    if cache["value"] and (now - cache["at"]) < max_age:
+        return dict(cache["value"])
+    out = {}
+    stored = stored_accounts()
+    for key in PUBLIC_FIELD_KEYS:
+        for _k, acc in stored:
+            v = acc.get(key)
+            if isinstance(v, str) and v.strip() and not is_placeholder(v):
+                out[key] = v
+                break
+    cache["at"] = now
+    cache["value"] = dict(out)
+    return out
+
+
+def public_fields():
+    """取一份**真实**的协议公共字段(所有账号共享的那些)。
+
+    baseActiveKey 是**协议级**公共字段(实测所有账号同值), 账号库里存的
+    是从真机登录复原出来的真值 —— 公开仓库的模板里它是占位符, 不可用。
+    新账号入库时要靠这份真值, 否则 baseActiveKey 是占位符 -> 登录能过,
+    但服务端会丢弃所有加密指令(表现是"连上了, 界面却全空")。
+
+    取值优先级:
+      1. 本地缓存 data/public-fields.json (gitignored, 账号库空了也还在)
+      2. 账号库里**同名字段**的真值(渠道包更新过版本时它更新)
+      3. 模板里的真值(模板本身不是占位符时, 见 template_account)
+    从账号库学到的真值会顺手写进缓存。
+    """
+    out = {}
+    # ① 本地缓存文件: 很小, 每次都读(外部改动要能立刻反映)
+    for k, v in (_load_public_cache() or {}).items():
+        if isinstance(v, str) and v.strip() and not is_placeholder(v):
+            out[k] = v
+    # ② 账号库里的真值(优先级高于缓存: 渠道包更新过版本时它更新)
+    harvested = _harvest_public_fields()
+    if harvested:
+        changed = any(out.get(k) != v for k, v in harvested.items())
+        out.update(harvested)
+        if changed:
+            cache = _load_public_cache()
+            cache.update(harvested)
+            _save_public_cache(cache)
+    return out
+
+
+def template_account():
+    """一份**干净**的账号模板: 协议公共字段是真值, 账号身份字段留空。
+
+    为什么不能直接用 cok_client.ACCOUNT:
+      公开仓库里它是脱敏占位符("<baseActiveKey>" / "<签名码(32 位 hex)>")。
+      直接拿来当凭据, 服务端会丢弃所有加密指令 —— 表现是"登录成功但
+      界面全空", 极难查。
+      占位符清空后, 公共字段从账号库/本地缓存补真值, 身份字段由调用方填。
     """
     try:
         from cok_client import ACCOUNT
-        return dict(ACCOUNT)
+        tpl = dict(ACCOUNT)
     except Exception:  # noqa: BLE001
-        return {}
+        tpl = {}
+    # 1) 占位符一律清掉(它不是真值, 留着只会误导)
+    for k, v in list(tpl.items()):
+        if is_placeholder(v):
+            tpl[k] = ""
+    # 2) 公共字段从账号库/缓存补真值
+    for k, v in public_fields().items():
+        if v and not tpl.get(k):
+            tpl[k] = v
+    return tpl
 
 
 def _apply_types(acc):
@@ -269,9 +421,21 @@ def save_account(acc, label=None, owner=None):
     if not key:
         raise ValueError("账号缺少 gameUid, 无法入库")
     existing = get_account(key) or {}
-    merged = _template_account()
-    merged.update({k: v for k, v in existing.items() if v is not None})
-    merged.update({k: v for k, v in acc.items() if v is not None})
+    merged = template_account()
+    # 新值覆盖旧值, 但**空字符串不能盖掉已有真值**:
+    # 空 baseActiveKey / signCode 会让服务端拒登或丢弃所有加密指令
+    # (表现是"连上了但界面全空"), 而"空"往往只是上游没采到字段,
+    # 不代表真的没有 —— 拿它覆盖真值等于把一个能用的号改废。
+    # (2026-11-12: 渠道导入的账号带着模板里的空 signCode, 把账号库里
+    #  同渠道号已有的真 signCode 抹掉了, 后面新号就再也取不到真值。)
+    for src in (existing, acc):
+        for k, v in src.items():
+            if v is None:
+                continue
+            old = merged.get(k)
+            if isinstance(v, str) and not v and isinstance(old, str) and old:
+                continue
+            merged[k] = v
     if label is not None:
         merged["label"] = label
     elif not merged.get("label"):
@@ -283,6 +447,8 @@ def save_account(acc, label=None, owner=None):
     if not merged.get("added"):
         merged["added"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     _atomic_write_json(_account_path(key), merged)
+    # 账号变了 -> 公共字段的 harvest 缓存要失效(新号可能带新的真值)
+    _public_fields_cache["at"] = 0.0
     _adopt_legacy_data(key)
     return key
 
@@ -303,6 +469,7 @@ def remove_account(key, owner=None):
     p = _account_path(key)
     try:
         os.remove(p)
+        _public_fields_cache["at"] = 0.0
         return True
     except OSError:
         return False

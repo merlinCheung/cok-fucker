@@ -115,6 +115,42 @@ def log(*a):
     print(*a, flush=True)
 
 
+#: 脱敏占位符形态(形如 "<baseActiveKey>" / "<签名码(32 位 hex)>")。
+#: 它**不是凭据** —— 当真值发给服务端, 服务端会丢弃所有加密指令
+#: (登录却成功, 表现是"连上了但界面全空", 极难查)。
+#:
+#: ⚠ 上面 ACCOUNT 字典的**内容**别乱动: android-app/app/build.gradle 靠正则
+#:   `(?sm)^ACCOUNT = \{.*?^\}\n` 把整个块换成安卓版安全模板(脱敏),
+#:   匹配到的是**第一个行首的 }**。所以: 字典内部不能出现行首的 `}`,
+#:   也不能在 ACCOUNT 之前再放一个 ACCOUNT = { —— 匹配不到就静默失败,
+#:   桌面端凭据会被原样打进 APK(构建自检会拦下来, 但别去踩)。
+_PLACEHOLDER_RE = re.compile(r"^<.*>$", re.S)
+
+
+def _is_placeholder(value):
+    """判断一个值是不是脱敏占位符(形如 "<baseActiveKey>")。"""
+    return isinstance(value, str) and bool(_PLACEHOLDER_RE.match(value.strip()))
+
+
+def _public_defaults():
+    """协议公共字段的默认值: 内置模板 + 本地缓存/账号库里的**真值**。
+
+    模板(ACCOUNT)在公开仓库里是脱敏占位符, 真值优先。
+    真值来源见 cok_accounts.public_fields() —— baseActiveKey 这类是
+    **协议级**公共字段(实测所有账号同值), 账号库里存的是从真机登录
+    复原出来的真值。
+    """
+    out = dict(ACCOUNT)
+    try:
+        import cok_accounts as _accounts
+        for k, v in _accounts.public_fields().items():
+            if v and not _is_placeholder(v):
+                out[k] = v
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 class CokError(Exception):
     pass
 
@@ -440,13 +476,24 @@ class CokClient(object):
         # the server silently discards every encrypted feature request. Only
         # restore fields which are shared protocol configuration, never an
         # account identity or channel token.
+        #
+        # ⚠ 2026-11-12: 默认值**不能是脱敏占位符**。公开仓库里 ACCOUNT 的
+        #   baseActiveKey 是 "<baseActiveKey>" 这种形态, 把它当真值回填 =
+        #   给服务端发一个假字段 —— 登录能过, 但服务端会丢弃所有加密指令
+        #   (表现是"连上了但界面全空")。真值从本地缓存/账号库取
+        #   (cok_accounts.public_fields), 那是协议级公共字段, 所有账号同值。
+        defaults = _public_defaults()
         for key in ("baseActiveKey", "appVersion", "luaVersion", "channelSign",
                     "isSmall", "isHDLogin", "lang", "region", "fromCountry",
                     "subscriberId", "phoneDevice", "pfchild", "gaid", "gmUid",
                     "afUID", "googlePlay", "pfSign", "linkname",
                     "instantAppCookie"):
-            if not self.account.get(key) and ACCOUNT.get(key):
-                self.account[key] = ACCOUNT[key]
+            cur = self.account.get(key)
+            if cur and not _is_placeholder(cur):
+                continue  # 已有真值, 保留
+            dv = defaults.get(key)
+            if dv and not _is_placeholder(dv):
+                self.account[key] = dv
         if not self.account.get("parseRegisterId"):
             # This is an installation registration marker, not an account
             # credential. A locally generated UUID is valid for Android

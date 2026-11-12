@@ -161,6 +161,28 @@
  ],
  "monthfund.rewardinfo": [],
  "dailyQuest2025.data": [],
+"dailyQuest2025.immediateTask": [
+  {
+   "key": "id",
+   "type": "STRING",
+   "value": "<taskId>"
+  }
+ ],
+"dailyQuest2025.immediateAllTask": [],
+"dailyQuest2025.reward": [
+  {
+   "key": "id",
+   "type": "STRING",
+   "value": "<boxId>"
+  }
+ ],
+"dailyQuest2025.weekReward": [
+  {
+   "key": "id",
+   "type": "STRING",
+   "value": "<weeklyBoxId>"
+  }
+ ],
  "newHeaven.info": [],
  "aw_formula.getData": [],
  "heaven.task.info": [],
