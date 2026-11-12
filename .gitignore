@@ -63,6 +63,12 @@ android-app/.kotlin/
 android-app/local.properties
 android-app/local-seed/
 
+# ── 发布签名(私钥 + 口令, 绝不进 git) ────────────────────────────────
+android-app/keystore.properties
+android-app/keystore/
+*.jks
+*.keystore
+
 # ── Python / 系统 / IDE ───────────────────────────────────────────────
 __pycache__/
 *.pyc
