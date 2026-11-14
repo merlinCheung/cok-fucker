@@ -76,7 +76,13 @@ class BackgroundMonitorService : Service() {
             val repository = ConsoleRepository(ready.baseUrl, ready.token)
             // A state fetch alone could be stale. This invokes the console's
             // regular poll, including any automation the user already enabled.
-            repository.action(JSONObject().put("action", "refresh-now")).getOrThrow()
+            //
+            // ⚠️ **必须刷所有托管账号, 不是只刷当前在看的那个**:
+            //    `refresh-now` 是**引擎级**操作, 只作用于 view_engine()(当前
+            //    查看的账号)。以前这里只发它 ⇒ 后台开着也只轮询 1 个号,
+            //    其余托管账号永远停在旧数据上("后台运行不生效")。
+            //    `refresh-all` 由控制台侧对并行集 ∪ 查看账号各发一次, 并行执行。
+            repository.action(JSONObject().put("action", "refresh-all")).getOrThrow()
             val snapshot = repository.fetchState().getOrThrow()
             val console = ConsoleSnapshot.from(snapshot)
             val risks = console.triage.filter { it.severity == Severity.RISK }
@@ -112,6 +118,15 @@ class BackgroundMonitorService : Service() {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            // ⚠️ 新版控制台才有 refresh-all。老控制台会回"未知操作", 这里
+            //    退回只刷当前查看账号 —— 至少不比改造前更差。
+            try {
+                val ready = ensureServer()
+                val repository = ConsoleRepository(ready.baseUrl, ready.token)
+                repository.action(JSONObject().put("action", "refresh-now")).getOrThrow()
+            } catch (_: Exception) {
+                // 忽略: 下面统一记时间戳
+            }
             preferences.edit().putLong(KEY_LAST_POLL, System.currentTimeMillis()).apply()
             startAsForeground("后台守护运行中 · 等待下次检查")
         }

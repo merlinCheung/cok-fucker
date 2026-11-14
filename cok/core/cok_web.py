@@ -82,6 +82,14 @@ except Exception as _chan_exc:  # noqa: BLE001  模块缺失不应拖垮整个�
     CHANNEL_IMPORT_ERROR = traceback.format_exc()
     CHANNEL_IMPORT_REASON = "%s: %s" % (type(_chan_exc).__name__, _chan_exc)
 
+#: 渠道档案表(多渠道: 果盘 guopan / 小七 x7sy ...)。
+#: 渠道本身是"配置 + 协议模块"的组合, 见 cok/core/cok_channels.py。
+try:
+    import cok_channels  # noqa: E402
+except Exception as _chan_cfg_exc:  # noqa: BLE001
+    cok_channels = None
+    CHANNEL_IMPORT_ERROR += "\ncok_channels: %s" % _chan_cfg_exc
+
 
 TOKEN_FILE = os.path.join(_pkg_data_dir(), ".cok-web-token")
 MAX_EVENTS = 300
@@ -189,6 +197,11 @@ MANAGER_ACTIONS = frozenset((
     "account-switch", "account-parallel", "account-remove",
     "account-add-device", "account-relabel", "account-priority", "account-parallel-batch",
     "channel-add",
+    # 后台轮询: 一次把"当前所有托管账号"都刷一遍。
+    # ⚠️ 不能复用引擎级的 `refresh-now` —— 那个只作用于**当前查看**的那一个号,
+    #    所以安卓后台守护/网页「全部刷新」看起来在跑, 实际只有 1 个号被轮询,
+    #    其余后台账号永远停在旧数据上("后台运行不生效")。
+    "refresh-all",
 ))
 
 
@@ -467,13 +480,21 @@ class Engine(object):
             self.automation_state = {"rules": {}}
             self.automation_history = self._load_automation_history()
             self.task_stats = self._load_task_stats()
+        # ⚠️ **不再调用 cok_map.set_data_dir / cok_rally.set_data_dir 改进程全局**:
+        #    这两个模块的数据目录/注册表都是**进程内全局**。同进程里 N 个引擎
+        #    并行轮询时, 谁最后解析账号谁赢 —— A 号的索引/boss 注册表会被写到
+        #    B 号的文件里(表现为"扫描 A 号, B 号的目标列表也变")。
+        #    ⇒ 统一改成**按 uid 的显式路径**(见 `_index_path()` / `_history_path()` /
+        #      `_pid_path()`, 以及 rally 调用点传的 `uid=`)。
+        #    单引擎场景(默认引擎)本来就走 accounts.DATA_ROOT, 不需要这个全局。
         try:
-            cok_map.set_data_dir(accounts.data_dir(key) if reg else None)
-        except Exception:  # noqa: BLE001
-            pass
-        # 巨型狮鹫注册表也跟账号隔离(安卓端落在 files/cok/data, 不写 assets)
-        try:
-            cok_rally.set_data_dir(accounts.data_dir(key) if reg else None)
+            cok_rally.set_data_dir(accounts.data_dir(key) if reg else None,
+                                   uid=(key if reg else None))
+        except TypeError:  # 老版本 cok_rally 没有 uid 参数
+            try:
+                cok_rally.set_data_dir(accounts.data_dir(key) if reg else None)
+            except Exception:  # noqa: BLE001
+                pass
         except Exception:  # noqa: BLE001
             pass
 
@@ -2161,6 +2182,25 @@ class Engine(object):
                             break
                         time.sleep(1.0)
                     continue
+                # ⚠️ **autoPoll 必须在账号定下来之后再判**。
+                #    以前这里读的是 `__init__` 里加载的 self.settings —— 那时候
+                #    `account_key` 还是空的, 于是 `account_isolated` 为假,
+                #    读到的是**全局** web-settings.json; 账号专属配置在
+                #    `_ensure_account()` 里才生效。结果:
+                #      · 用户在 A 号关掉"后台轮询" -> 全局配置被改成 False ->
+                #        所有**其它账号**(它们的独立配置里其实是 True)的引擎
+                #        一起静默停摆(后台运行不生效);
+                #      · 反之新账号若没自己的配置, 也会被全局值带着走。
+                #    ⇒ 每一轮循环先确保账号已解析(幂等, 解析过就直接返回),
+                #      再用**该账号自己的** settings 判定。
+                #    ⚠️ 顺序: **先** `_ensure_account()`(它会按账号重载 settings),
+                #       **再** `refresh_settings()`。反了的话本账号的配置刚加载
+                #       就被旧的全局值盖回去 —— 等于没修。
+                if not getattr(self.args, "account", None):
+                    try:
+                        self._ensure_account()
+                    except Exception:  # noqa: BLE001
+                        pass
                 if not self.settings.get("autoPoll", True):
                     # 用户关掉了自动轮询: 不连游戏服, 只等用户手动点「立即刷新」
                     with self.lock:
@@ -3348,7 +3388,10 @@ class Engine(object):
                                  and (welfare.get("daily_gift") or {}).get("ok")
                                  and not (welfare.get("daily_gift") or {}).get("freeRewarded"))
         # 健康: 近 10 分钟内有过成功轮询才算"新鲜"
-        stale = bool(last_ok) and (time.time() - last_ok) > 600
+        # ⚠️ `last_ok == 0`(从来没成功轮询过)**也是异常** —— 以前写成
+        #    `bool(last_ok) and ...`, 于是"从没跑起来"被显示成"正常",
+        #    后台开着但一次没轮询的账号在总览上跟健康号长得一模一样。
+        stale = (not last_ok) or (time.time() - last_ok) > 600
         return {
             "shield_ms": shield_left,
             "has_shield": shield_left > 0,
@@ -3522,6 +3565,21 @@ class Engine(object):
             self.connected = True
         return cl
 
+    def _rally_server_id(self):
+        """本账号的区服 id(集结时长档位/扫描都要按区服走)。
+
+        多账号可能在不同区服(2223 / 2218 ...), 写死一个会让另一个区服的账号
+        拿错配置。取不到就退回 2223(改造前的默认值)。
+        """
+        try:
+            reg = accounts.get_account(self.account_key) or {}
+            sid = int(reg.get("serverId") or 0)
+            if sid > 0:
+                return sid
+        except Exception:  # noqa: BLE001
+            pass
+        return 2223
+
     def _rally_state(self, force=False):
         """巨型狮鹫 + 集结的只读快照。
 
@@ -3535,7 +3593,9 @@ class Engine(object):
             snap = cok_rally.snapshot(
                 cl, force=force, slice_size=6,
                 on_reconnect=self._rally_reconnect,
-                game_uid=self.account_key)
+                game_uid=self.account_key,
+                uid=self.account_key,
+                server_id=self._rally_server_id())
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": str(e)[:160]}
         snap["ok"] = True
@@ -3568,7 +3628,9 @@ class Engine(object):
                 busy = cok_rally.busy_targets(cl, game_uid=self.account_key)
             except Exception:  # noqa: BLE001
                 busy = set()
-            tile = cok_rally.pick_boss_tile(cl, level=level, exclude=busy)
+            tile = cok_rally.pick_boss_tile(cl, level=level, exclude=busy,
+                                            uid=self.account_key,
+                                            server_id=self._rally_server_id())
             if not tile:
                 return {"ok": False,
                         "error": "地图上没找到巨型狮鹫(可能已刷新掉, 或这个等级没刷)"}
@@ -3600,7 +3662,8 @@ class Engine(object):
         if r.get("ok"):
             mins = ""
             try:
-                for s in cok_rally.read_rally_slots(cl):
+                for s in cok_rally.read_rally_slots(cl,
+                                                    server_id=self._rally_server_id()):
                     if int(s.get("slot")) == slot:
                         mins = " / 集结 %s 分钟" % s.get("minutes")
                         break
@@ -3973,9 +4036,12 @@ class Engine(object):
             return self._account_remove(body)
         if act == "account-relabel":
             return self._account_relabel(body)
-        # 渠道账号密码登录(果盘): 纯本地动作, 只对渠道服务器发 HTTP, 不连游戏服。
+        # 渠道账号密码登录(多渠道): 纯本地动作, 只对渠道服务器发 HTTP, 不连游戏服。
         if act == "channel-login":
             return self._channel_login(body)
+        # 渠道列表(给 UI 的下拉框)
+        if act == "channel-list":
+            return self._channel_list()
         # 渠道登录第二步: 把用户勾选的小号加入账号库
         if act == "channel-add":
             return self._channel_add(body)
@@ -4779,6 +4845,121 @@ class Engine(object):
                 "error": "" if ok else "账号库里没有这个账号"}
 
     def _channel_login(self, body):
+        """渠道账号密码登录 —— **多渠道分派**。
+
+        body 里带 ``channel``(渠道 id, 如 "guopan" / "x7sy"), 缺省仍是果盘。
+        果盘走 :meth:`_channel_login_guopan`(原逻辑一行没改, 零回归);
+        其它渠道走档案 -> 协议模块的通用路径。
+        """
+        body = body or {}
+        channel_id = str(body.get("channel") or "guopan").strip() or "guopan"
+        if channel_id == "guopan":
+            return self._channel_login_guopan(body)
+        return self._channel_login_generic(body, channel_id)
+
+    def _channel_list(self):
+        """列出所有渠道档案(给网页/安卓的下拉框)。"""
+        if cok_channels is None:
+            return {"ok": False, "error": "渠道配置模块未加载",
+                    "detail": CHANNEL_IMPORT_ERROR}
+        out = []
+        for p in cok_channels.list_profiles():
+            out.append({
+                "id": p.id,
+                "name": p.name,
+                "enabled": bool(p.enabled),
+                "note": p.note or "",
+                "ready": cok_channels.resolve_protocol(p) is not None,
+            })
+        return {"ok": True, "channels": out}
+
+    def _channel_proto(self, channel_id):
+        """取渠道的协议实现模块; 取不到返回 None。"""
+        if cok_channels is None:
+            return None
+        profile = cok_channels.get_profile(channel_id or "guopan")
+        if profile is None:
+            return None
+        return cok_channels.resolve_protocol(profile)
+
+    def _channel_login_generic(self, body, channel_id):
+        """非果盘渠道的登录(档案 -> 协议模块 -> 统一结果)。"""
+        if cok_channels is None:
+            return {"ok": False, "error": "渠道配置模块未加载(cok_channels.py)",
+                    "detail": CHANNEL_IMPORT_ERROR}
+        profile = cok_channels.get_profile(channel_id)
+        if profile is None:
+            return {"ok": False, "error": "未知渠道: %s" % channel_id}
+        proto = self._channel_proto(channel_id)
+        if proto is None:
+            return {"ok": False,
+                    "error": "渠道 %s(%s) 的协议模块还没就绪"
+                             % (profile.name, profile.id)}
+        account = str(body.get("account") or "").strip()
+        password = str(body.get("password") or "")
+        if not account or not password:
+            return {"ok": False, "error": "请填写渠道账号和密码"}
+        try:
+            res = proto.login(account, password, channel=channel_id,
+                              verbose=False)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": "渠道登录请求失败: %s" % str(e)[:160]}
+        res = dict(res or {})
+        if not res.get("ok"):
+            return {"ok": False, "succeeded": False, "channel": channel_id,
+                    "error": res.get("errmsg") or "登录失败",
+                    "stage": res.get("stage")}
+        if not res.get("succeeded"):
+            return {"ok": True, "succeeded": False, "channel": channel_id,
+                    "channelName": profile.name, "account": account,
+                    "note": res.get("errmsg") or "账号或密码不正确"}
+
+        # 身份列表 -> 与果盘一致的结构, 前端那套"勾选加入"直接复用
+        lib = {}
+        try:
+            for a in accounts.list_accounts():
+                full = accounts.get_account(a.get("key")) or {}
+                if full.get("pfId"):
+                    lib[full["pfId"]] = {"key": a.get("key"),
+                                         "label": a.get("label") or full.get("label"),
+                                         "gameUid": full.get("gameUid")}
+        except Exception:  # noqa: BLE001
+            lib = {}
+        items = []
+        for it in (res.get("identities") or []):
+            pf_id = str(it.get("pfId") or "")
+            m = lib.get(pf_id)
+            items.append({
+                "perGameId": str(it.get("perGameId") or pf_id),
+                "pfId": pf_id,
+                "name": it.get("name") or (it.get("perGameId") or pf_id)[:12],
+                "hasCharacter": bool(it.get("hasCharacter", True)),
+                "serverId": it.get("serverId") or "",
+                "inLibrary": bool(m),
+                "libraryKey": (m or {}).get("key"),
+                "libraryLabel": (m or {}).get("label"),
+            })
+        # 缓存本次会话(凭据不经过前端)
+        sid = secrets.token_urlsafe(9)
+        self._chan_sessions[sid] = {
+            "at": time.time(),
+            "channel": channel_id,
+            "account": account,
+            "items": {it.get("perGameId"): it for it in items},
+        }
+        self._chan_sessions_prune()
+        note = ("%s登录成功, 列出 %d 个游戏身份。"
+                % (profile.name, len(items)))
+        if not items:
+            note = ("%s登录成功, 但没列出任何游戏身份(%s)。"
+                    % (profile.name, res.get("note") or ""))
+        return {"ok": True, "succeeded": True, "channel": channel_id,
+                "channelName": profile.name, "account": account,
+                "pfId": res.get("pfId"), "pf": res.get("pf"),
+                "platformToken": res.get("platformToken"),
+                "smallAccounts": items, "sessionId": sid, "note": note}
+
+    def _channel_login_guopan(self, body):
         """渠道(果盘)账号密码登录: **纯 PC**, 不依赖设备/模拟器/root。
 
         三跳(2026-10-29 全部实测通过):
@@ -4921,8 +5102,22 @@ class Engine(object):
                 # which passed the handshake but whose feature requests were
                 # silently ignored by the game server.
                 platform_token = pf_id.partition(":")[2]
-                acc, _gs = channel.build_account_from_pf_id(
-                    pf_id, platform_token=platform_token)
+                # 按会话里的渠道挑协议模块(果盘 -> cok_channel_login,
+                # 小七 -> cok_channel_x7sy), 两个模块的 build_account 签名一致。
+                proto = self._channel_proto(sess.get("channel") or "guopan")
+                if proto is None:
+                    skipped.append("%s: 渠道协议模块不可用" % per)
+                    continue
+                # 测试/嵌入式宿主可能只注入 `cok_web.channel`(老接口, 只提供
+                # build_account_from_pf_id)。它优先 —— 否则测试会去调真模块,
+                # 真去连游戏服, 结果变成"游戏服没解析出角色"。
+                shim = channel if channel is not None else None
+                if shim is not None and hasattr(shim, "build_account_from_pf_id"):
+                    acc, _gs = shim.build_account_from_pf_id(
+                        pf_id, platform_token=platform_token)
+                else:
+                    acc, _gs = proto.build_account(
+                        pf_id, platform_token=platform_token)
             except Exception as e:  # noqa: BLE001
                 skipped.append("%s: 解析游戏服凭据失败(%s)" % (per, str(e)[:60]))
                 continue
@@ -5324,7 +5519,51 @@ class EngineManager(object):
         """当前应当活跃的账号集合。"""
         keys = set(self.parallel)
         keys.add(self.view_key)
-        return keys
+        return {k for k in keys if k}
+
+    def refresh_all(self, keys=None):
+        """把所有(或指定的)托管账号各刷一次。
+
+        返回每个账号的结果。**并行**发起(各自一把账号锁, 互不阻塞),
+        单个失败不影响其它号 —— 这正是"多个账号能独立存活"的意义。
+
+        ⚠️ 为什么要有这个方法: 页面/安卓后台守护以前只会对
+        `view_engine()`(当前查看的那一个)发 `refresh-now`, 于是
+        "后台运行"只覆盖 1 个号, 其余托管账号的数据永远是旧的。
+        """
+        with self.lock:
+            want = [str(k) for k in (keys if keys is not None
+                                     else self._desired_keys()) if k]
+            targets = []
+            for k in want:
+                eng = self.engines.get(k)
+                if eng is None:
+                    try:
+                        eng = self._ensure(k)
+                    except Exception:  # noqa: BLE001
+                        eng = None
+                if eng is not None:
+                    targets.append((k, eng))
+        results = {}
+
+        def run(k, eng):
+            try:
+                results[k] = eng.action({"action": "refresh-now"})
+            except Exception as e:  # noqa: BLE001
+                results[k] = {"ok": False, "error": str(e)[:160]}
+
+        threads = [threading.Thread(target=run, args=(k, e), name="cok-refresh-%s" % k)
+                   for k, e in targets]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=120)
+        ok = sum(1 for r in results.values() if isinstance(r, dict) and r.get("ok"))
+        return {"ok": bool(results) and ok == len(results),
+                "total": len(results), "succeeded": ok,
+                "results": results,
+                "note": ("%d 个账号已各刷新一次(成功 %d 个)"
+                         % (len(results), ok)) if results else "没有正在托管的账号"}
 
     def _prune(self):
         """停掉不再需要的引擎(既不在并行集、也不是当前查看账号)。持 self.lock。"""
@@ -5679,6 +5918,9 @@ class Handler(BaseHTTPRequestHandler):
             return m.set_priority(key, (body or {}).get("priority"))
         if act == "account-parallel-batch":
             return m.set_parallel_batch((body or {}).get("keys"), bool((body or {}).get("on")))
+        if act == "refresh-all":
+            keys = (body or {}).get("keys")
+            return m.refresh_all(keys if isinstance(keys, list) else None)
         if act == "account-remove":
             return m.remove_account(key)
         if act == "account-add-device":

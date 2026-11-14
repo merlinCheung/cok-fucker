@@ -69,6 +69,9 @@ class FakeClient(object):
         self.world_get = []
         self.fail_after = None       # 第 N 次 world.get 开始抛异常
         self.n_get = 0
+        #: 每次 world.get 返回的地块(**原地返回**, 原样)。None = 用构造时的
+        #: `tiles` 重复返回(老行为)。多账号隔离测试靠它给不同账号不同数据。
+        self.responses = None
 
     def call(self, cmd, params=None, retries=1):
         self.calls.append((cmd, params))
@@ -81,8 +84,12 @@ class FakeClient(object):
             self.world_get.append(params)
             if self.fail_after is not None and self.n_get > self.fail_after:
                 raise IOError("连接被服务端关闭（已收 0/3 字节）")
+            if self.responses is not None:
+                tiles = self.responses[(self.n_get - 1) % len(self.responses)]
+            else:
+                tiles = self.tiles
             return {"__params__": {"points": [
-                json.dumps(boss_tile(1000 + i)) for i in range(len(self.tiles))]}}
+                json.dumps(t) for t in (tiles or [])]}}
         if cmd == "alliance.team.ls":
             return {"__params__": {"list": self.rally_list, "helplist": []}}
         if cmd == "world.march":
@@ -286,7 +293,12 @@ def test_rally_list():
     # snapshot 的 busy 标记: 同一 monsterId 的另一只 boss **不能**被标 busy
     cok_rally._KNOWN.clear()
     cok_rally._merge_tiles([boss_tile(4067), boss_tile(7777)], NOW)
-    snap = cok_rally.snapshot(cl, save=False, game_uid="<uid-main>")
+    # ⚠️ force=True 必须让**FakeClient 真的返回这两只**(snapshot 现在只展示
+    #    本轮扫到的地块, 不再拿别人的注册表充数 —— 见 test_isolation)。
+    cl_for_snap = FakeClient(tiles=[boss_tile(4067), boss_tile(7777)],
+                             rally_list=lst)
+    snap = cok_rally.snapshot(cl_for_snap, force=True, save=False,
+                              game_uid="<uid-main>")
     b = {x["index"]: x for x in snap["bosses"]}
     check("有集结的那只标 busy", b[4067]["busy"] is True, str(b.get(4067)))
     check("同等级的另一只不标 busy", b[7777]["busy"] is False, str(b.get(7777)))

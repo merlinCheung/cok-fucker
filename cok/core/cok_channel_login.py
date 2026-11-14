@@ -507,7 +507,20 @@ def parse_resp(pt):
 # "1084" 前缀与 SDK OpenId 前缀一致(见 RE 方案 §2.2); 目前仅一个真号确认, 视为推断。
 PFID_PREFIX = "1084"
 
-def derive_platform_identity(resp):
+
+def _profile(channel=None):
+    """取渠道档案(默认果盘)。取不到就退回内置的果盘模板, 保证老路径不变。"""
+    try:
+        import cok_channels
+        p = cok_channels.get_profile(channel or "guopan")
+        if p is not None:
+            return p
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def derive_platform_identity(resp, profile=None):
     """从登录成功响应里派生游戏服认的平台身份(pfId / platformToken)。
 
     返回 {} 表示响应里没有 per-game id(登录未成功 / 字段缺失)。
@@ -516,11 +529,18 @@ def derive_platform_identity(resp):
     if not isinstance(per_game, str) or not per_game:
         return {}
     platform_token = PFID_PREFIX + per_game
+    pf_id = "ewanqf:" + platform_token
+    pf = "cn_ewanqf"
+    p = _profile(profile if isinstance(profile, str) else
+                 (getattr(profile, "id", None)))
+    if p is not None:
+        pf_id = p.make_pf_id(platform_token)
+        pf = p.pf
     return {
         "perGameId": per_game,
         "platformToken": platform_token,
-        "pfId": "ewanqf:" + platform_token,
-        "pf": "cn_ewanqf",
+        "pfId": pf_id,
+        "pf": pf,
         "guopanUid": resp.get("f18.f3"),
         "authEnvelope": resp.get("f18.f2"),
     }
@@ -605,8 +625,23 @@ def channel_login(account, password, verbose=True):
 import os as _os
 import struct as _struct
 
-_EVID = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                      "evidence", "chanlogin")
+# 归档 pcap 的位置。仓库改版后证据目录搬到了 reverse/evidence/,
+# 但老路径还留着 —— 挨个找, 找到哪个用哪个(离线自证不能因为搬家就失效)。
+_EV_CANDIDATES = (
+    _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "evidence", "chanlogin"),
+    _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(
+        _os.path.abspath(__file__)))), "reverse", "evidence", "chanlogin"),
+)
+
+
+def _evidence_dir():
+    for p in _EV_CANDIDATES:
+        if _os.path.isdir(p):
+            return p
+    return _EV_CANDIDATES[0]
+
+
+_EVID = _evidence_dir()
 
 def _pcap_packets(path):
     data = open(path, "rb").read()
@@ -799,6 +834,24 @@ CHANNEL_TEMPLATE = {
 }
 
 
+def _channel_cfg(channel=None):
+    """渠道 -> 本模块用的配置 dict(果盘 = CHANNEL_TEMPLATE 本身)。
+
+    其它渠道走档案里的值, 没有档案就退回果盘(老行为不变)。
+    """
+    p = _profile(channel)
+    if p is None or p.id == "guopan":
+        return dict(CHANNEL_TEMPLATE)
+    return {
+        "pf": p.pf,
+        "channel": p.channel,
+        "packageName": p.packageName,
+        "signCode": "",
+        "host": p.host,
+        "port": p.port,
+    }
+
+
 def _signcode_cache_path():
     """signCode 的本地缓存(gitignored, 跟着 accounts.DATA_ROOT 走)。"""
     try:
@@ -937,7 +990,8 @@ def _account_template():
             return {}
 
 
-def build_account_from_pf_id(pf_id, platform_token="", device_id=None, gamesvc=None):
+def build_account_from_pf_id(pf_id, platform_token="", device_id=None,
+                             gamesvc=None, channel=None):
     """pfId -> 完整可直连的游戏服凭据(纯 HTTP, 不连游戏服)。
 
     核心原理(2026-10-29 实测): 游戏的 getserverlist.php **按 pfId 解析角色**,
@@ -946,31 +1000,31 @@ def build_account_from_pf_id(pf_id, platform_token="", device_id=None, gamesvc=N
     返回 (acc_dict_or_None, gamesvc_result_dict)
     """
     import cok_gamesvc
+    cfg = _channel_cfg(channel)
     if gamesvc is None:
         gamesvc = cok_gamesvc.resolve_character(
-            pf_id, pf=CHANNEL_TEMPLATE["pf"], channel=CHANNEL_TEMPLATE["channel"],
-            package=CHANNEL_TEMPLATE["packageName"])
+            pf_id, pf=cfg["pf"], channel=cfg["channel"],
+            package=cfg["packageName"])
     if not gamesvc.get("ok"):
         return None, gamesvc
     acc = _account_template()
     sign_code, sign_src = _resolve_sign_code(
-        CHANNEL_TEMPLATE["packageName"], CHANNEL_TEMPLATE["signCode"],
-        CHANNEL_TEMPLATE["pf"])
+        cfg["packageName"], cfg["signCode"], cfg["pf"])
     acc.update({
         "pfId": pf_id,
         "platformUid": pf_id,
         "platformToken": platform_token or "",
-        "pf": CHANNEL_TEMPLATE["pf"],
+        "pf": cfg["pf"],
         "gameUid": gamesvc["gameUid"],
         "uuid": gamesvc["uuid"],
         "buildCode": gamesvc.get("buildCode") or acc.get("buildCode", ""),
         "zn": gamesvc.get("zn") or acc.get("zn", ""),
         "serverId": gamesvc.get("serverId") or acc.get("serverId", ""),
-        "host": CHANNEL_TEMPLATE["host"],
+        "host": cfg["host"],
         # gamesvc["port"] is HTTP (normally 80), not the SmartFox game
         # socket. The TCP port varies per zone and follows serverId.
-        "port": gamesvc.get("gamePort") or CHANNEL_TEMPLATE["port"],
-        "packageName": CHANNEL_TEMPLATE["packageName"],
+        "port": gamesvc.get("gamePort") or cfg["port"],
+        "packageName": cfg["packageName"],
         "signCode": sign_code,
         # 记一笔 signCode 是从哪来的 —— 下次排查"这个号为什么登不上"时,
         # 一眼能看出它是不是"同包/同渠道/兜底"拿来的。
@@ -981,40 +1035,32 @@ def build_account_from_pf_id(pf_id, platform_token="", device_id=None, gamesvc=N
     return acc, gamesvc
 
 
-def channel_login_list_small(account, password, verbose=True, with_role=True):
-    """果盘账号密码 -> 登录 + 列出该账号下的**游戏小号**(每个小号 = 一个游戏身份)。
+def list_identities(res, verbose=False, with_role=True):
+    """已登录态 -> 该账号下的**游戏身份列表**(果盘 = 小号列表)。
 
-    流程(与真机 App 的顺序一致):
-      1. subcmd 101 取 salt -> subcmd 102 密码登录 -> 信封(envelope) + guopanUid
-      2. subcmd 37 GETSMALLACCOUNTGAMEUIN -> 小号列表(perGameId / 果盘gameUin / 名字)
-      3. 每个小号 -> pfId = "ewanqf:1084"+perGameId
-         -> (可选)游戏服 getserverlist 解析出 COK 角色(gameUid / uuid / 区服 / 昵称)
+    这是多渠道协议接口的一部分(见 cok_channels.ChannelProfile 的说明):
+    每个渠道的"一个渠道账号下有几个游戏身份、分别是什么"由各自实现回答。
+    果盘 = 小号(subcmd 37), 小七 = 单号(一个渠道账号对应一个 eWan 账号)。
 
-    返回 dict: ok / smallAccounts[] / authEnvelope / guopanUid / account ...
+    返回 list[ {pfId, name, hasCharacter, gameUid, uuid, zn, ...} ]。
     """
-    res = channel_login(account, password, verbose=verbose)
-    if not res.get("ok"):
-        return res
     env = res.get("authEnvelope")
     uid = res.get("guopanUid")
     items = []
     if not env or not uid:
-        res["smallAccounts"] = items
-        res["note"] = res.get("note", "") + " (没拿到信封/guopanUid, 无法列小号)"
-        return res
+        return items
     try:
         lr = list_small_accounts(uid, env, verbose=False)
     except Exception as exc:  # noqa: BLE001
         res["ok"] = False
         res["stage"] = "small"
         res["note"] = "列小号失败: %s" % exc
-        return res
+        return items
     res["smallRetcode"] = lr.get("retcode")
     if lr.get("retcode") not in (0, None):
-        res["smallAccounts"] = items
         res["note"] = ("登录成功, 但列小号失败(retcode=%s %s)"
                        % (lr.get("retcode"), lr.get("errmsg") or ""))
-        return res
+        return items
     for s in lr.get("list") or []:
         per = s.get("perGameId")
         if not per:
@@ -1046,8 +1092,29 @@ def channel_login_list_small(account, password, verbose=True, with_role=True):
             else:
                 it["note"] = gs.get("note", "")
         items.append(it)
+    return items
+
+
+def channel_login_list_small(account, password, verbose=True, with_role=True):
+    """果盘账号密码 -> 登录 + 列出该账号下的**游戏小号**(每个小号 = 一个游戏身份)。
+
+    流程(与真机 App 的顺序一致):
+      1. subcmd 101 取 salt -> subcmd 102 密码登录 -> 信封(envelope) + guopanUid
+      2. subcmd 37 GETSMALLACCOUNTGAMEUIN -> 小号列表(perGameId / 果盘gameUin / 名字)
+      3. 每个小号 -> pfId = "ewanqf:1084"+perGameId
+         -> (可选)游戏服 getserverlist 解析出 COK 角色(gameUid / uuid / 区服 / 昵称)
+
+    返回 dict: ok / smallAccounts[] / authEnvelope / guopanUid / account ...
+    """
+    res = channel_login(account, password, verbose=verbose)
+    if not res.get("ok"):
+        return res
+    items = list_identities(res, verbose=verbose, with_role=with_role)
     res["smallAccounts"] = items
-    res["note"] = "登录成功, 该果盘账号下有 %d 个游戏小号" % len(items)
+    if not items:
+        res["note"] = res.get("note", "") or "登录成功, 但没列出任何小号"
+    else:
+        res["note"] = "登录成功, 该果盘账号下有 %d 个游戏小号" % len(items)
     return res
 
 
@@ -1105,6 +1172,101 @@ def make_account(account, password, label=None, owner=None, save=False,
     if verbose:
         print("[gamesvc] gameUid=%s uuid=%s zone=%s buildCode=%s"
               % (gs["gameUid"], gs["uuid"], gs.get("zn"), gs.get("buildCode")))
+    return res
+
+
+# ================= 多渠道统一入口 =================
+# 协议实现模块的约定(见 cok_channels.ChannelProfile):
+#     channel_login(account, password, verbose=False) -> dict
+#     list_identities(res, verbose=False)             -> [ {pfId, name, ...}, ... ]
+#     build_account(pf_id, platform_token="", gamesvc=None) -> (acc|None, gs)
+# 果盘的实现就在本文件里; 别的渠道各自一个模块, 由 cok_channels 懒加载。
+
+
+def list_channels():
+    """所有渠道档案(给 UI 下拉框)。"""
+    try:
+        import cok_channels
+        return [p.to_dict() for p in cok_channels.list_profiles()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def list_identities(res, verbose=False):
+    """果盘: 列出该账号下的游戏小号(每个小号 = 一个游戏身份)。"""
+    items = []
+    env = res.get("authEnvelope")
+    uid = res.get("guopanUid")
+    if not env or not uid:
+        return items
+    try:
+        lr = list_small_accounts(uid, env, verbose=False)
+    except Exception:  # noqa: BLE001
+        return items
+    for s in lr.get("list") or []:
+        per = s.get("perGameId")
+        if not per:
+            continue
+        items.append({
+            "perGameId": per,
+            "pfId": "ewanqf:" + PFID_PREFIX + per,
+            "name": s.get("name") or per[:8],
+            "guopanGameUin": s.get("gameUin"),
+        })
+    return items
+
+
+def build_account(pf_id, platform_token="", gamesvc=None, channel=None):
+    """pfId -> 账号库凭据(协议模块统一接口)。"""
+    return build_account_from_pf_id(pf_id, platform_token=platform_token,
+                                    gamesvc=gamesvc, channel=channel)
+
+
+def login(account, password, channel="guopan", verbose=False):
+    """渠道账号密码 -> 平台身份(统一入口)。
+
+    返回 dict(规范化):
+        ok          协议走通(不代表账号密码正确)
+        succeeded   账号密码校验通过
+        stage       失败发生在哪一步
+        errmsg      渠道给的错误
+        pfId / pf / platformToken
+        identities  该账号下的游戏身份列表(小号/单号)
+    """
+    try:
+        import cok_channels
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "succeeded": False, "stage": "module",
+                "errmsg": "渠道模块加载失败: %s" % exc}
+    profile = cok_channels.get_profile(channel)
+    if profile is None:
+        return {"ok": False, "succeeded": False, "stage": "channel",
+                "errmsg": "未知渠道: %s" % channel}
+    proto = cok_channels.resolve_protocol(profile)
+    if proto is None:
+        return {"ok": False, "succeeded": False, "stage": "channel",
+                "errmsg": "渠道 %s(%s) 还没实现" % (profile.name, profile.id)}
+    try:
+        res = proto.channel_login(account, password, verbose=verbose)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "succeeded": False, "stage": "login",
+                "errmsg": "渠道登录异常: %s" % exc}
+    res = dict(res or {})
+    res.setdefault("channel", profile.id)
+    res.setdefault("channelName", profile.name)
+    # 业务成功判定: 渠道各自的语义不同, 由协议模块给"succeeded", 没给就按 ok 算
+    if "succeeded" not in res:
+        res["succeeded"] = bool(res.get("ok"))
+    # 身份列表
+    if res.get("ok") and not res.get("identities"):
+        try:
+            res["identities"] = proto.list_identities(res, verbose=False)
+        except Exception:  # noqa: BLE001
+            res["identities"] = []
+    if not res.get("identities") and res.get("pfId"):
+        res["identities"] = [{"pfId": res.get("pfId"),
+                               "name": res.get("account") or account,
+                               "hasCharacter": False}]
     return res
 
 

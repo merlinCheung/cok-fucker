@@ -304,9 +304,10 @@
   .ovl .mbd{padding:14px}
   .ovl .mhint{font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:12px}
   .ovl .mfield{display:flex;flex-direction:column;gap:5px;margin-bottom:11px;font-size:12px;color:var(--dim)}
-  .ovl .mfield input{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--radius-sm);
+  .ovl .mfield input,.ovl .mfield select{background:var(--panel2);border:1px solid var(--line2);border-radius:var(--radius-sm);
        padding:8px 10px;color:var(--fg);font:inherit;font-size:13px}
-  .ovl .mfield input:focus{outline:none;border-color:#3a7bd5}
+  .ovl .mfield input:focus,.ovl .mfield select:focus{outline:none;border-color:#3a7bd5}
+  .ovl .mfield select option{background:var(--panel2);color:var(--fg)}
   .ovl .mrow{display:flex;align-items:center;gap:10px;margin-top:2px}
   .ovl .mnote{font-size:11px;color:var(--dim)}
   /* 移动端: 表格可横向滚动, 不撑破布局 */
@@ -371,7 +372,7 @@
     </div>
     <div class="grid g2">
       <div class="card span2" id="cardFleet" style="display:none">
-        <h2>多账号总览 <span class="sub">后台托管的账号一屏看清 · 点卡片切过去</span><span class="sumline" id="fleetSum"></span><button class="fold" data-fold="cardFleet">－</button></h2>
+        <h2>多账号总览 <span class="sub">后台托管的账号一屏看清 · 点卡片切过去</span><span class="sumline" id="fleetSum"></span><button id="btnFleetRefresh" title="给所有托管账号各刷新一次(不是只刷当前在看的号)">全部刷新</button><button class="fold" data-fold="cardFleet">－</button></h2>
         <div id="fleetList"><div class="empty">只有一个账号时不显示</div></div>
       </div>
       <div class="card span2" id="cardTodo">
@@ -719,19 +720,21 @@
   <div class="kr" style="margin-top:6px"><span>折叠当前页卡片</span><span><span class="kbd">F</span></span></div>
 </div>
 
-<!-- 渠道登录(果盘): 账号密码 -> 列出游戏号 -> 勾选加入控制台 -->
+<!-- 渠道登录(多渠道): 选渠道 -> 账号密码 -> 列出游戏号 -> 勾选加入控制台 -->
 <div class="ovl" id="chanOvl">
   <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="chanTtl">
     <div class="mhd">
-      <span id="chanTtl">渠道登录 · 果盘</span>
+      <span id="chanTtl">渠道登录</span>
       <button id="chanClose" class="ghost" title="关闭" style="padding:0 8px">✕</button>
     </div>
     <div class="mbd">
-      <div class="mhint">用果盘账号密码登录 → 列出该账号下的<b>游戏号</b> → 勾选后加入控制台。<br>全程纯 PC(不需要手机 / 模拟器 / root)。</div>
-      <label class="mfield"><span>果盘账号</span>
-        <input id="chanAcct" type="text" autocomplete="off" placeholder="果盘账号" spellcheck="false"></label>
+      <div class="mhint">选渠道 → 用该渠道账号密码登录 → 列出该账号下的<b>游戏号</b> → 勾选后加入控制台。<br>全程纯 PC(不需要手机 / 模拟器 / root)。</div>
+      <label class="mfield"><span>渠道</span>
+        <select id="chanSel"></select></label>
+      <label class="mfield"><span id="chanAcctLbl">渠道账号</span>
+        <input id="chanAcct" type="text" autocomplete="off" placeholder="渠道账号" spellcheck="false"></label>
       <label class="mfield"><span>密码</span>
-        <input id="chanPwd" type="password" autocomplete="off" placeholder="果盘密码"></label>
+        <input id="chanPwd" type="password" autocomplete="off" placeholder="渠道密码"></label>
       <div class="mrow">
         <button id="chanSubmit">登录并列出游戏号</button>
         <span class="mnote">密码只用于这一次登录, 不会保存</span>
@@ -1476,6 +1479,22 @@ function renderAccounts(st){
       +'后台账号即使不在看也会轮询/守护/打怪';
   }
 }
+
+/* 多账号总览: 「全部刷新」—— 每个托管账号各刷一次(并行, 互不阻塞)。
+   顶部的「立即刷新」只作用于**当前在看**的那一个号, 后台号不会动。 */
+document.addEventListener('click',async(ev)=>{
+  const b=ev.target.closest&&ev.target.closest('#btnFleetRefresh');
+  if(!b) return;
+  await busy(b,'刷新全部账号…',async()=>{
+    const r=await api('/api/action',{action:'refresh-all'});
+    if(r.ok){ toast(r.note||('已刷新 '+r.succeeded+' 个账号'),'ok'); }
+    else {
+      const bad=Object.keys(r.results||{}).filter(k=>!(r.results[k]||{}).ok);
+      toast('部分账号刷新失败: '+(bad.join('、')||'未知'),'warn');
+    }
+    await refresh(true);
+  });
+});
 
 /* 多账号总览: 把后台托管的号一屏列出, 每张卡显示关键态, 点一下切过去 */
 function renderFleet(st){
@@ -2492,8 +2511,34 @@ $('btnAcctParallel').onclick=async()=>{
   ACCT_SIG='';
   await refresh(true);
 };
-/* 账号: 🔑 渠道(果盘)账号密码登录 —— 纯 PC, 不用手机/模拟器 */
-let CHAN_SID='', CHAN_ITEMS=[];
+/* 账号: 🔑 渠道账号密码登录 —— 纯 PC, 不用手机/模拟器 */
+let CHAN_SID='', CHAN_ITEMS=[], CHAN_NAME='果盘';
+/* 渠道下拉: 从后端拉档案(cok_channels.py), 协议模块没就绪的标出来 */
+async function chanLoadChannels(){
+  const sel=$('chanSel');
+  try{
+    const r=await api('/api/action',{action:'channel-list'});
+    const list=(r&&r.channels)||[];
+    if(!list.length){ sel.innerHTML='<option value="guopan">果盘</option>'; return; }
+    sel.innerHTML=list.map(c=>{
+      const dis=c.ready?'':' disabled';
+      const tip=c.ready?(c.note||''):((c.note||'')+' · 协议模块未就绪');
+      return '<option value="'+esc(c.id)+'"'+dis+' title="'+esc(tip)+'">'+esc(c.name)+'</option>';
+    }).join('');
+  }catch(e){
+    sel.innerHTML='<option value="guopan">果盘</option>';
+  }
+  chanSyncChannelLabel();
+}
+function chanSyncChannelLabel(){
+  const sel=$('chanSel');
+  const opt=sel.options[sel.selectedIndex];
+  const name=opt?opt.textContent:'渠道';
+  CHAN_NAME=name;
+  $('chanAcctLbl').textContent=name+'账号';
+  $('chanAcct').placeholder=name+'账号';
+  $('chanTtl').textContent='渠道登录 · '+name;
+}
 function chanOpen(){
   $('chanRes').style.display='none';
   $('chanRes').innerHTML='';
@@ -2501,11 +2546,13 @@ function chanOpen(){
   $('chanList').innerHTML='';
   CHAN_SID=''; CHAN_ITEMS=[];
   $('chanOvl').classList.add('show');
+  chanLoadChannels();
   setTimeout(()=>$('chanAcct').focus(),30);
 }
 function chanClose(){ $('chanOvl').classList.remove('show'); }
 $('btnChanLogin').onclick=chanOpen;
 $('chanClose').onclick=chanClose;
+$('chanSel').onchange=chanSyncChannelLabel;
 $('chanOvl').addEventListener('click',e=>{ if(e.target===$('chanOvl')) chanClose(); });
 /* 游戏号列表: 每行一个复选框; 已在控制台/没角色的行不可选 */
 function chanSelCount(){ return CHAN_ITEMS.filter(i=>i._sel).length; }
@@ -2518,7 +2565,7 @@ function chanRenderList(items){
   CHAN_ITEMS=items||[];
   const box=$('chanList');
   if(!CHAN_ITEMS.length){
-    box.innerHTML='<div class="mnote">这个果盘账号下没有列出任何游戏号(可能还没在 COK 里开过号)。</div>';
+    box.innerHTML='<div class="mnote">这个账号下没有列出任何游戏号(可能还没在 COK 里开过号)。</div>';
     $('chanListWrap').style.display='block';
     chanSyncFoot(); return;
   }
@@ -2557,11 +2604,12 @@ $('chanSelAll').onclick=()=>{
   chanRenderList(CHAN_ITEMS);
 };
 async function chanSubmit(){
+  const channel=$('chanSel').value||'guopan';
   const account=$('chanAcct').value.trim();
   const password=$('chanPwd').value;
   if(!account||!password){ toast('请填写账号和密码','warn'); return; }
   await busy($('chanSubmit'),'登录中…',async()=>{
-    const r=await api('/api/action',{action:'channel-login',account,password});
+    const r=await api('/api/action',{action:'channel-login',channel,account,password});
     const box=$('chanRes'); box.style.display='block';
     $('chanListWrap').style.display='none';
     if(!r.ok){
@@ -2573,7 +2621,8 @@ async function chanSubmit(){
     if(r.succeeded){
       CHAN_SID=r.sessionId||'';
       box.className='res ok';
-      let h='<b>果盘登录成功</b> · 账号 '+esc(r.account||'');
+      const cn=r.channelName||CHAN_NAME||'渠道';
+      let h='<b>'+esc(cn)+'登录成功</b> · 账号 '+esc(r.account||'');
       if(r.guopanUid) h+=' · 果盘UID '+esc(r.guopanUid);
       h+='<br><span class="dim">'+esc(r.note||'')+'</span>';
       box.innerHTML=h;

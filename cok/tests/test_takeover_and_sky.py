@@ -378,7 +378,7 @@ def test_overview_summary_shapes():
     eng = stub_engine()
     eng.daemon = FakeDaemon()
     eng._server_now_ms = lambda: 1_000_000
-    eng.last_ok_poll = 0.0   # 从没成功过 -> stale=False(用 bool(last_ok) 守卫)
+    eng.last_ok_poll = 0.0   # 从没成功过
     eng.daemon.shield_end_ms = 1_000_000 + 60_000   # 还有 60 秒罩
     eng.dock_state = {"rewardable": [{"a": 1}, {"a": 2}]}
     eng.welfare_state = {"daily_gift": {"ok": True, "freeRewarded": False}}
@@ -388,7 +388,9 @@ def test_overview_summary_shapes():
     check(s["dock_rewardable"] == 2, "港口待领计数正确", str(s["dock_rewardable"]))
     check(s["welfare_claimable"] is True, "每日好礼可领时 welfare_claimable=True")
     check(s["hunting"] is False, "未打怪时 hunting=False")
-    check(s["stale"] is False, "从没成功轮询时不误报 stale")
+    # ⚠️ "从没成功轮询过"也是异常: 后台开着却一次没跑起来, 总览必须标出来,
+    #    否则它跟健康号长得一模一样(以前的 bug)。
+    check(s["stale"] is True, "从没成功轮询过也要标 stale(后台空转要看得见)")
     # 久无响应: 有过成功轮询, 但已超过 10 分钟
     eng.last_ok_poll = time.time() - 700
     check(eng._overview_summary()["stale"] is True, "超过 10 分钟无成功轮询标记 stale")

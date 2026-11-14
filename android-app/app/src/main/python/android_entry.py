@@ -97,7 +97,13 @@ def start(files_dir, port, token):
     #    COK_ACCOUNTS_DIR, 两个根各管一半 —— 现在统一成一个, 少一层心智负担。
     os.environ["COK_DATA_ROOT"] = data_dir
     os.environ["COK_ACCOUNTS_DIR"] = os.path.join(data_dir, "accounts")
-    os.environ["COK_ACCOUNT_LOCK_FILE"] = os.path.join(data_dir, ".account.lock")
+    # 账号锁: 这里给的是**目录**(不是单个文件)。
+    # ⚠️ 曾经是"一个文件" —— 而 `cok_client.lock_file_for()` 以前只要看到这个
+    #   环境变量就**无条件**返回它、忽略 key ⇒ **手机上所有账号共用一把锁**,
+    #   五个号的 3 分钟轮询被串成一条线, "后台同时在线"是假的(多账号没法独立存活)。
+    #   现在改成目录: `<该目录>/<uid>.lock`, 每个账号一把, 互不阻塞。
+    #   同账号仍然互斥(flock 按文件), 所以"同账号只允许一个连接"的保护没变。
+    os.environ["COK_ACCOUNT_LOCK_FILE"] = os.path.join(data_dir, "locks")
     # 资源目录: Chaquopy 把 cok/resources 里的文件解到 assets 根, 与模块同级。
     # 显式指出来, 免得 cok_paths 去仓库里找(手机上不存在仓库)。
     _res_dir = os.path.dirname(os.path.abspath(__file__))

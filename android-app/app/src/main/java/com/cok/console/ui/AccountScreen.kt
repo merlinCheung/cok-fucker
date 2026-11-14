@@ -65,9 +65,10 @@ fun AccountScreen(
     onImport: () -> Unit,
     onRename: (String, String) -> Unit,
     onRemove: (String) -> Unit,
-    onChannelLogin: (String, String) -> Unit,
+    onChannelLogin: (String, String, String) -> Unit,
     onChannelAdd: (String, List<String>) -> Unit,
     onClearChannelLogin: () -> Unit,
+    onLoadChannels: () -> Unit,
 ) {
     val snapshot = ui.snapshot
     val accounts = snapshot?.accounts.orEmpty()
@@ -106,13 +107,14 @@ fun AccountScreen(
                 Button(
                     onClick = {
                         onClearChannelLogin()
+                        onLoadChannels()
                         channelLoginOpen = true
                     },
                     enabled = !ui.refreshing && !ui.accountActionInFlight,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                 ) {
-                    Text("果盘账号登录", fontSize = 13.sp)
+                    Text("渠道账号登录", fontSize = 13.sp)
                 }
             }
         }
@@ -183,11 +185,16 @@ fun AccountScreen(
 private fun ChannelLoginDialog(
     ui: HomeUiState,
     onDismiss: () -> Unit,
-    onLogin: (String, String) -> Unit,
+    onLogin: (String, String, String) -> Unit,
     onAdd: (String, List<String>) -> Unit,
 ) {
     var account by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    // 渠道选择: 列表来自本地服务端的渠道注册表(果盘 / 小七 / …)
+    val channelOptions = ui.channelOptions
+    var channelId by remember { mutableStateOf("guopan") }
+    var channelMenuOpen by remember { mutableStateOf(false) }
+    val channelName = channelOptions.firstOrNull { it.id == channelId }?.name ?: "渠道"
     val result = ui.channelLoginResult
     var selectedIds by remember(result?.sessionId) { mutableStateOf(emptySet<String>()) }
     val selectable = result?.smallAccounts.orEmpty().filter { it.hasCharacter && !it.inLibrary }
@@ -195,20 +202,58 @@ private fun ChannelLoginDialog(
 
     AlertDialog(
         onDismissRequest = { if (!ui.channelLoginInFlight && !ui.channelAddInFlight) onDismiss() },
-        title = { Text(if (result == null) "果盘账号登录" else "选择游戏账号") },
+        title = { Text(if (result == null) ("果盘账号登录") else "选择游戏账号") },
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 480.dp).verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (result == null) {
-                    Text("登录后可选择该果盘账号下的游戏角色加入账号库。", color = CokPalette.dim, fontSize = 13.sp)
+                    Text("登录后可选择该${channelName} 账号下的游戏角色加入账号库。", color = CokPalette.dim, fontSize = 13.sp)
+                    Box {
+                        OutlinedButton(
+                            onClick = { channelMenuOpen = true },
+                            enabled = !ui.channelLoginInFlight,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(7.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("渠道", fontSize = 12.sp, color = CokPalette.dim)
+                                Spacer(Modifier.width(8.dp))
+                                Text(channelName, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                Text("▾", fontSize = 11.sp, color = CokPalette.dim)
+                            }
+                        }
+                        DropdownMenu(expanded = channelMenuOpen, onDismissRequest = { channelMenuOpen = false }) {
+                            if (channelOptions.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("果盘", fontSize = 13.sp) },
+                                    onClick = { channelId = "guopan"; channelMenuOpen = false },
+                                )
+                            }
+                            channelOptions.forEach { opt ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (opt.ready) opt.name else "${opt.name} · 协议未就绪",
+                                            fontSize = 13.sp,
+                                        )
+                                    },
+                                    enabled = opt.ready,
+                                    onClick = { channelId = opt.id; channelMenuOpen = false },
+                                )
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = account,
                         onValueChange = { account = it },
                         enabled = !ui.channelLoginInFlight,
                         singleLine = true,
-                        label = { Text("果盘账号") },
+                        label = { Text(channelName + "账号") },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
@@ -233,7 +278,7 @@ private fun ChannelLoginDialog(
                     )
                     if (result.note.isNotBlank()) Text(result.note, color = CokPalette.dim, fontSize = 12.sp)
                     if (result.smallAccounts.isEmpty()) {
-                        Text("该果盘账号尚未发现可用游戏角色。", color = CokPalette.dim, fontSize = 13.sp)
+                        Text("该${channelName} 账号尚未发现可用游戏角色。", color = CokPalette.dim, fontSize = 13.sp)
                     } else {
                         if (selectable.isNotEmpty()) {
                             OutlinedButton(
@@ -261,7 +306,7 @@ private fun ChannelLoginDialog(
             if (result == null) {
                 Button(
                     onClick = {
-                        onLogin(account, password)
+                        onLogin(channelId, account, password)
                         password = ""
                     },
                     enabled = account.isNotBlank() && password.isNotBlank() && !ui.channelLoginInFlight,

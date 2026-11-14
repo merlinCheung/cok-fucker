@@ -127,12 +127,33 @@ SCAN_STRIDE = 50
 #: 已知巨型狮鹫注册表: index -> {index, monsterId, level, hp, maxHp, x, y, seen_at}
 #: 用**累积**而不是"只留本轮": 首领怪会动态刷新(被打掉后换位置),
 #: 注册表让页面随着扫描慢慢补全目标列表。
-_KNOWN = {}
+#:
+#: ⚠️ **按账号隔离**: 这是**进程内共享**的可变状态, 五个引擎并行跑时如果共用一份,
+#:    A 号扫到的怪会混进 B 号的目标列表, 落盘也会写到同一个文件
+#:   (表现为"我点 A 号的扫描, B 号的狮鹫列表也变了")。
+#:   所以按 uid 分桶: `_known_for(uid)` 返回该账号的桶, 所有读写都走它。
+_KNOWN_BY_UID = {}
 #: 多久没再见到就认为这只已经消失(被打掉 / 刷新到别处)
 _KNOWN_TTL = 6 * 3600.0
 
-#: 轮转扫描游标(下一次从网格里的第几个中心开始)
+#: 轮转扫描游标(**按账号**, 同上): 下一次从网格里的第几个中心开始
+_CURSOR_BY_UID = {}
+
+#: 注册表落盘目录(**按账号**, 同上)
+_DIR_BY_UID = {}
+
+#: 兼容: 无 uid 调用点(单账号 / 老脚本)用的"默认桶"
+#: ⚠️ 这两个名字必须继续存在: 老代码 / 老测试直接用 `cok_rally._KNOWN` 读写。
+#: 默认桶就是"没传 uid 的那一份", 语义与改造前一致。
+_DEFAULT_UID = ""
+#: 默认桶的注册表(就是改造前的那个模块级 `_KNOWN`, 名字保留给老代码/老测试)。
+#: ⚠️ `_known_for("")` / `_cursor_for("")` **故意**映射到这两个对象: 老测试
+#: 直接 `cok_rally._KNOWN.clear()` / `cok_rally._CURSOR = 0` 仍然生效,
+#: 不需要改测试写法。非空 uid 才走按账号分桶。
+_KNOWN = {}
 _CURSOR = 0
+_KNOWN_BY_UID[_DEFAULT_UID] = _KNOWN
+_CURSOR_BY_UID[_DEFAULT_UID] = _CURSOR
 
 #: 注册表落盘文件(按账号隔离: 多账号时 COK_DATA_DIR 各不相同)
 #:
@@ -147,10 +168,12 @@ except Exception:  # noqa: BLE001
 REGISTRY_FILE = os.path.join(DATA_DIR, "boss-registry.json")
 
 #: 集结时长档位缓存(服务端配置基本不变, 缓存久一点省一次 dataconfig)
-_SLOT_CACHE = {"at": 0.0, "slots": None}
+#: ⚠️ **按区服分桶**: 不同账号可能在不同区服, 各区的集结时长档位不同;
+#:   共用一份缓存 = 后一个账号拿到前一个区服的时长, 于是"集结 5 分钟"变 60 分钟。
+_SLOT_CACHE = {}
 _SLOT_TTL = 120.0
 
-#: 网格中心缓存
+#: 网格中心缓存(纯本地计算, 区服无关, 全局一份即可)
 _GRID_CACHE = {"at": 0.0, "centers": []}
 
 
@@ -191,18 +214,22 @@ def _ms(v):
 # 集结时长配置
 # --------------------------------------------------------------------------
 
-def read_rally_slots(client, use_cache=True):
+def read_rally_slots(client, use_cache=True, server_id=None):
     """读服务端下发的 4 档集结时长(分钟)。
 
     来源: `login.dataconfig` -> `dataConfig.world_rally` 的 k1..k4。
     实测: k1=5 k2=10 k3=30 k4=60(分钟)。不同区服可能不同, 所以**每次都读**,
     不写死。
 
+    ⚠️ 缓存按**区服**分桶(server_id): 不同账号可能在不同区服, 档位不同,
+    共用一份缓存会让"集结 5 分钟"变成另一个区的 60 分钟。
     返回 [{slot:1, minutes:5}, {slot:2, minutes:10}, ...]
     """
     now = time.time()
-    if use_cache and _SLOT_CACHE["slots"] and (now - _SLOT_CACHE["at"]) < _SLOT_TTL:
-        return [dict(s) for s in _SLOT_CACHE["slots"]]
+    ckey = str(server_id or "")
+    cached = _SLOT_CACHE.get(ckey)
+    if use_cache and cached and (now - cached["at"]) < _SLOT_TTL:
+        return [dict(s) for s in cached["slots"]]
     minutes = list(RALLY_FALLBACK_MINUTES)
     try:
         r = client.call("login.dataconfig")
@@ -223,8 +250,7 @@ def read_rally_slots(client, use_cache=True):
     except Exception:  # noqa: BLE001
         pass
     slots = [{"slot": i + 1, "minutes": minutes[i]} for i in range(RALLY_SLOTS)]
-    _SLOT_CACHE["at"] = now
-    _SLOT_CACHE["slots"] = slots
+    _SLOT_CACHE[ckey] = {"at": now, "slots": slots}
     return [dict(s) for s in slots]
 
 
@@ -302,8 +328,38 @@ def _parse_tiles(p):
     return out
 
 
-def _merge_tiles(tiles, now):
-    """把地块并进注册表, 返回新发现的数量。"""
+def _uid_key(uid):
+    """把 uid 归一成桶名。空 / None ⇒ 默认桶(兼容单账号与老调用点)。"""
+    return str(uid or _DEFAULT_UID)
+
+
+def _known_for(uid=None):
+    """该账号的注册表桶(进程内、按 uid 隔离)。"""
+    return _KNOWN_BY_UID.setdefault(_uid_key(uid), {})
+
+
+def _cursor_for(uid=None):
+    return _CURSOR_BY_UID.setdefault(_uid_key(uid), 0)
+
+
+def set_cursor(uid, value):
+    """设置该账号的扫描游标(测试 / 手工跳转用)。"""
+    _CURSOR_BY_UID[_uid_key(uid)] = int(value or 0)
+    return _CURSOR_BY_UID[_uid_key(uid)]
+
+
+def _dir_for(uid=None):
+    """该账号的注册表目录。没显式设过 ⇒ 默认数据根目录。"""
+    return _DIR_BY_UID.get(_uid_key(uid)) or DATA_DIR
+
+
+def _registry_file(uid=None):
+    return os.path.join(_dir_for(uid), "boss-registry.json")
+
+
+def _merge_tiles(tiles, now, uid=None):
+    """把地块并进该账号的注册表, 返回新发现的数量。"""
+    known = _known_for(uid)
     new = 0
     for t in tiles:
         if _as_int(t.get("t")) != ACT_BOSS_TILE:
@@ -326,34 +382,39 @@ def _merge_tiles(tiles, now):
             "start": _ms(t.get("st")),
             "refresh": _ms(t.get("rt")),
         }
-        if idx not in _KNOWN:
+        if idx not in known:
             new += 1
-        _KNOWN[idx] = tile
-        _KNOWN[idx]["seen_at"] = now
+        known[idx] = tile
+        known[idx]["seen_at"] = now
     return new
 
 
-def _prune_known(now):
+def _prune_known(now, uid=None):
     """太久没再见到 -> 认为这只已经消失。"""
-    for idx in list(_KNOWN):
-        if now - _KNOWN[idx].get("seen_at", 0) > _KNOWN_TTL:
-            del _KNOWN[idx]
+    known = _known_for(uid)
+    for idx in list(known):
+        if now - known[idx].get("seen_at", 0) > _KNOWN_TTL:
+            del known[idx]
 
 
-def set_data_dir(path):
+def set_data_dir(path, uid=None):
     """把注册表目录指到 path(切账号时由网页调用)。
 
     和 `cok_map.set_data_dir` 一个套路: 跟着账号隔离, 每个账号一份注册表。
     path 为空 -> 回到默认的可写数据根目录(安卓端 = files/cok/data)。
+
+    ⚠️ **uid 是隔离的关键**: 给了 uid 只影响该账号的桶; 不给 ⇒ 只改"默认桶"
+    (单账号 / 老脚本)。**绝不能**再改模块级全局 REGISTRY_FILE —— 五个引擎并行时,
+    后解析的账号会把前面的目录覆盖掉, 于是所有号的注册表都写到最后一个账号的文件里。
     """
-    global DATA_DIR, REGISTRY_FILE
+    global DATA_DIR
     try:
         import cok_accounts as _accounts
         default = _accounts.DATA_ROOT
     except Exception:  # noqa: BLE001
         default = HERE
     DATA_DIR = path or default
-    REGISTRY_FILE = os.path.join(DATA_DIR, "boss-registry.json")
+    _DIR_BY_UID[_uid_key(uid)] = DATA_DIR
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
     except Exception:  # noqa: BLE001
@@ -361,10 +422,10 @@ def set_data_dir(path):
     return DATA_DIR
 
 
-def load_registry():
+def load_registry(uid=None):
     """从磁盘读回已知的巨型狮鹫(让页面重启后不用重新扫)。"""
     try:
-        with open(REGISTRY_FILE) as f:
+        with open(_registry_file(uid)) as f:
             data = json.load(f)
     except Exception:  # noqa: BLE001
         return
@@ -372,6 +433,7 @@ def load_registry():
     if not isinstance(tiles, dict):
         return
     now = time.time()
+    known = _known_for(uid)
     for k, v in tiles.items():
         if not isinstance(v, dict):
             continue
@@ -382,18 +444,20 @@ def load_registry():
         v["seen_at"] = _as_float(v.get("seen_at"), 0.0) or 0.0
         if now - v["seen_at"] > _KNOWN_TTL:
             continue
-        _KNOWN[idx] = v
+        known[idx] = v
 
 
-def save_registry():
-    """把注册表写到磁盘(按账号隔离的数据目录)。"""
+def save_registry(uid=None):
+    """把该账号的注册表写到磁盘(按账号隔离的数据目录)。"""
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
-        tmp = REGISTRY_FILE + ".tmp"
+        d = _dir_for(uid)
+        os.makedirs(d, exist_ok=True)
+        path = _registry_file(uid)
+        tmp = path + ".tmp"
         with open(tmp, "w") as f:
-            json.dump({"at": time.time(), "tiles": _KNOWN}, f,
+            json.dump({"at": time.time(), "tiles": _known_for(uid)}, f,
                       ensure_ascii=False)
-        os.replace(tmp, REGISTRY_FILE)
+        os.replace(tmp, path)
         return True
     except Exception:  # noqa: BLE001
         return False
@@ -404,28 +468,33 @@ SCAN_BATCH = 24
 
 
 def scan_bosses(client, server_id=2223, levels=None, full=False, slice_size=8,
-                on_reconnect=None, save=True):
+                on_reconnect=None, save=True, uid=None):
     """扫描地图上的巨型狮鹫。
 
     ⚠️ 两个服务端限制决定了这里的设计(2026-11-02 实测):
        1. 连续 world.get 不间隔 -> 服务端不响应
        2. 连续 world.get 约 70 次 -> 服务端**主动断开连接**
-       所以: **每次只扫一小片**(轮转), 靠 _KNOWN 注册表累积出目标列表;
+       所以: **每次只扫一小片**(轮转), 靠注册表累积出目标列表;
        连接断了用 on_reconnect 回调重建后继续。
 
     full=True: 一次多扫 SCAN_BATCH 个采样点(用户点「扫描」),
        仍然**不是**全图 —— 全图 576 个点要 7 分钟, 不能让人干等。
-    返回 {bosses: [...], scanned: n, total: n, done: bool}
+    uid: 账号 id。**必须传**(网页端每个引擎传自己的), 否则会串到默认桶,
+       表现为"多账号扫描结果混在一起"。
+
+    ⚠️ **返回值里的 bosses 是该账号注册表的累积结果**(老行为), 不是"本轮扫到的"。
+       要判断"本轮新发现", 看 `new_bosses`。
     """
-    global _CURSOR
     centers = map_centers()
+    cursor = _cursor_for(uid)
     n = SCAN_BATCH if full else max(1, min(slice_size, len(centers)))
-    todo = [centers[(_CURSOR + i) % len(centers)] for i in range(n)]
-    _CURSOR = (_CURSOR + n) % len(centers)
+    todo = [centers[(cursor + i) % len(centers)] for i in range(n)]
+    _CURSOR_BY_UID[_uid_key(uid)] = (cursor + n) % len(centers)
 
     now = time.time()
     cl = client
     scanned = 0
+    new_tiles = []      # 本轮扫到的地块(累积进注册表之前先留一份)
     for cx, cy in todo:
         try:
             tiles = fetch_area(cl, cx, cy, server_id=server_id)
@@ -441,23 +510,53 @@ def scan_bosses(client, server_id=2223, levels=None, full=False, slice_size=8,
             except Exception:  # noqa: BLE001
                 break
         scanned += 1
-        _merge_tiles(tiles, now)
+        new_tiles.extend(tiles)
+        _merge_tiles(tiles, now, uid)
         time.sleep(SCAN_INTERVAL)
 
-    _prune_known(now)
+    _prune_known(now, uid)
     if save and scanned:
-        save_registry()
-    bosses = [dict(t) for t in _KNOWN.values()]
+        save_registry(uid)
+    known = _known_for(uid)
+    # 本轮扫到的(去重、按等级过滤)—— 给"多账号同时跑"用: 否则 A 号会看到
+    # B 号注册表里的目标, 一次出征可能打到别人的图上(而且扫完永远只报同样的列表)。
+    scanned_set = {}
+    for t in new_tiles:
+        if _as_int(t.get("t")) != ACT_BOSS_TILE:
+            continue
+        mid = str(t.get("t1") or "")
+        if mid not in BOSS_IDS:
+            continue
+        idx = _as_int(t.get("i"))
+        if not idx or idx in scanned_set:
+            continue
+        n_ = idx - 1
+        scanned_set[idx] = {
+            "index": idx,
+            "monsterId": mid,
+            "level": BOSS_IDS.get(mid),
+            "hp": _as_int(t.get("mchp")),
+            "maxHp": _as_int(t.get("mmhp")),
+            "x": n_ % WORLD_SIZE,
+            "y": n_ // WORLD_SIZE,
+            "start": _ms(t.get("st")),
+            "refresh": _ms(t.get("rt")),
+        }
+    bosses = [dict(t) for t in known.values()]
+    new_bosses = list(scanned_set.values())
     want = set(BOSS_IDS) if not levels else {
         bid for bid, lv in BOSS_IDS.items() if lv in levels}
     bosses = [b for b in bosses if b["monsterId"] in want]
     bosses.sort(key=lambda b: (b.get("level") or 0, b.get("index") or 0))
+    new_bosses = [b for b in new_bosses if b["monsterId"] in want]
+    new_bosses.sort(key=lambda b: (b.get("level") or 0, b.get("index") or 0))
     return {
         "bosses": bosses,
+        "new_bosses": new_bosses,
         "scanned": scanned,
         "grid": len(centers),
-        "cursor": _CURSOR,
-        "known": len(_KNOWN),
+        "cursor": _cursor_for(uid),
+        "known": len(known),
     }
 
 
@@ -472,14 +571,15 @@ def find_boss_tiles(client, levels=None, server_id=2223, centers=None,
     return r["bosses"]
 
 
-def pick_boss_tile(client, level=None, server_id=2223, exclude=()):
+def pick_boss_tile(client, level=None, server_id=2223, exclude=(), uid=None):
     """挑一个巨型狮鹫地块。
 
     优先: 血量最少(快打死的) -> 等级最接近要的 -> index 小。
     同一目标只能有一支集结(错误码 115212), 所以 exclude 里的 index 别选。
     """
     tiles = scan_bosses(client, server_id=server_id,
-                        levels=(level,) if level else None)["bosses"]
+                        levels=(level,) if level else None,
+                        uid=uid)["bosses"]
     busy = set(int(x) for x in (exclude or ()))
     tiles = [t for t in tiles if t["index"] not in busy]
     if not tiles:
@@ -656,17 +756,24 @@ def busy_targets(client, game_uid=None, side=1):
 # --------------------------------------------------------------------------
 
 def snapshot(client, server_id=2223, force=False, slice_size=8,
-             on_reconnect=None, game_uid=None, save=True):
+             on_reconnect=None, game_uid=None, save=True, uid=None):
     """一次拿到网页需要的全部只读信息。
 
     force=True 时多扫几片(用户点了「扫描」), 否则只推进一小片(轮转)。
+    uid: 账号 id。**必须传**(网页端每个引擎传自己的), 否则注册表/游标会串到默认桶。
     """
-    load_registry()
-    slots = read_rally_slots(client)
+    uid = uid if uid is not None else game_uid
+    load_registry(uid)
+    slots = read_rally_slots(client, server_id=server_id)
     sc = scan_bosses(client, server_id=server_id, full=force,
                      slice_size=slice_size, on_reconnect=on_reconnect,
-                     save=save)
+                     save=save, uid=uid)
     bosses = sc["bosses"]
+    # 页面上的「狮鹫列表」应当反映**本账号**当前实际能打的:
+    # 有 force(用户点了扫描) -> 本轮扫到的; 否则 -> 轮转扫描的累积注册表。
+    # (以前一律用注册表, 多账号并行时 A 号会看到 B 号扫到的怪。)
+    if force:
+        bosses = sc.get("new_bosses") or bosses
     r = read_alliance_rallies(client)
     rlist = r.get("list") or []
     busy = set()

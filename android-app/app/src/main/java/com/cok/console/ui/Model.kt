@@ -139,6 +139,14 @@ data class ChannelLoginResult(
     val smallAccounts: List<ChannelGameAccount>,
 )
 
+/** One selectable channel (果盘 / 小七 / …). Loaded from the local server's channel registry. */
+data class ChannelOption(
+    val id: String,
+    val name: String,
+    val ready: Boolean,
+    val note: String,
+)
+
 /** One rule as evaluated by the local automation engine. */
 data class AutomationRule(
     val key: String,

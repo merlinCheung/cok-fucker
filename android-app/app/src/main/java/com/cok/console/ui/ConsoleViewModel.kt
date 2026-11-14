@@ -28,6 +28,7 @@ data class HomeUiState(
     val channelLoginResult: ChannelLoginResult? = null,
     val channelLoginError: String? = null,
     val channelAddInFlight: Boolean = false,
+    val channelOptions: List<ChannelOption> = emptyList(),
     val operationInFlight: String? = null,
     val scanStatus: MapIndexStatus? = null,
     val scanInFlight: Boolean = false,
@@ -370,17 +371,49 @@ class ConsoleViewModel(private val repo: ConsoleRepository) : ViewModel() {
         JSONObject().put("action", "account-remove").put("key", key)
     }
 
+    /**
+     * Load the channel registry (果盘 / 小七 / …) so the picker can offer them.
+     * The list comes from the local server, which is the single source of truth
+     * for which channels exist and which protocol module is ready.
+     */
+    fun loadChannelOptions() {
+        viewModelScope.launch {
+            repo.action(JSONObject().put("action", "channel-list"))
+                .onSuccess { json ->
+                    val arr = json.optJSONArray("channels")
+                    val options = ArrayList<ChannelOption>()
+                    for (i in 0 until (arr?.length() ?: 0)) {
+                        val it = arr!!.optJSONObject(i) ?: continue
+                        options.add(
+                            ChannelOption(
+                                id = it.optString("id"),
+                                name = it.optString("name").ifBlank { it.optString("id") },
+                                ready = it.optBoolean("ready", false),
+                                note = it.optString("note"),
+                            ),
+                        )
+                    }
+                    if (options.isNotEmpty()) {
+                        _state.update { it.copy(channelOptions = options) }
+                    }
+                }
+        }
+    }
+
     /** Password is used only for this loopback request and is never retained in UI state. */
-    fun loginChannelAccount(account: String, password: String) {
+    fun loginChannelAccount(channel: String, account: String, password: String) {
         if (account.isBlank() || password.isBlank()) {
-            _state.update { it.copy(channelLoginError = "请填写果盘账号和密码") }
+            _state.update { it.copy(channelLoginError = "请填写渠道账号和密码") }
             return
         }
+        val channelId = channel.ifBlank { "guopan" }
+        val channelName = _state.value.channelOptions.firstOrNull { it.id == channelId }?.name ?: "渠道"
         viewModelScope.launch {
             if (_state.value.channelLoginInFlight || _state.value.channelAddInFlight) return@launch
             _state.update { it.copy(channelLoginInFlight = true, channelLoginError = null, channelLoginResult = null) }
             val response = repo.action(
-                JSONObject().put("action", "channel-login").put("account", account.trim()).put("password", password),
+                JSONObject().put("action", "channel-login").put("channel", channelId)
+                    .put("account", account.trim()).put("password", password),
             )
             response.fold(
                 onSuccess = { json ->
@@ -389,7 +422,7 @@ class ConsoleViewModel(private val repo: ConsoleRepository) : ViewModel() {
                             it.copy(channelLoginError = json.optString("error").ifBlank { "登录请求失败" })
                         }
                         !json.optBoolean("succeeded", false) -> _state.update {
-                            it.copy(channelLoginError = json.optString("note").ifBlank { "果盘账号或密码未通过验证" })
+                            it.copy(channelLoginError = json.optString("note").ifBlank { "${channelName}账号或密码未通过验证" })
                         }
                         else -> _state.update {
                             it.copy(

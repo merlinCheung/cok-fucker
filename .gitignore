@@ -12,6 +12,7 @@ COK-CN1-analysis/protocol/data/
 # ── 大体积分析素材(可从 APK 重新生成) ─────────────────────────────────
 *.apk
 apk-material/
+reverse/work/
 reverse/apk-extract/
 reverse/apktool/
 reverse/ghidra-project/

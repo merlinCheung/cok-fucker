@@ -231,6 +231,7 @@ private fun ReadyShell(ready: ServerState.Ready, repositoryFor: RepositoryFactor
                     onChannelLogin = vm::loginChannelAccount,
                     onChannelAdd = vm::addChannelAccounts,
                     onClearChannelLogin = vm::clearChannelLogin,
+                    onLoadChannels = vm::loadChannelOptions,
                 )
                 Tab.MORE -> MoreScreen(
                     ui = ui,

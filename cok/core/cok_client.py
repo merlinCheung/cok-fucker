@@ -180,6 +180,7 @@ class CokError(Exception):
 _HERE = os.path.dirname(os.path.abspath(__file__))
 #: 账号互斥锁文件。可用环境变量 COK_ACCOUNT_LOCK_FILE 覆盖 ——
 #: 测试要用独立锁, 否则会跟正在运行的网页控制台抢同一个账号。
+#: ⚠️ 这个变量只覆盖**目录**(见 `lock_file_for` 的说明), 不再"一设就锁死所有 key"。
 
 ACCOUNT_LOCK_FILE = os.environ.get(
     "COK_ACCOUNT_LOCK_FILE", os.path.join(_data_dir(), ".cok-account.lock"))
@@ -191,21 +192,38 @@ _LOCK_KEY_RE = re.compile(r"[^0-9A-Za-z_-]")
 def lock_file_for(key=None):
     """按账号 id 解析锁文件路径。
 
-    * 环境变量 COK_ACCOUNT_LOCK_FILE 一旦设置, **永远**用它(测试隔离优先,
-      忽略 key) —— 保持既有测试行为不变。
-    * key 为空 -> 默认单文件 .cok-account.lock(与多账号改造前完全一致,
-      所有老调用点无需改动)。
-    * key 非空 -> 每账号一把 .cok-account-<key>.lock, 不同账号互不阻塞,
-      同账号(含跨进程)仍然互斥。
+    **多账号隔离的地基**: 每个账号一把锁文件 ⇒ 各号互不阻塞、可真正并行在线。
+    (同进程内多个引擎是并行轮询的, 用一把共享锁 = 五个号的 3 分钟节奏被串成一条线,
+    表现为"后台看着在跑, 实际一次只动一个账号"。)
+
+    * 环境变量 COK_ACCOUNT_LOCK_FILE 设了 ⇒ 覆盖**目录**:
+      `<该目录>/<safe_key>.lock`(key 空则 `<该目录>/.account.lock`)。
+      测试靠它把锁指到 tmp 目录, 不会跟正在运行的网页控制台抢账号。
+    * 没设 ⇒ `cok/data/.cok-account-<safe_key>.lock`(与 `cok/data/accounts/`
+      同级的 uid 目录并列); key 为空 ⇒ `.cok-account.lock`(兼容无账号场景)。
+
+    ⚠️ 曾经这里是"环境变量一旦设了就无条件返回它、忽略 key" ⇒ **安卓端**
+    (`android_entry.py` 里设了这个变量)所有账号共用一把锁, 多账号直接退化成单账号:
+    五个号排队, 后台"同时在线"是假的。
     """
-    env = os.environ.get("COK_ACCOUNT_LOCK_FILE")
-    if env:
-        return env
+    env = os.environ.get("COK_ACCOUNT_LOCK_FILE", "").strip()
     key = str(key or "").strip()
     if not key:
-        return os.path.join(_HERE, ".cok-account.lock")
+        if env:
+            os.makedirs(os.path.dirname(os.path.abspath(env)) or ".", exist_ok=True)
+        return env or os.path.join(_HERE, ".cok-account.lock")
     safe = _LOCK_KEY_RE.sub("_", key) or "default"
-    return os.path.join(_HERE, ".cok-account-%s.lock" % safe)
+    if env:
+        # 覆盖的是**目录**: 测试把锁指到 tmp 目录; 目录不存在时建出来,
+        # 否则 os.open 直接 FileNotFoundError(以前所有 key 共用一个文件, 不会遇到)。
+        os.makedirs(env, exist_ok=True)
+        return os.path.join(env, "%s.lock" % safe)
+    d = _data_dir()
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return os.path.join(d, ".cok-account-%s.lock" % safe)
 
 
 class AccountBusy(CokError):

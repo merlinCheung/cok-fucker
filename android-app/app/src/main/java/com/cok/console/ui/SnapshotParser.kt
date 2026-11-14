@@ -137,7 +137,9 @@ internal object SnapshotParser {
                             welfareClaimable = s.optBoolean("welfare_claimable"),
                             hunting = s.optBoolean("hunting"),
                             huntKills = s.optInt("hunt_kills"),
-                            error = s.optString("error"),
+                            error = s.optString("error")
+                                .takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) }
+                                .orEmpty(),
                             disconnected = s.optBoolean("disconnected"),
                             appYield = s.optBoolean("app_yield"),
                             stale = s.optBoolean("stale"),

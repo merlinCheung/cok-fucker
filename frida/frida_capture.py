@@ -16,6 +16,35 @@ import time
 import frida
 
 
+def preload_bridge(src, name="java"):
+    """把 frida-tools 的 bridge(Java/ObjC/Swift)预置进脚本。
+
+    为什么需要: frida 的 Java bridge **不是** agent 自带的, 而是 frida-tools
+    宿主侧按需回灌的 —— 脚本访问 `Java` 时发 {type:"frida:load-bridge"},
+    宿主再把 bridges/java.js 的源码 post 回脚本里求值。
+    自己用 Python API 驱动时没人回灌, 表现就是
+    "ReferenceError: 'Java' is not defined"(frida CLI 默认能工作, 就是因为
+    它实现了这个协议)。
+
+    这里直接前置 bridge 源码 + 定义全局, 等价于宿主回灌一次。
+    """
+    if not name:
+        return src
+    try:
+        import frida_tools
+        from pathlib import Path
+        p = Path(frida_tools.__file__).parent / "bridges" / ("%s.js" % name)
+        if not p.exists():
+            print("[!] bridge not found: %s" % p, flush=True)
+            return src
+        code = p.read_text(encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        print("[!] bridge preload failed:", e, flush=True)
+        return src
+    return ("%s\nObject.defineProperty(globalThis, '%s', {value: bridge});\n%s"
+            % (code, name.capitalize(), src))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pkg", default="com.hcg.cok.nearme.gamecenter")
@@ -24,6 +53,8 @@ def main():
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "cok-capture.jsonl"))
     ap.add_argument("--script", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "cok_hook.js"))
     ap.add_argument("--device", default="usb")
+    ap.add_argument("--bridge", default="java",
+                    help="预置的 bridge: java/objc/swift/none(不预置)")
     args = ap.parse_args()
 
     if args.device == "usb":
@@ -33,6 +64,7 @@ def main():
     print("[*] device:", dev.id, dev.name, dev.type, flush=True)
 
     src = open(args.script, "r", encoding="utf-8").read()
+    src = preload_bridge(src, args.bridge)
 
     session = None
     spawned = False
@@ -73,7 +105,10 @@ def main():
             elif message.get("type") == "error":
                 print("[err]", message.get("description"), flush=True)
 
-    script = session.create_script(src)
+    # ⚠ 必须用 V8 runtime: frida 的 Java bridge(javax.crypto / okhttp 等)
+    #   在 QuickJS(frida 17 的 create_script 默认值)下**不存在**, 表现为
+    #   "ReferenceError: 'Java' is not defined"。frida CLI 默认就是 V8。
+    script = session.create_script(src, runtime="v8")
     script.on("message", on_message)
     script.load()
 
