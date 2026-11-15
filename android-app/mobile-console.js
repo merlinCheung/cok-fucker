@@ -12,88 +12,73 @@
   const PANES = { dash: "paneDash", ops: "paneOps" };
 
   /* ---------------- 内嵌模式（原生 App 的「高级控制台」页） ----------------
-     原生底部导航是「状态 / 操作 / 账号 / 更多 / 高级控制台」，页面自己那两条
-     一级导航会叠在上面 —— 所以隐藏页面导航，只留原生那套。
-     代价是原生导航里没有「看板」，看板内容就看不到了。这里把看板里
-     「功能页没有的块」整段搬进功能页，然后藏掉看板本体。
-     搬运是可逆的（搬之前记下原位），切页时先还原再搬，不会越搬越少。 */
-  const MOVED = [];
+     原生底部导航只有「高级控制台」一个入口，而页面本身是「看板 / 功能」两套。
+     这里在顶栏下补一条两段切换条（.embedSeg），切谁显示谁 —— **不做搬运**。
 
-  function moveInto(from, to, pred) {
-    for (const el of Array.from(from.children)) {
-      if (!pred(el)) continue;
-      MOVED.push({ el: el, parent: from, next: el.nextElementSibling });
-      to.appendChild(el);
-    }
-  }
-
-  function restore() {
-    while (MOVED.length) {
-      const it = MOVED.pop();
-      if (it.next && it.next.parentNode === it.parent) it.parent.insertBefore(it.el, it.next);
-      else it.parent.appendChild(it.el);
-    }
-  }
-
-  function rebuildEmbedded() {
-    const dash = $("paneDash"), ops = $("paneOps");
-    if (!dash || !ops) return;
-    const host = ops.querySelector(".grid");
-    if (!host) return;
-
-    restore();
-
-    /* 看板的分节标题（概览/监控/事件）搬到功能页会变成空标题 —— 留在看板里，
-       而看板已经隐藏，等于丢掉，所以这里直接连标题一起搬。
-       「今日待办」和「任务统计」在看板的 .grid 里，单独摘出来放到功能页顶部
-       （它们是概览，不是操作）；概览条/监控卡/事件流则整段接到功能页卡片后面。 */
-    const dashGrid = dash.querySelector(".grid");
-    const picks = [];
-    if (dashGrid) {
-      for (const id of ["cardTaskStats", "cardTodo"]) {
-        const el = $(id);
-        if (el && el.parentElement === dashGrid) picks.push(el);
-      }
-    }
-    moveInto(dash, host, (el) => picks.indexOf(el) >= 0);
-    moveInto(dash, host, (el) =>
-      el.classList.contains("ovbar") ||
-      el.classList.contains("logbar") ||
-      el.id === "cards" ||
-      el.id === "logs");
-
-    dash.style.display = "none";
-    ops.style.display = "";
-    for (const item of document.querySelectorAll(".navItem")) {
-      item.classList.toggle("active", item.dataset.tab === "ops");
-    }
-  }
+     ⚠️ 早先是把看板的块搬进功能页再藏起看板，问题很大：
+        (1) 看板一显示就是空的（内容全在功能页里），来回切等于丢内容；
+        (2) 搬移和切页的 display 互相打架，会出现「点了看板又跳回功能」。
+        现在两套各自待在原地，只切 display，天然可逆、可来回切。 */
 
   if (embed) {
     root.classList.add("cok-embed");
     const nav = document.querySelector(".nav");
     if (nav) nav.style.display = "none";
 
+    const seg = document.createElement("div");
+    seg.className = "nav embedSeg";
+    seg.setAttribute("role", "tablist");
+    seg.setAttribute("aria-label", "页面切换");
+    const items = [["dash", "看板"], ["ops", "功能"]];
+    seg.innerHTML = items.map(([k, t]) =>
+      '<button type="button" class="navItem" role="tab" data-tab="' + k + '">' + t + "</button>"
+    ).join("");
+    // 挂在主区顶部（sticky 在顶栏下面）—— 挂进 .sidebar 的话它是 fixed 底栏，
+    // 会把两段切换条甩到屏幕最下面、脱离顶栏。
+    const mount = document.querySelector(".main") || document.body;
+    const topbar = document.querySelector(".topbar");
+    if (topbar && topbar.parentElement === mount) mount.insertBefore(seg, topbar.nextSibling);
+    else mount.insertBefore(seg, mount.firstChild);
+
+    const syncSeg = () => {
+      const onOps = getComputedStyle($("paneOps")).display !== "none";
+      seg.querySelectorAll(".navItem").forEach(b => {
+        const on = (b.dataset.tab === "ops") === onOps;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+    };
+    seg.addEventListener("click", (e) => {
+      const b = e.target.closest && e.target.closest(".navItem");
+      if (!b) return;
+      if (typeof window.switchTab === "function") window.switchTab(b.dataset.tab);
+      else {
+        $("paneDash").style.display = b.dataset.tab === "dash" ? "" : "none";
+        $("paneOps").style.display = b.dataset.tab === "ops" ? "" : "none";
+      }
+      syncSeg();
+    });
+    syncSeg();
+    setInterval(syncSeg, 800);
+
+    /* 首屏：页面会记住上次的 Tab（localStorage），可能一进来就是「看板」。
+       只在前 2.5 秒里做一次「落在功能页」的修正，之后完全交给用户 ——
+       早先写成"每次轮询都拽回功能页"，结果用户切到看板后 600ms 就被覆盖。 */
+    let forceOps = true;
     const apply = () => {
       const ops = $("paneOps"), dash = $("paneDash");
       if (!ops || !dash) return;
-      /* 页面会记住上次的 Tab（localStorage），可能一进来就是「看板」——
-         而看板在内嵌模式下是隐藏的，所以每次都要拽回功能页。 */
-      if (dash.style.display !== "none" || ops.style.display === "none") {
+      if (forceOps && (dash.style.display !== "none" || ops.style.display === "none")) {
         if (typeof window.switchTab === "function") window.switchTab("ops");
         else {
           dash.style.display = "none";
           ops.style.display = "";
         }
       }
-      rebuildEmbedded();
     };
     apply();
-    /* 页面启动是异步的（/api/me → /api/state → 渲染监控卡），
-       搬完还会冒出新的节点，所以头几秒要反复对齐。 */
     const iv = setInterval(apply, 800);
-    setTimeout(() => clearInterval(iv), 8000);
-    window.addEventListener("resize", apply);
+    setTimeout(() => { clearInterval(iv); forceOps = false; }, 2500);
   } else {
     /* 独立打开（手机浏览器 / 桌面窄窗）：页面自己管导航，
        顺手把 aria 补全 —— 底部导航是图标 + 文字，读屏需要明确标签。 */

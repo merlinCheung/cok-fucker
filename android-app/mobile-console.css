@@ -172,13 +172,24 @@
     border:0;
     background:var(--surface-3);
     color:var(--dim);
-    font-size:9.5px;
+    font-size:10.5px;
     line-height:16px;
   }
   .navItem.active .cnt{background:rgba(77,141,255,.2);color:var(--accent);}
 
   /* 快捷跳转 / 侧栏统计 / 侧栏账号 —— 底部导航放不下了 */
   .jumpWrap,.navGroup,.sbMeta,.sbUser{display:none;}
+
+  /* 内嵌模式（App 的「高级控制台」页）：原生底部导航只有一个入口，
+     看板/功能两套内容需要页内切换 —— 这条两段切换条贴在顶栏下面（sticky）。 */
+  .embedSeg{display:flex;flex-direction:row;gap:6px;margin:0 -12px 10px;padding:6px 12px;
+    border:0;border-bottom:1px solid var(--line);border-radius:0;background:var(--surface);}
+  .embedSeg .navItem{position:relative;border-radius:var(--r-xs);min-height:46px;}
+  .embedSeg .navItem{flex:1 1 0;min-height:44px;flex-direction:row;gap:6px;
+    padding:6px 10px;border:1px solid transparent;
+    background:transparent;box-shadow:none;font-size:13px;font-weight:650;}
+  .embedSeg .navItem.active{color:var(--accent);background:var(--accent-dim);
+    border-color:rgba(77,141,255,.5);}
 
   /* 连接状态从侧栏挪到顶栏右边（fixed 定位，不占布局） */
   #connBadge{
@@ -220,36 +231,52 @@
   /* 连接状态已 fixed 到右边，这里给它留出宽度 */
   .crumb{padding-right:104px;}
   .crumb h1{font-size:17px;gap:6px;}
-  .crumb h1 .sub{font-size:10.5px;}
+  .crumb h1 .sub{font-size:11.5px;}
 
-  /* 顶栏操作：两行 —— 模式/轮询一行，四个按钮一行 */
+  /* 顶栏操作：两行 —— 模式/轮询一行，三个按钮一行。
+     以前是「两个 50% + 一个 100% + 一个 50%」排三行(133px 高)，
+     首屏被顶栏吃掉太多，改成 3 等分一行(34px)。 */
   .topActs{
+    display:flex;
     flex-wrap:wrap;
+    align-items:center;
     gap:6px;
-    margin-top:8px;
-    padding-top:8px;
+    margin-top:7px;
+    padding-top:7px;
     border-top:1px solid var(--line-2);
   }
-  #sMode{order:1;flex:1 1 auto;min-height:36px;justify-content:center;padding:6px 9px;font-size:11.5px;}
+  #sMode{order:1;flex:1 1 120px;min-width:0;min-height:34px;justify-content:center;
+         padding:5px 8px;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;}
   /* 「自动轮询」是 label.pill，chkAuto 只是它里面的 checkbox ——
      只给 checkbox 设 order 没用，它是 label 的子元素，不是 .topActs 的项。 */
   .topActs .pill.chk{
     order:2;
     flex:0 0 auto;
-    min-height:36px;
-    padding:6px 9px;
+    min-height:34px;
+    padding:5px 8px;
     font-size:11.5px;
     display:inline-flex;
     align-items:center;
-    gap:5px;
+    gap:4px;
+    white-space:nowrap;
   }
   .topActs .fill{flex:1 1 100%;display:none;}
-  #btnRefresh{order:3;flex:1 1 calc(50% - 3px);min-height:38px;justify-content:center;
+  /* 三个动作按钮平分第二行 —— flex-basis:0 让 flex-grow 真正均分宽度
+     (用 calc(33% - 4px) 会因 gap 累计溢出，flex-basis:0 才是真等宽) */
+  #btnRefresh{order:3;flex:1 1 0;min-width:0;min-height:34px;justify-content:center;padding:5px 4px;
     background:var(--accent);border-color:var(--accent);color:#fff;}
-  #btnReconnect{order:4;flex:1 1 calc(50% - 3px);min-height:38px;justify-content:center;}
-  /* 剩一个按钮时让它占满整行，避免右边空一半 */
-  #btnDisconnect{order:5;flex:1 1 100%;min-height:38px;justify-content:center;}
-  #btnKeys{order:6;flex:1 1 calc(50% - 3px);min-height:38px;justify-content:center;}
+  #btnReconnect{order:4;flex:1 1 0;min-width:0;min-height:34px;justify-content:center;padding:5px 4px;}
+  #btnDisconnect{order:5;flex:1 1 0;min-width:0;min-height:34px;justify-content:center;padding:5px 4px;}
+  /* 快捷键面板在手机上用不了（没物理键盘），桌面才显示 —— 别在这里给它留位置 */
+  #btnKeys{display:none!important;}
+  /* ≤600px：三个按钮独占一行。
+     一行要 336px（模式 120 + 轮询 84 + 三个按钮 44×3 + 间距），
+     390/412/430 的可用宽只有 342-386px，硬塞会把按钮压到 37px、文字裁掉。
+     所以让 #sMode 吃掉整行宽度（basis 100%），把按钮挤到下一行平分。 */
+  @media (max-width:600px){
+    #sMode{flex:1 1 100%;}
+    #btnRefresh,#btnReconnect,#btnDisconnect{flex:1 1 0;min-width:44px;}
+  }
 
   .banner{
     margin:10px 0 0;
@@ -261,17 +288,17 @@
     line-height:1.55;
   }
 
-  /* 概览：两列网格。
+  /* 概览：两列网格 + 首项通栏。
      注意 grid-auto-flow 必须显式写 row —— 桌面在 ≤900px 把它改成了 column
-     （横向滚动的 124px 固定列），不覆盖的话这里会排出 10 列、把页面撑出屏幕。 */
+     （横向滚动的 132px 固定列），不覆盖的话这里会排出 10 列、把页面撑出屏幕。 */
   .ovbar{
     display:grid;
-    grid-template-columns:repeat(2,minmax(0,1fr));
+    grid-template-columns:repeat(3,minmax(0,1fr));
     grid-auto-flow:row;
     grid-auto-columns:auto;
-    gap:8px;
+    gap:7px;
     overflow:visible;
-    margin:0 0 14px;
+    margin:0 0 12px;
     padding:0;
     border:0;
     border-radius:0;
@@ -280,26 +307,51 @@
   }
   .ov{
     min-width:0;
-    min-height:70px;
-    padding:9px 10px;
+    min-height:62px;
+    padding:8px 9px;
     border:1px solid var(--line);
     border-radius:11px;
     background:var(--surface);
     box-shadow:none;
     text-align:left;
   }
-  .ov:first-child{grid-column:1/-1;min-height:78px;background:#1b2436;border-color:#3a4d6b;}
+  .ov:first-child{grid-column:1/-1;min-height:62px;background:#1b2436;border-color:#3a4d6b;}
   .ov:hover{transform:none;background:var(--surface-2);border-color:var(--line);box-shadow:none;}
   .ov:active{background:var(--surface-3);}
-  .ov .lb{color:var(--dim-2);font-size:10.5px;}
-  .ov .vl{font-size:20px;font-weight:750;line-height:1.2;letter-spacing:0;}
-  .ov:first-child .vl{font-size:26px;}
-  .ov .vl small{font-size:10.5px;}
+  .ov .lb{color:var(--dim-2);font-size:11px;gap:3px;}
+  .ov .vl{font-size:19px;font-weight:750;line-height:1.15;letter-spacing:0;}
+  .ov:first-child .vl{font-size:19px;}
+  .ov .vl small{font-size:11.5px;}
+  .ov .vTxt{font-size:14px;letter-spacing:0;}
+
+  /* 「更多」：它是展开态的唯一入口，折叠/展开都必须可见。
+     注意只写 .ovMoreBtn —— 这个按钮**不能**带 ovMore 类，否则被 .ovMore{display:none} 干掉。 */
+  .ovbar .ov.ovMore{display:none;}
+  .ovbar .ov.ovMoreBtn{display:flex;}
+  .ovbar.expanded .ov.ovMore{display:flex;}
+  .ovbar.expanded .ov.ovMoreBtn{
+    grid-column:1/-1;
+    flex-direction:row;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    min-height:0;
+    padding:9px;
+  }
+  .ovbar.expanded .ov.ovMoreBtn .vl{font-size:12px;}
+
+  .logbar{gap:7px;}
+  .logbar .chip{padding:7px 13px;font-size:12px;}
+  .logbar .logbtn{padding:7px 13px;min-height:34px;font-size:12px;}
+  /* 折叠按钮手机上放大到 34px（桌面 26px 太难点） */
+  .card .fold{width:34px;height:34px;flex-basis:34px;font-size:15px;}
+  .card .hdTools{gap:8px;}
+  .card .hdTools .sumline{max-width:100%;}
 
   /* 卡片 / 分区 */
   .grid,.g2,.g3{grid-template-columns:minmax(0,1fr);gap:10px;}
   .span2{grid-column:auto;}
-  .sec{margin:18px 0 8px;color:var(--dim-2);font-size:10.5px;font-weight:700;letter-spacing:1px;}
+  .sec{margin:18px 0 8px;color:var(--dim-2);font-size:11.5px;font-weight:700;letter-spacing:1px;}
   .sec:after{background:var(--line-2);}
   .card{
     padding:14px 12px;
@@ -319,7 +371,7 @@
     line-height:1.35;
     letter-spacing:0;
   }
-  .card h2 .sub{width:100%;font-size:10.5px;font-weight:500;}
+  .card h2 .sub{width:100%;font-size:11.5px;font-weight:500;}
   .card>.fold,.card:hover>.fold{
     display:flex;
     align-items:center;
@@ -335,6 +387,11 @@
     font-size:15px;
   }
   .card.collapsed{padding-bottom:13px;}
+  /* 标题区在手机上改成上下两行：标题+说明一行，控件一行 */
+  .card .hd{margin:0 0 10px;padding-bottom:8px;}
+  .card .hd-t{gap:5px;}
+  .card .hdTools{margin-top:8px;gap:8px;}
+  .card .hdTools .sumline{max-width:100%;white-space:normal;text-align:left;line-height:1.5;}
   .sumline{order:3;width:100%;max-width:100%;margin:0;text-align:left;}
 
   /* 监控卡：手机上四列太挤 */

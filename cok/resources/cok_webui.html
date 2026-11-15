@@ -9,20 +9,36 @@
     --bg:#0a0e16; --bg2:#0d121c;
     --surface:#131a27; --surface2:#182130; --surface3:#1f2939;
     --line:#242f42; --line2:#1a2333;
-    --fg:#e8eef7; --fg2:#c3cddc; --dim:#8a97ac; --dim2:#647189;
+    /* 所有文字色都按**最亮的表面** (--surface3) 校验 ≥4.5:1，
+       否则同一个 --dim2 在卡片里达标、在按钮上就跌破 AA。 */
+    --fg:#e8eef7; --fg2:#c3cddc; --dim:#8a97ac; --dim2:#8b98ad;   /* 最低 5.01:1 (on --surface3) */
     --accent:#4d8dff; --accent2:#7aabff; --accent-dim:rgba(77,141,255,.14);
-    --ok:#2fbf71; --warn:#e0a53a; --err:#ef5350;
+    --ok:#2fbf71; --warn:#e0a53a; --err:#f25f5c;   /* err 提到 4.58:1 on --surface3 */
     --r:14px; --r-sm:9px; --r-xs:7px;
     --sh:0 1px 2px rgba(0,0,0,.3), 0 6px 20px -6px rgba(0,0,0,.45);
     --sh-sm:0 1px 2px rgba(0,0,0,.28);
     --ring:0 0 0 3px rgba(77,141,255,.24);
     --sb:236px;
+    --bg-deep:#070a11;   /* 比 --bg 更深的凹陷面(日志/进度条槽) */
+  }
+  /* ---- 字号令牌: 替代散落各处的裸 px（改字号只改这里） ---- */
+  :root{
+    --fs-body:14px;   /* 默认正文 */
+    --fs2xs:11px;   /* 角标 / 微型标记 */
+    --fs-xs:11.5px; /* 分组标题 / 面包屑副标 / 标签 */
+    --fs-sm:12px;   /* 提示文字 / 表格 */
+    --fs-md:12.5px; /* 次级正文 / 跳转项 / 卡片摘要行 */
+    --fs-base:13px;   /* 卡片标题 / 控件 / 强调正文 */
+    --fs-lg:14px;   /* 卡片标题 / 弹窗标题 */
+    --fs-xl:15px;   /* 顶栏标题 / 品牌名 */
+    --fs-2xl:18px;  /* 体力值 */
+    --fs-3xl:21px;  /* 概览数字 */
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
   body{margin:0;background:var(--bg);color:var(--fg);
        -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
-       font:14px/1.55 "PingFang SC","SF Pro Text",-apple-system,BlinkMacSystemFont,
+       font:var(--fs-body)/1.55 "PingFang SC","SF Pro Text",-apple-system,BlinkMacSystemFont,
             "Microsoft YaHei","Hiragino Sans GB",sans-serif;
        font-feature-settings:"tnum" 0}
   ::selection{background:rgba(77,141,255,.3);color:#fff}
@@ -41,12 +57,12 @@
   .sbHead{padding:14px 13px 10px;border-bottom:1px solid var(--line2)}
   .brand{display:flex;align-items:center;gap:10px;padding:2px 4px 12px}
   .brandMark{width:30px;height:30px;flex:0 0 30px;border-radius:9px;display:flex;align-items:center;
-             justify-content:center;font-weight:800;font-size:15px;color:#fff;
+             justify-content:center;font-weight:800;font-size:var(--fs-xl);color:#fff;
              background:linear-gradient(145deg,#5b9bff,#2a6ad6);
              box-shadow:0 3px 10px rgba(47,111,235,.4), inset 0 1px 0 rgba(255,255,255,.22)}
   .brandTxt{display:flex;flex-direction:column;min-width:0;line-height:1.25}
-  .brandTxt b{font-size:14.5px;font-weight:700;letter-spacing:.2px}
-  .brandTxt span{font-size:11px;color:var(--dim2);margin-top:1px}
+  .brandTxt b{font-size:var(--fs-xl);font-weight:700;letter-spacing:.2px}
+  .brandTxt span{font-size:var(--fs-xs);color:var(--dim2);margin-top:1px}
 
   /* 账号选择器 */
   .acctBox{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 10px}
@@ -55,18 +71,18 @@
   .acctDot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(47,191,113,.16)}
   .acctDot.off{background:var(--err);box-shadow:0 0 0 3px rgba(239,83,80,.16)}
   #acctSelect{flex:1;min-width:0;background:transparent;border:0;color:var(--fg);
-              font:inherit;font-size:13px;font-weight:600;padding:2px 0;cursor:pointer;
+              font:inherit;font-size:var(--fs-base);font-weight:600;padding:2px 0;cursor:pointer;
               text-overflow:ellipsis}
   #acctSelect:focus{outline:none}
   #acctSelect option{background:var(--surface2);color:var(--fg)}
   .acctActs{display:flex;gap:5px;margin-top:8px}
-  .acctActs button{flex:1;padding:4px 0;font-size:12px;justify-content:center;border-radius:7px}
+  .acctActs button{flex:1;padding:4px 0;font-size:var(--fs-sm);justify-content:center;border-radius:7px}
 
   /* 侧栏导航 */
   .nav{padding:10px 9px 4px;display:flex;flex-direction:column;gap:3px}
   .navItem{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
            padding:9px 11px;border-radius:10px;background:transparent;border:1px solid transparent;
-           box-shadow:none;color:var(--fg2);font-size:13.5px;font-weight:600;cursor:pointer;
+           box-shadow:none;color:var(--fg2);font-size:var(--fs-base);font-weight:600;cursor:pointer;
            transition:background .14s,color .14s}
   .navItem svg{width:17px;height:17px;flex:0 0 17px;opacity:.85}
   .navItem:hover{background:var(--surface);color:var(--fg);border-color:transparent}
@@ -74,16 +90,16 @@
                   border-color:rgba(77,141,255,.4);color:#fff;
                   box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
   .navItem.active svg{opacity:1;color:var(--accent2)}
-  .navItem .cnt{margin-left:auto;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;
+  .navItem .cnt{margin-left:auto;font-size:var(--fs2xs);font-weight:700;padding:1px 7px;border-radius:999px;
                 background:var(--err);color:#fff;line-height:1.5}
   .navItem:not(.active) .cnt{background:var(--surface3);color:var(--dim);border:1px solid var(--line)}
-  .navGroup{font-size:10.5px;letter-spacing:1.4px;color:var(--dim2);text-transform:uppercase;
+  .navGroup{font-size:var(--fs2xs);letter-spacing:1.4px;color:var(--dim2);text-transform:uppercase;
             font-weight:700;padding:14px 20px 7px}
   .jumpWrap{padding:0 9px;display:flex;flex-direction:column;gap:1px;overflow-y:auto;flex:1;
             padding-bottom:10px}
   .jump{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:6px 11px;
         background:transparent;border:0;box-shadow:none;border-radius:8px;color:var(--dim);
-        font-size:12.5px;font-weight:500;cursor:pointer;transition:background .13s,color .13s}
+        font-size:var(--fs-md);font-weight:500;cursor:pointer;transition:background .13s,color .13s}
   .jump:hover{background:var(--surface);color:var(--fg)}
   .jump .ji{width:5px;height:5px;flex:0 0 5px;border-radius:50%;background:var(--dim2)}
   .jump .ji.ti-ok{background:var(--ok)} .jump .ji.ti-warn{background:var(--warn)}
@@ -91,22 +107,22 @@
 
   /* 侧栏底部状态 */
   .sbFoot{border-top:1px solid var(--line2);padding:10px 12px 12px;background:rgba(0,0,0,.16)}
-  .connRow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--fg2);
+  .connRow{display:flex;align-items:center;gap:8px;font-size:var(--fs-md);color:var(--fg2);
            font-weight:600;margin-bottom:9px}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:0 0 auto}
   .dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(47,191,113,.18)}
   .dot.off{background:var(--err);box-shadow:0 0 0 3px rgba(239,83,80,.16)}
   .dot.wait{background:var(--warn);box-shadow:0 0 0 3px rgba(224,165,58,.16)}
   .sbMeta{display:flex;flex-direction:column;gap:4px}
-  .metaRow{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--dim2)}
+  .metaRow{display:flex;justify-content:space-between;gap:8px;font-size:var(--fs-sm);color:var(--dim2)}
   .metaRow b{color:var(--fg2);font-weight:600;font-variant-numeric:tabular-nums;
              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sbUser{display:flex;align-items:center;gap:7px;margin-top:10px;padding-top:9px;
-          border-top:1px solid var(--line2);font-size:12px;flex-wrap:wrap}
+          border-top:1px solid var(--line2);font-size:var(--fs-sm);flex-wrap:wrap}
   .sbUserDot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:0 0 6px}
   .sbUser b{color:var(--fg);font-weight:600;max-width:96px;overflow:hidden;
             text-overflow:ellipsis;white-space:nowrap}
-  .sbUser button{margin-left:auto;padding:2px 8px;font-size:11px;border-radius:6px}
+  .sbUser button{margin-left:auto;padding:2px 8px;font-size:var(--fs-xs);border-radius:6px}
 
   /* ============ 主区域 ============ */
   .main{flex:1;min-width:0;display:flex;flex-direction:column}
@@ -115,14 +131,15 @@
           backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);
           border-bottom:1px solid var(--line2);flex-wrap:wrap}
   .crumb{display:flex;flex-direction:column;line-height:1.3;min-width:0}
-  .crumb b{font-size:15px;font-weight:700;letter-spacing:.2px}
-  .crumbSub{font-size:11px;color:var(--dim2);margin-top:1px}
+  .crumb b{font-size:var(--fs-xl);font-weight:700;letter-spacing:.2px}
+  .crumbSub{font-size:var(--fs-xs);color:var(--dim2);margin-top:1px}
   .topActs{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
-        background:var(--surface);border:1px solid var(--line);font-size:11.5px;color:var(--dim);
+        background:var(--surface);border:1px solid var(--line);font-size:var(--fs-sm);color:var(--dim);
         white-space:nowrap}
   .pill.chk{cursor:pointer}
-  .pill.chk input{margin:0;accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
+  .pill.chk input{margin:0;accent-color:var(--accent);width:16px;height:16px;cursor:pointer;flex:0 0 16px}
+  /* 复选框本身 16px, 但 .pill.chk 整块是 label —— 点文字也算, 触控目标够大 */
   .iconBtn{padding:6px;width:32px;height:32px;justify-content:center}
   .iconBtn svg{width:16px;height:16px}
   .onlyMobile{display:none}
@@ -141,20 +158,40 @@
   .card{position:relative;background:var(--surface);border:1px solid var(--line);
         border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;min-width:0;
         box-shadow:var(--sh-sm);transition:border-color .16s,box-shadow .16s}
-  .card:hover{border-color:#2e3a4f;box-shadow:var(--sh)}
-  .card h2{margin:0 0 11px;font-size:13px;font-weight:700;color:var(--fg);letter-spacing:.2px;
-           display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-           padding-bottom:9px;border-bottom:1px solid var(--line2)}
-  .card h2 .sub{font-weight:400;color:var(--dim2);font-size:11px}
+  .card:hover{border-color:#2e3a4f;box-shadow:var(--sh);translate:0 -1px}
+  .card{transition:border-color .16s,box-shadow .16s,translate .16s}
+  @keyframes cardIn{from{opacity:0;translate:0 6px}to{opacity:1;translate:0 0}}
+  .card{animation:cardIn .22s ease-out both}
+  @media (prefers-reduced-motion:reduce){
+    .card{animation:none}
+    *{scroll-behavior:auto!important}
+  }
+  /* 标题区 = 标题行 + 工具条, 分两行: 标题只放"这是什么", 控件不再挤进 h2 */
+  .card .hd{margin:0 0 11px;padding-bottom:9px;border-bottom:1px solid var(--line2)}
+  .card .hd-t{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}
+  .card h2{margin:0;font-size:var(--fs-lg);font-weight:700;color:var(--fg);letter-spacing:.2px;
+           display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+  .card .hdTools{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:7px}
+
+  .card .hdTools:empty{display:none}
+  /* 摘要文字在工具条里靠右，数字/结论一眼可扫 */
+  .card .hdTools .sumline{margin-left:auto}
+
+  /* 对比度：hover 的行/块必须和文字色一起变亮，否则反而更糊 */
+  .trow:hover{background:var(--surface2)}
+  .kv:hover{background:var(--surface2)}
+  .alblock{background:var(--surface2);border:1px solid var(--line2);border-radius:var(--r-sm);padding:9px 11px;margin-top:8px}
+  .alhead{font-size:var(--fs-sm);font-weight:700;color:var(--fg2);margin-bottom:5px;letter-spacing:.3px}
+  .card h2 .sub{font-weight:400;color:var(--dim2);font-size:var(--fs-xs)}
   .kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;
-      border-bottom:1px solid var(--line2);font-size:13px}
+      border-bottom:1px solid var(--line2);font-size:var(--fs-base)}
   .kv:last-child{border-bottom:0}
   .kv .k{color:var(--dim);flex:0 0 auto}
   .kv .v{text-align:right;word-break:break-all}
 
   /* ============ 通用控件 ============ */
   button{background:var(--surface2);color:var(--fg);border:1px solid var(--line);
-         border-radius:var(--r-sm);padding:7px 13px;font-size:13px;font-weight:500;cursor:pointer;
+         border-radius:var(--r-sm);padding:7px 13px;font-size:var(--fs-base);font-weight:500;cursor:pointer;
          transition:background .14s,border-color .14s,color .14s,transform .06s;
          font-family:inherit;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
   button:hover:not(:disabled){background:var(--surface3);border-color:#384559}
@@ -169,7 +206,7 @@
   button.ghost:hover:not(:disabled){background:var(--surface2);border-color:transparent;color:var(--fg)}
   button.on{background:rgba(47,191,113,.14);border-color:#2b7d52;color:#63d99a}
   select,input{background:var(--bg2);color:var(--fg);border:1px solid var(--line);
-               border-radius:var(--r-sm);padding:6px 10px;font-size:13px;font-family:inherit;
+               border-radius:var(--r-sm);padding:6px 10px;font-size:var(--fs-base);font-family:inherit;
                max-width:100%;transition:border-color .14s,box-shadow .14s}
   select:hover,input:hover{border-color:#384559}
   select:focus,input:focus{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
@@ -177,24 +214,24 @@
   input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;padding:0;cursor:pointer;
                        vertical-align:-2px}
   .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:7px 0}
-  .row label{color:var(--dim);font-size:12px;min-width:42px}
-  .hint{color:var(--dim2);font-size:11.5px;margin-top:7px;line-height:1.55}
+  .row label{color:var(--dim);font-size:var(--fs-sm);min-width:42px}
+  .hint{color:var(--dim2);font-size:var(--fs-sm);margin-top:7px;line-height:1.55}
   .hint b{color:var(--fg2);font-weight:600}
-  .empty{color:var(--dim2);font-size:12px;padding:6px 0}
-  .mini{font-size:11.5px;color:var(--dim)}
+  .empty{color:var(--dim2);font-size:var(--fs-sm);padding:6px 0}
+  .mini{font-size:var(--fs-sm);color:var(--dim)}
   .dim{color:var(--dim2)}
-  .sec{font-size:11px;letter-spacing:1.6px;color:var(--dim2);text-transform:uppercase;
+  .sec{font-size:var(--fs-xs);letter-spacing:1.6px;color:var(--dim2);text-transform:uppercase;
        margin:22px 0 10px;font-weight:700;display:flex;align-items:center;gap:12px}
   .sec:after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
   .panel{background:var(--bg2);border:1px solid var(--line2);border-radius:var(--r-sm);
          padding:11px 13px;margin-top:9px}
-  .panel .ttl{font-size:11px;color:var(--dim);margin-bottom:6px;letter-spacing:.4px;font-weight:700}
+  .panel .ttl{font-size:var(--fs-xs);color:var(--dim);margin-bottom:6px;letter-spacing:.4px;font-weight:700}
   .warnbox{border:1px solid rgba(224,165,58,.34);background:rgba(224,165,58,.08);
-           border-radius:var(--r-sm);padding:8px 11px;font-size:12px;color:#f0d59a;margin-top:8px}
+           border-radius:var(--r-sm);padding:8px 11px;font-size:var(--fs-sm);color:#f0d59a;margin-top:8px}
 
   /* 标签 */
   .tag{display:inline-block;padding:2px 8px;border-radius:999px;background:var(--surface2);
-       color:var(--dim);font-size:11px;margin:2px 3px 2px 0;font-variant-numeric:tabular-nums;
+       color:var(--dim);font-size:var(--fs-xs);margin:2px 3px 2px 0;font-variant-numeric:tabular-nums;
        border:1px solid var(--line2);max-width:100%;overflow:hidden;text-overflow:ellipsis;
        white-space:nowrap}
   .tag.good{background:rgba(47,191,113,.13);color:#63d99a;border-color:rgba(47,191,113,.3)}
@@ -203,81 +240,103 @@
   .tag.info{background:var(--accent-dim);color:var(--accent2);border-color:rgba(77,141,255,.3)}
 
   /* 操作结果条 */
-  .res{margin-top:9px;padding:6px 11px;border-radius:var(--r-sm);font-size:12px;line-height:1.5;
+  .res{margin-top:9px;padding:6px 11px;border-radius:var(--r-sm);font-size:var(--fs-sm);line-height:1.5;
        background:rgba(255,255,255,.02);border-left:3px solid var(--line);color:var(--dim)}
   .res.ok{border-left-color:var(--ok);color:#a8e6c4;background:rgba(47,191,113,.07)}
   .res.err{border-left-color:var(--err);color:#ffb4ab;background:rgba(239,83,80,.07)}
   .res.warn{border-left-color:var(--warn);color:#f0d59a;background:rgba(224,165,58,.07)}
   .res .t{color:var(--dim2);margin-right:6px;font-variant-numeric:tabular-nums}
 
-  /* 概览数字块 */
+  /* 概览数字块: 第一档 5 个(首屏一眼看完), 第二档 5 个收进「更多」 */
   .ovbar{display:grid;gap:10px;margin:0 0 4px;
-         grid-template-columns:repeat(auto-fit,minmax(124px,1fr))}
+         grid-template-columns:repeat(6,minmax(0,1fr))}
+  .ovbar .ovMore{display:none}
+  .ovbar.expanded .ovMore{display:flex}
+  /* 「更多」按钮永远显示 —— 它是展开态的开关 */
+  .ovbar .ovMoreBtn{display:flex}
+  .ovbar.expanded .ovMoreBtn{grid-column:1/-1;flex-direction:row;align-items:center;
+    justify-content:center;gap:8px;padding:8px}
+  .ovbar.expanded .ovMoreBtn .vl{font-size:var(--fs-sm)}
+  @media (max-width:1180px){ .ovbar{grid-template-columns:repeat(3,minmax(0,1fr))} }
   .ov{padding:11px 13px;border-radius:12px;background:var(--surface);
       border:1px solid var(--line);cursor:pointer;text-align:left;
       display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden;
       transition:background .14s,border-color .14s,transform .12s,box-shadow .14s}
   .ov:hover{background:var(--surface2);border-color:#334156;transform:translateY(-1px);box-shadow:var(--sh-sm)}
-  .ov .lb{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:5px}
-  .ov .vl{font-size:21px;font-weight:800;line-height:1.2;display:flex;align-items:baseline;gap:4px;
+  .ov .lb{font-size:var(--fs-xs);color:var(--dim);display:flex;align-items:center;gap:5px}
+  .ov .vl{font-size:var(--fs-3xl);font-weight:800;line-height:1.2;display:flex;align-items:baseline;gap:4px;
           letter-spacing:.2px}
-  .ov .vl small{font-size:11px;font-weight:500;color:var(--dim2)}
+  .ov .vl small{font-size:var(--fs-xs);font-weight:500;color:var(--dim2)}
   .ov.good .vl{color:var(--ok)} .ov.warn .vl{color:var(--warn)} .ov.err .vl{color:var(--err)}
   .ov.info .vl{color:var(--accent)}
   .ov.act{border-color:rgba(77,141,255,.6);background:var(--accent-dim)}
   .ov .pip{position:absolute;top:8px;right:9px;min-width:17px;height:17px;padding:0 4px;
-           border-radius:9px;background:var(--err);color:#fff;font-size:10.5px;font-weight:700;
+           border-radius:9px;background:var(--err);color:#fff;font-size:var(--fs2xs);font-weight:700;
            display:none;align-items:center;justify-content:center;line-height:17px}
   .ov.has .pip{display:flex}
   @media (max-width:900px){
-    .ovbar{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:124px;
-           overflow-x:auto;padding-bottom:4px}
+    .ovbar{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:132px;
+           overflow-x:auto;padding-bottom:4px;scroll-snap-type:x proximity}
+    .ov{scroll-snap-align:start}
   }
+  /* 收进「更多」的次级项: 折叠时只显示按钮(占一格), 展开后全部露出 */
+  .ov.ovMore{display:none}
+  .ovbar.expanded .ov.ovMore{display:flex}
+  .ov.ovMoreBtn{display:flex}
+  .ov.ovMoreBtn .lb{color:var(--accent2)}
+
+  /* 概览数字里的文字型取值（已签/空闲/无罩…）：比数字小一档，避免撑高格子 */
+  .ov .vTxt{font-size:var(--fs-lg);font-weight:700;letter-spacing:.2px}
 
   /* 折叠 */
-  .card>.fold{position:absolute;top:9px;right:9px;width:22px;height:22px;padding:0;
+  /* 折叠按钮常驻(淡) —— 触屏/键盘用户没有 hover, 藏起来等于没这功能 */
+  .card .fold{width:26px;height:26px;padding:0;flex:0 0 26px;
               border-radius:6px;background:transparent;border:1px solid transparent;
-              color:var(--dim2);font-size:12px;line-height:1;display:none;
-              align-items:center;justify-content:center;cursor:pointer}
-  .card:hover>.fold{display:flex}
-  .card>.fold:hover{background:var(--surface2);color:var(--fg);border-color:var(--line)}
-  .card.collapsed>.fold{display:flex}
-  .card.collapsed>*:not(h2):not(.fold){display:none!important}
-  .card.collapsed{padding-bottom:11px}
-  .card.collapsed h2{margin-bottom:0}
-  .sumline{font-size:11.5px;color:var(--dim);font-weight:400;margin-left:auto;
+              color:var(--dim2);font-size:var(--fs-sm);line-height:1;display:flex;
+              align-items:center;justify-content:center;cursor:pointer;opacity:.6;
+              transition:opacity .14s,color .14s,background .14s,border-color .14s}
+  .card:hover .fold,.card .fold:focus-visible{opacity:1}
+  .card .fold:hover{background:var(--surface2);color:var(--fg);border-color:var(--line)}
+  .card.collapsed .fold{opacity:1;color:var(--fg2)}
+  /* 折叠态：只留标题条（.hd 里含折叠按钮），其余全收 */
+  .card.collapsed>*:not(.hd){display:none!important}
+  .card.collapsed>.hd{margin-bottom:0;padding-bottom:0;border-bottom-color:transparent}
+
+  .card.collapsed{padding-bottom:12px}
+  .card.collapsed .hd h2{margin-bottom:0}
+  .sumline{font-size:var(--fs-sm);color:var(--dim);font-weight:400;margin-left:auto;
            text-align:right;max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* 待办列表 */
   .todo{display:flex;flex-direction:column;gap:6px;margin-top:2px}
   .trow{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:var(--r-sm);
-        background:var(--bg2);border:1px solid var(--line2);font-size:12.5px;
+        background:var(--bg2);border:1px solid var(--line2);font-size:var(--fs-md);
         transition:border-color .14s,background .14s}
   .trow:hover{border-color:var(--line);background:var(--surface2)}
   .trow.done{opacity:.5}
   .trow .ti{width:18px;height:18px;border-radius:50%;flex:0 0 18px;display:flex;
-            align-items:center;justify-content:center;font-size:11px;font-weight:700}
+            align-items:center;justify-content:center;font-size:var(--fs-xs);font-weight:700}
   .trow .ti.y{background:rgba(224,165,58,.18);color:var(--warn)}
   .trow .ti.n{background:rgba(47,191,113,.16);color:var(--ok)}
   .trow .tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .trow .tx b{font-weight:600}
   .trow .tx .mini{margin-left:6px}
-  .trow button{padding:3px 10px;font-size:12px}
-  .todo .none{padding:9px;text-align:center;color:var(--dim);font-size:12px;
+  .trow button{padding:3px 10px;font-size:var(--fs-sm)}
+  .todo .none{padding:9px;text-align:center;color:var(--dim);font-size:var(--fs-sm);
               background:rgba(47,191,113,.06);border:1px dashed rgba(47,191,113,.32);border-radius:8px}
 
   /* 表格 */
-  .sqtable{width:100%;border-collapse:collapse;margin:6px 0;font-size:12px}
+  .sqtable{width:100%;border-collapse:collapse;margin:6px 0;font-size:var(--fs-sm)}
   .sqtable th{text-align:left;color:var(--dim);font-weight:500;padding:3px 6px;
-               border-bottom:1px solid var(--line);font-size:11.5px}
+               border-bottom:1px solid var(--line);font-size:var(--fs-sm)}
   .sqtable td{padding:3px 6px;border-bottom:1px solid rgba(36,47,66,.6);vertical-align:middle}
   .sqtable tr:last-child td{border-bottom:none}
   .sqrow{margin:2px 0}
-  .sqrow select,.sqrow input{font-size:12px}
+  .sqrow select,.sqrow input{font-size:var(--fs-sm)}
 
   /* 顶部横幅 */
   .banner{display:none;margin:12px 20px 0;padding:11px 15px;border-radius:var(--r-sm);
-          font-size:12.5px;line-height:1.6;border:1px solid rgba(224,165,58,.3);
+          font-size:var(--fs-md);line-height:1.6;border:1px solid rgba(224,165,58,.3);
           border-left:3px solid var(--warn);background:rgba(224,165,58,.09);color:#f0d59a}
   .banner.show{display:block}
   .banner.err{border-color:rgba(239,83,80,.3);border-left-color:var(--err);
@@ -287,13 +346,13 @@
   .banner .x:hover{opacity:1}
 
   /* 体力条 / 日志 */
-  .bar{height:9px;border-radius:999px;background:#0a0f18;border:1px solid var(--line);overflow:hidden}
+  .bar{height:9px;border-radius:999px;background:var(--bg-deep);border:1px solid var(--line);overflow:hidden}
   .bar .fill{height:100%;width:0;border-radius:999px;
              background:linear-gradient(90deg,#2fbf71,#8bd14f,#e0a53a);transition:width .45s ease}
   .stamina{display:flex;align-items:center;gap:10px;margin:2px 0 8px}
-  .stamina .v{font-size:18px;font-weight:700;min-width:96px}
+  .stamina .v{font-size:var(--fs-2xl);font-weight:700;min-width:96px}
   .stamina .bar{flex:1}
-  .logs{background:#070a11;border:1px solid var(--line);border-radius:var(--r-sm);
+  .logs{background:var(--bg-deep);border:1px solid var(--line);border-radius:var(--r-sm);
         height:280px;overflow:auto;padding:10px 12px;
         font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
   .logs div{white-space:pre-wrap;word-break:break-all;border-bottom:1px solid rgba(36,47,66,.4);padding:3px 2px}
@@ -302,23 +361,25 @@
   .logs .e{color:var(--err)}
   .logs .w{color:var(--warn)}
   .logs .s{color:var(--ok)}
+  .logs{font-variant-numeric:tabular-nums;line-height:1.62}
   .logbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:-4px 0 8px}
   .logbar .chip{padding:3px 11px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);
-                color:var(--dim);font-size:11.5px;cursor:pointer;user-select:none;transition:.14s}
+                color:var(--dim);font-size:var(--fs-sm);cursor:pointer;user-select:none;transition:.14s}
   .logbar .chip.on{background:var(--accent-dim);border-color:var(--accent);color:var(--accent2)}
   .logbar .chip:hover{color:var(--fg)}
   .logbar .sp{flex:1}
+  .logbar .logbtn{padding:5px 12px;font-size:var(--fs-sm);min-height:30px}
 
   /* 联盟卡 */
   .alblock{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
-  .alhead{font-size:12.5px;font-weight:600;color:var(--fg);margin-bottom:5px}
-  .alwarn{font-size:11.5px;color:var(--warn);margin-top:4px;line-height:1.6}
+  .alhead{font-size:var(--fs-md);font-weight:600;color:var(--fg);margin-bottom:5px}
+  .alwarn{font-size:var(--fs-sm);color:var(--warn);margin-top:4px;line-height:1.6}
   .aloverflow{overflow-x:auto;margin:6px 0}
 
   /* toast / 快捷键 / 遮罩 */
   .toast{position:fixed;right:18px;bottom:18px;background:rgba(24,33,48,.97);
          border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--r-sm);
-         padding:11px 15px;max-width:400px;font-size:13px;box-shadow:0 12px 34px rgba(0,0,0,.5);
+         padding:11px 15px;max-width:400px;font-size:var(--fs-base);box-shadow:0 12px 34px rgba(0,0,0,.5);
          opacity:0;transform:translateY(10px) scale(.98);
          transition:.22s cubic-bezier(.2,.8,.2,1);pointer-events:none;z-index:60}
   .toast.on{opacity:1;transform:none}
@@ -331,7 +392,7 @@
        background:var(--surface3);border:1px solid var(--line);border-bottom-width:2px;
        font:11px ui-monospace,Menlo,monospace;color:var(--fg)}
   .kbar{position:fixed;right:16px;bottom:16px;z-index:59;background:rgba(24,33,48,.98);
-        border:1px solid var(--line);border-radius:var(--r);padding:12px 15px;font-size:12px;
+        border:1px solid var(--line);border-radius:var(--r);padding:12px 15px;font-size:var(--fs-sm);
         box-shadow:0 14px 38px rgba(0,0,0,.55);display:none;max-width:280px}
   .kbar.show{display:block}
   .kbar .kr{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:3px 0}
@@ -353,9 +414,9 @@
   .ovl .mitem.dis{opacity:.5;cursor:not-allowed}
   .ovl .mitem input{margin:2px 0 0;accent-color:#3a7bd5;width:15px;height:15px;flex:0 0 auto}
   .ovl .mbody{flex:1;min-width:0}
-  .ovl .mtitle{font-size:13px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .ovl .mmeta{font-size:11px;color:var(--dim);margin-top:3px;line-height:1.55;word-break:break-all}
-  .ovl .mtag{font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--line2);
+  .ovl .mtitle{font-size:var(--fs-base);font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .ovl .mmeta{font-size:var(--fs-xs);color:var(--dim);margin-top:3px;line-height:1.55;word-break:break-all}
+  .ovl .mtag{font-size:var(--fs2xs);padding:1px 6px;border-radius:999px;border:1px solid var(--line2);
        color:var(--dim);font-weight:400;white-space:nowrap}
   .ovl .mtag.have{color:#8fd0a0;border-color:rgba(47,191,113,.45)}
   .ovl .mtag.no{color:#f0d59a;border-color:rgba(224,165,58,.45)}
@@ -364,14 +425,14 @@
   .ovl .mhd{display:flex;align-items:center;justify-content:space-between;
        padding:12px 14px;border-bottom:1px solid var(--line2);font-weight:600}
   .ovl .mbd{padding:14px}
-  .ovl .mhint{font-size:12px;color:var(--dim);line-height:1.6;margin-bottom:12px}
-  .ovl .mfield{display:flex;flex-direction:column;gap:5px;margin-bottom:11px;font-size:12px;color:var(--dim)}
+  .ovl .mhint{font-size:var(--fs-sm);color:var(--dim);line-height:1.6;margin-bottom:12px}
+  .ovl .mfield{display:flex;flex-direction:column;gap:5px;margin-bottom:11px;font-size:var(--fs-sm);color:var(--dim)}
   .ovl .mfield input,.ovl .mfield select{background:var(--bg2);border:1px solid var(--line2);
-       border-radius:var(--r-sm);padding:8px 10px;color:var(--fg);font:inherit;font-size:13px}
+       border-radius:var(--r-sm);padding:8px 10px;color:var(--fg);font:inherit;font-size:var(--fs-base)}
   .ovl .mfield input:focus,.ovl .mfield select:focus{outline:none;border-color:#3a7bd5}
   .ovl .mfield select option{background:var(--surface2);color:var(--fg)}
   .ovl .mrow{display:flex;align-items:center;gap:10px;margin-top:2px}
-  .ovl .mnote{font-size:11px;color:var(--dim)}
+  .ovl .mnote{font-size:var(--fs-xs);color:var(--dim)}
 
   /* 侧栏抽屉(移动端) */
   .scrim{position:fixed;inset:0;background:rgba(5,8,13,.6);z-index:19;display:none}
@@ -391,7 +452,7 @@
     .sidebar.open{transform:none}
     .tabpane{padding:12px 11px 56px}
     .topbar{padding:9px 11px;gap:7px}
-    .crumb b{font-size:14px}
+    .crumb b{font-size:var(--fs-lg)}
     .crumbSub{display:none}
     .card{padding:12px 13px}
     .sumline{max-width:48%}
@@ -401,7 +462,11 @@
   @media (max-width:640px){
     .sqtable{display:block;overflow-x:auto;white-space:nowrap}
     .sqtable th,.sqtable td{white-space:nowrap}
-    .ov .vl{font-size:19px}
+    .ov .vl{font-size:var(--fs-2xl)}
+  }
+space:nowrap}
+    .sqtable th,.sqtable td{white-space:nowrap}
+    .ov .vl{font-size:var(--fs-2xl)}
   }
 </style>
 </head>
@@ -508,29 +573,30 @@
     <!-- 全局概览: 只放在看板, 避免操作页重复占用首屏 -->
     <div class="ovbar" id="ovbar">
       <button class="ov" data-go="todo"><span class="lb">待办</span><span class="vl" id="ovTodo">-</span></button>
-      <button class="ov" data-go="assist"><span class="lb">今日签到</span><span class="vl" id="ovSign">-</span></button>
       <button class="ov" data-go="hunt"><span class="lb">体力</span><span class="vl" id="ovStamina">-</span></button>
-      <button class="ov" data-go="hunt"><span class="lb">自动打怪</span><span class="vl" id="ovHunt">-</span></button>
-      <button class="ov" data-go="dock"><span class="lb">港口</span><span class="vl" id="ovDock">-</span></button>
-      <button class="ov" data-go="welfare"><span class="lb">福利</span><span class="vl" id="ovWelfare">-</span></button>
-      <button class="ov" data-go="speed"><span class="lb">队列</span><span class="vl" id="ovQueue">-</span></button>
       <button class="ov" data-go="shield"><span class="lb">保护罩</span><span class="vl" id="ovShield">-</span></button>
-      <button class="ov" data-go="stats"><span class="lb">任务奖励</span><span class="vl" id="ovTask">-</span></button>
-      <button class="ov" data-go="locate"><span class="lb">查玩家</span><span class="vl" id="ovLocate">-</span></button>
+      <button class="ov" data-go="speed"><span class="lb">队列</span><span class="vl" id="ovQueue">-</span></button>
+      <button class="ov" data-go="assist"><span class="lb">今日签到</span><span class="vl" id="ovSign">-</span></button>
+      <button class="ov" data-go="hunt"><span class="lb">自动打怪</span><span class="vl" id="ovHunt">-</span></button>
+      <button class="ov ovMore" data-go="stats"><span class="lb">任务奖励</span><span class="vl" id="ovTask">-</span></button>
+      <button class="ov ovMore" data-go="welfare"><span class="lb">福利</span><span class="vl" id="ovWelfare">-</span></button>
+      <button class="ov ovMore" data-go="dock"><span class="lb">港口</span><span class="vl" id="ovDock">-</span></button>
+      <button class="ov ovMore" data-go="locate"><span class="lb">查玩家</span><span class="vl" id="ovLocate">-</span></button>
+      <button class="ov ovMoreBtn" id="ovMoreBtn" type="button" title="展开/收起次要指标"><span class="lb">更多</span><span class="vl"><span class="vTxt">4 项</span></span></button>
     </div>
     <div class="sec">概览 <span class="mini" style="letter-spacing:0;text-transform:none;font-weight:400">点任意数字跳到能处理它的功能</span></div>
 
     <div class="grid g2">
       <div class="card span2" id="cardFleet" style="display:none">
-        <h2>多账号总览 <span class="sub">后台托管的账号一屏看清 · 点卡片切过去</span><span class="sumline" id="fleetSum"></span><button id="btnFleetRefresh" title="给所有托管账号各刷新一次(不是只刷当前在看的号)">全部刷新</button><button class="fold" data-fold="cardFleet">－</button></h2>
+        <div class="hd"><div class="hd-t"><h2>多账号总览</h2><span class="sub">后台托管的账号一屏看清 · 点卡片切过去</span></div><div class="hdTools"><span class="sumline" id="fleetSum"></span><button id="btnFleetRefresh" title="给所有托管账号各刷新一次(不是只刷当前在看的号)">全部刷新</button><button class="fold" data-fold="cardFleet" title="折叠/展开">－</button></div></div>
         <div id="fleetList"><div class="empty">只有一个账号时不显示</div></div>
       </div>
       <div class="card span2" id="cardTodo">
-        <h2>今日待办 <span class="sub">按真实状态汇总, 点右侧按钮直接去做</span><span class="sumline" id="todoSum"></span><button class="fold" data-fold="cardTodo">－</button></h2>
+        <div class="hd"><div class="hd-t"><h2>今日待办</h2><span class="sub">按真实状态汇总, 点右侧按钮直接去做</span></div><div class="hdTools"><span class="sumline" id="todoSum"></span><button class="fold" data-fold="cardTodo" title="折叠/展开">－</button></div></div>
         <div class="todo" id="todoList"><div class="empty">正在读取状态…</div></div>
       </div>
       <div class="card span2" id="cardTaskStats">
-        <h2>任务达成统计 <span class="sub">从首次同步后开始累计，按服务器日期归档</span><select id="taskStatsPeriod" style="width:92px;font-size:12px"><option value="day">今日</option><option value="week">本周</option><option value="month">本月</option></select><span class="sumline" id="taskStatsSum"></span><button class="fold" data-fold="cardTaskStats">－</button></h2>
+        <div class="hd"><div class="hd-t"><h2>任务达成统计</h2><span class="sub">从首次同步后开始累计 · 按服务器日期归档</span></div><div class="hdTools"><select id="taskStatsPeriod"><option value="day">今日</option><option value="week">本周</option><option value="month">本月</option></select><span class="sumline" id="taskStatsSum"></span><button class="fold" data-fold="cardTaskStats" title="折叠/展开">－</button></div></div>
         <div id="taskStats"><div class="empty">正在建立统计基线…</div></div>
       </div>
     </div>
@@ -547,8 +613,8 @@
       <span class="chip" data-ev="state">状态</span>
       <span class="sp"></span>
       <span class="mini" id="logCount">0 条</span>
-      <button class="ghost" id="btnLogClear" style="padding:2px 9px;font-size:11.5px">清空</button>
-      <button class="ghost" id="btnLogSize" style="padding:2px 9px;font-size:11.5px" title="切换日志区高度">高度</button>
+      <button class="ghost logbtn" id="btnLogClear">清空</button>
+      <button class="ghost logbtn" id="btnLogSize" title="切换日志区高度">高度</button>
     </div>
     <div class="logs" id="logs"></div>
   </div>
@@ -558,7 +624,7 @@
     <div class="sec">日常 <span class="mini" style="letter-spacing:0;text-transform:none;font-weight:400">每日必做 · 领奖与签到</span></div>
     <div class="grid g2">
     <div class="card" id="cardAssist">
-      <h2>一键完成 <span class="sub">游戏内「一键完成」面板 · CityAssist</span><span class="sumline" id="sumAssist"></span><button class="fold" data-fold="cardAssist">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>一键完成</h2><span class="sub">游戏内「一键完成」面板 · CityAssist</span></div><div class="hdTools"><span class="sumline" id="sumAssist"></span><button class="fold" data-fold="cardAssist" title="折叠/展开">－</button></div></div>
       <div class="row">
         <button class="primary" id="btnAssistOneKey">一键完成</button>
         <button id="btnSign">立即签到</button>
@@ -578,7 +644,7 @@
       <div class="res" id="resAssist">尚未操作</div>
     </div>
     <div class="card" id="cardWelfare">
-      <h2>福利中心 <span class="sub">日常福利 / everydayexchange + userpayreward</span><span class="sumline" id="sumWelfare"></span><button class="fold" data-fold="cardWelfare">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>福利中心</h2><span class="sub">日常福利 / everydayexchange + userpayreward</span></div><div class="hdTools"><span class="sumline" id="sumWelfare"></span><button class="fold" data-fold="cardWelfare" title="折叠/展开">－</button></div></div>
       <div class="row">
         <button class="primary" id="btnWelfareClaim">一键领取</button>
         <button id="btnWelfareRefresh">刷新</button>
@@ -589,7 +655,7 @@
       <div class="res" id="resWelfare">尚未操作</div>
     </div>
     <div class="card" id="cardDock">
-      <h2>港口 <span class="sub">码头航海贸易 / newBoat</span><span class="sumline" id="sumDock"></span><button class="fold" data-fold="cardDock">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>港口</h2><span class="sub">码头航海贸易 / newBoat</span></div><div class="hdTools"><span class="sumline" id="sumDock"></span><button class="fold" data-fold="cardDock" title="折叠/展开">－</button></div></div>
       <div class="row">
         <button class="primary" id="btnDockReward">一键领取</button>
         <button id="btnDockSend">一键分派</button>
@@ -603,7 +669,7 @@
       <div class="res" id="resDock">尚未操作</div>
     </div>
     <div class="card" id="cardSky">
-      <h2>天空之境 <span class="sub">探索 / 领取 · TheHeavens</span><span class="sumline" id="sumSky"></span><button class="fold" data-fold="cardSky">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>天空之境</h2><span class="sub">探索 / 领取 · TheHeavens</span></div><div class="hdTools"><span class="sumline" id="sumSky"></span><button class="fold" data-fold="cardSky" title="折叠/展开">－</button></div></div>
       <div class="row">
         <button class="primary" id="btnSkyReward">一键领取</button>
         <button id="btnSkyExplore">一键探索</button>
@@ -619,7 +685,7 @@
       <div class="res" id="resSky">尚未操作</div>
     </div>
     <div class="card" id="cardScore">
-      <h2>积分商城 <span class="sub">积分好礼 / mall.reward · mallId 125</span><span class="sumline" id="sumScore"></span><button class="fold" data-fold="cardScore">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>积分商城</h2><span class="sub">积分好礼 / mall.reward · mallId 125</span></div><div class="hdTools"><span class="sumline" id="sumScore"></span><button class="fold" data-fold="cardScore" title="折叠/展开">－</button></div></div>
       <div class="row">
         <button class="primary" id="btnScoreClaim">一键领取</button>
         <button id="btnScoreRefresh">刷新</button>
@@ -630,7 +696,7 @@
       <div class="res" id="resScore">尚未操作</div>
     </div>
     <div class="card" id="cardAlliance">
-      <h2>联盟 <span class="sub">科技树 / 任务板 / 捐献 / 使命</span><span class="sumline" id="sumAlliance"></span><button class="fold" data-fold="cardAlliance">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>联盟</h2><span class="sub">科技树 / 任务板 / 捐献 / 使命</span></div><div class="hdTools"><span class="sumline" id="sumAlliance"></span><button class="fold" data-fold="cardAlliance" title="折叠/展开">－</button></div></div>
       <div class="row">
         <button class="primary" id="btnAllianceRefresh">刷新</button>
         <button id="btnAllianceAccept">一键接任务</button>
@@ -664,7 +730,7 @@
     <div class="sec">军事 <span class="mini" style="letter-spacing:0;text-transform:none;font-weight:400">部队 · 保护 · 出征</span></div>
     <div class="grid g2">
     <div class="card span2" id="cardHunt">
-      <h2>打野怪 <span class="sub">体力 / 野怪等级 / 每队兵数 / 并行队伍</span><span class="sumline" id="sumHunt"></span><button class="fold" data-fold="cardHunt">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>打野怪</h2><span class="sub">体力 / 野怪等级 / 每队兵数 / 并行队伍</span></div><div class="hdTools"><span class="sumline" id="sumHunt"></span><button class="fold" data-fold="cardHunt" title="折叠/展开">－</button></div></div>
       <div class="grid g2" style="gap:14px">
         <div>
           <div class="stamina">
@@ -760,7 +826,7 @@
       <div class="res" id="resHunt">尚未操作</div>
     </div>
     <div class="card" id="cardShield">
-      <h2>保护罩 <span class="sub">战争守护 / onekeybuff</span><span class="sumline" id="sumShield"></span><button class="fold" data-fold="cardShield">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>保护罩</h2><span class="sub">战争守护 / onekeybuff</span></div><div class="hdTools"><span class="sumline" id="sumShield"></span><button class="fold" data-fold="cardShield" title="折叠/展开">－</button></div></div>
       <div class="row">
         <label>规格</label><select id="selShieldSpec" style="flex:1;min-width:170px"></select>
         <label style="min-width:auto"><input type="checkbox" id="chkCover" checked> 覆盖旧罩</label>
@@ -778,7 +844,7 @@
       <div class="res" id="resShield">尚未操作</div>
     </div>
     <div class="card" id="cardSpeed">
-      <h2>建造 / 训练队列加速 <span class="sub">queue.ccd</span><span class="sumline" id="sumSpeed"></span><button class="fold" data-fold="cardSpeed">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>建造 / 训练队列加速</h2><span class="sub">queue.ccd</span></div><div class="hdTools"><span class="sumline" id="sumSpeed"></span><button class="fold" data-fold="cardSpeed" title="折叠/展开">－</button></div></div>
       <div class="row">
         <label>队列</label><select id="selQueue" style="flex:1 1 100%;min-width:200px"></select>
       </div>
@@ -798,7 +864,7 @@
     <div class="sec">工具 <span class="mini" style="letter-spacing:0;text-transform:none;font-weight:400">查询 · 告警</span></div>
     <div class="grid g2">
     <div class="card" id="cardLocate">
-      <h2>玩家坐标 <span class="sub">按名字找人 / world.get</span><span class="sumline" id="sumLocate"></span><button class="fold" data-fold="cardLocate">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>玩家坐标</h2><span class="sub">按名字找人 / world.get</span></div><div class="hdTools"><span class="sumline" id="sumLocate"></span><button class="fold" data-fold="cardLocate" title="折叠/展开">－</button></div></div>
       <div class="row">
         <label>玩家名字</label>
         <input id="inpLocate" placeholder="输入领主名字" style="flex:1 1 180px;min-width:150px" autocomplete="off">
@@ -828,14 +894,14 @@
       </div>
       <div id="scanProgress"></div>
       <details style="margin-top:8px">
-        <summary style="cursor:pointer;color:#9fb4c8;font-size:12px">扫描历史</summary>
+        <summary style="cursor:pointer;color:var(--fg2);font-size:var(--fs-sm)">扫描历史</summary>
         <div id="scanHistory" class="mini" style="margin-top:6px">加载中…</div>
       </details>
 
       <div class="res" id="resLocate">尚未操作</div>
     </div>
     <div class="card" id="cardHook">
-      <h2>告警 <span class="sub">webhook</span><span class="sumline" id="sumHook"></span><button class="fold" data-fold="cardHook">－</button></h2>
+      <div class="hd"><div class="hd-t"><h2>告警</h2><span class="sub">webhook</span></div><div class="hdTools"><span class="sumline" id="sumHook"></span><button class="fold" data-fold="cardHook" title="折叠/展开">－</button></div></div>
       <div class="row">
         <label>类型</label>
         <select id="selHookType" style="width:130px">
@@ -1375,6 +1441,18 @@ document.addEventListener('click',(e)=>{
   // 侧栏「快捷跳转」：data-go 直接就是卡片 id（cardXxx）
   const j=e.target.closest && e.target.closest('.jump');
   if(j){ goTo(j.dataset.go); closeNav(); return; }
+  const more=e.target.closest && e.target.closest('#ovMoreBtn');
+  if(more){
+    const bar=document.getElementById('ovbar');
+    if(bar){
+      const on=bar.classList.toggle('expanded');
+      more.setAttribute('aria-expanded', on?'true':'false');
+      const lb=more.querySelector('.lb'), vl=more.querySelector('.vl');
+      if(lb) lb.textContent = on?'收起':'更多';
+      if(vl) vl.textContent = on?'▲':'▼';
+    }
+    return;
+  }
   const o=e.target.closest && e.target.closest('.ov');
   if(!o) return;
   const map={todo:'cardTodo',assist:'cardAssist',daily:'cardAssist',hunt:'cardHunt',dock:'cardDock',
@@ -1457,40 +1535,40 @@ function renderOverview(st){
   setCnt('tabOpsCnt', autoOn);
   // 签到
   const signed=ds['今日已签'];
-  set('ovSign', signed?'<span style="font-size:14px">已签</span>':'<span style="font-size:14px">未签</span>',
+  set('ovSign', signed?'<span class="vTxt">已签</span>':'<span class="vTxt">未签</span>',
       signed?'good':'warn');
   // 体力
   const stam=(au&&au.running&&au.stamina!=null)?au.stamina:(h.stamina||0);
   const smax=(au&&au.running&&au.stamina_max)?au.stamina_max:(h.stamina_max||100);
   set('ovStamina', fmt(stam)+'<small>/'+fmt(smax)+'</small>', stam<=10?'warn':'info');
   // 自动打怪
-  set('ovHunt', au.running?'<span style="font-size:14px">运行中</span>':'<span style="font-size:14px">停止</span>',
+  set('ovHunt', au.running?'<span class="vTxt">运行中</span>':'<span class="vTxt">停止</span>',
       au.running?'good':'');
   // 港口: 有待领显示数量, 否则显示在途数(更有信息量)
   const rw=(dk.rewardable||0);
-  set('ovDock', dk.family?((rw?rw+' 待领':((dk.trading||0)+' 在途'))):'<span style="font-size:14px">-</span>',
+  set('ovDock', dk.family?((rw?rw+' 待领':((dk.trading||0)+' 在途'))):'<span class="vTxt">-</span>',
       rw?'warn':(dk.family?'good':''));
   // 队列
   const running=(st.queues||[]).filter(q=>q.running);
-  set('ovQueue', running.length?String(running.length):'<span style="font-size:14px">空闲</span>',
+  set('ovQueue', running.length?String(running.length):'<span class="vTxt">空闲</span>',
       running.length?'info':'good');
   // 保护罩
   const left=Math.max(0,(sh.end_ms||0)-Date.now());
-  set('ovShield', left?dur(left):'<span style="font-size:14px">无罩</span>', left?'good':'warn');
+  set('ovShield', left?dur(left):'<span class="vTxt">无罩</span>', left?'good':'warn');
   // 福利中心
   const wf2=st.welfare||{};
   const wn=(wf2.loaded?(wf2.claimable||0):null);
-  set('ovWelfare', wn==null?'<span style="font-size:14px">-</span>'
-                          :(wn?String(wn):'<span style="font-size:14px">已领</span>'),
+  set('ovWelfare', wn==null?'<span class="vTxt">-</span>'
+                          :(wn?String(wn):'<span class="vTxt">已领</span>'),
       wn?'warn':(wn===0?'good':''));
   // 任务奖励
   const tn=((dq['可领日常任务']||[]).length)+((dq['周任务可领奖励']||[]).length)+((lt['可领奖励']||[]).length);
-  set('ovTask', tn?String(tn):'<span style="font-size:14px">已清</span>', tn?'warn':'good');
+  set('ovTask', tn?String(tn):'<span class="vTxt">已清</span>', tn?'warn':'good');
   // 查玩家: 显示**索引里有多少人**(这是能不能查到人的关键指标)
   const mi=st.map_index||{};
   const idxN=mi.count||0;
   set('ovLocate', idxN?(String(idxN)+'<small> 人</small>')
-                          :'<span style="font-size:14px">未扫描</span>',
+                          :'<span class="vTxt">未扫描</span>',
       idxN?'info':'warn');
   // 索引状态(扫描进度 + 时效)
   // ⚠️ 索引是**扫描时刻的快照**。服务端会定时重排整张地图, 坐标会整体迁移 ——
@@ -1991,13 +2069,27 @@ function renderCardsStable(st){
   // 给每张监控卡挂上折叠按钮
   document.querySelectorAll('#cards .card').forEach((c,i)=>{
     if(c.querySelector('.fold')) return;
+    if(!c.querySelector('h2')) return;
     const id='cardMon'+i;
     c.id=id;
     const h=c.querySelector('h2');
-    if(!h) return;
     const b=document.createElement('button');
     b.className='fold'; b.dataset.fold=id; b.textContent='－'; b.title='折叠/展开';
-    h.appendChild(b);
+    /* 标题改成两段式 .hd/.hdTools —— 静态卡片已经是这个结构, 动态卡补上,
+       否则折叠按钮会绝对定位到卡片角上、和 sumline 挤在一行。
+       (顺序：先把 h2 挪进 .hd-t，再把整块 .hd 插到卡片最前面) */
+    const tools=document.createElement('div');
+    tools.className='hdTools';
+    tools.appendChild(b);
+    const row=document.createElement('div');
+    row.className='hd-t';
+    h.parentNode.insertBefore(row, h);
+    row.appendChild(h);
+    const hd=document.createElement('div');
+    hd.className='hd';
+    hd.appendChild(row);
+    hd.appendChild(tools);
+    c.insertBefore(hd, c.firstChild);
   });
   applyFold();
   applyMonSummaries(st);
@@ -3865,13 +3957,20 @@ if($('btnLogout')){
   };
 }
 document.addEventListener('keydown',(e)=>{
-  // 输入框/下拉里不劫持按键
+  // ESC 优先处理：任何地方(包括输入框里)都该能关掉浮层 —— 否则按了没反应
+  if(e.key==='Escape'||e.key==='Esc'){
+    const kb=$('kbar');
+    if(kb&&kb.classList.contains('show')){ kb.classList.remove('show'); e.preventDefault(); return; }
+  }
+  // 输入框/下拉里不劫持其余按键
   const tag=(e.target&&e.target.tagName)||'';
   if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return;
   if(e.metaKey||e.ctrlKey||e.altKey) return;
   const k=(e.key||'').toUpperCase();
   if(k==='?'){ $('kbar').classList.toggle('show'); e.preventDefault(); return; }
-  if(k==='ESC'){ $('kbar').classList.remove('show'); return; }
+  // 快捷键面板开着时，其它单键不再触发（免得在面板上误触刷新）
+  const kb=$('kbar');
+  if(kb&&kb.classList.contains('show')) return;
   if(k==='R'){ $('btnRefresh').click(); e.preventDefault(); return; }
   if(k==='S'){ $('btnSign').click(); e.preventDefault(); return; }
   if(k==='C'){ $('btnClaim').click(); e.preventDefault(); return; }

@@ -252,7 +252,12 @@ def read_or_make_token():
 #: 为什么: `/` 和 `/login` 每次都要把 183KB 的 HTML 从磁盘读一遍 ——
 #: 10 个人各开一个页面就是 10 次磁盘 IO + 10 次解析, 而文件内容在进程
 #: 生命周期里根本不会变。缓存后每次只是内存切片。
+#:
+#: 但缓存内容会跟着文件 mtime 走: 改了 cok_webui.html 之后刷新页面,
+#: 旧版会一直显示(看起来像"改了没生效"), 调前端时非常误导人。
+#: 所以每次命中时多比一次 mtime(一次 stat, 纳秒级), 变了才重新读。
 _RES_CACHE = {}
+_RES_MTIME = {}
 
 # /api/state 短 TTL 缓存(仅用于"读操作, 刚写过就别读旧"):
 # 10 个用户每人每 5 秒一次 = 每秒 2 次完整序列化 + 视图引擎。
@@ -264,16 +269,22 @@ _STATE_TTL = 6.0  # 秒 (> 前端 5s 轮询, 命中率高)
 
 
 def _resource_bytes(name):
-    """读一个前端资源(带内存缓存)。"""
+    """读一个前端资源(带内存缓存, 文件改了会自动失效)。"""
+    path = _res(name)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ("缺少 %s" % name).encode("utf-8")
     hit = _RES_CACHE.get(name)
-    if hit is not None:
+    if hit is not None and _RES_MTIME.get(name) == mtime:
         return hit
     try:
-        with open(_res(name), "rb") as fh:
+        with open(path, "rb") as fh:
             data = fh.read()
     except OSError:
         return ("缺少 %s" % name).encode("utf-8")
     _RES_CACHE[name] = data
+    _RES_MTIME[name] = mtime
     return data
 
 
