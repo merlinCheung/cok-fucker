@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COK 控制台 · 登录</title>
+<style>
+  :root{
+    --bg:#0a0d14; --panel:#151a24; --panel2:#1b212d; --line:#273040; --line2:#1e2531;
+    --fg:#e9eef6; --dim:#8c99ad; --accent:#5b9dff; --ok:#3fb950; --warn:#e3a52a; --err:#f85149;
+    --radius:12px; --radius-sm:8px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:var(--bg);color:var(--fg);
+       background-image:radial-gradient(1200px 600px at 78% -8%,rgba(91,157,255,.10),transparent 60%),
+                        radial-gradient(900px 500px at 10% 0%,rgba(63,185,80,.06),transparent 55%);
+       font:14px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  .box{width:min(400px,92vw);background:linear-gradient(180deg,var(--panel),#0e121b);
+       border:1px solid var(--line);border-radius:var(--radius);padding:26px 24px 22px;
+       box-shadow:0 18px 50px rgba(0,0,0,.55)}
+  h1{margin:0 0 4px;font-size:19px;letter-spacing:.2px}
+  .sub{margin:0 0 20px;font-size:12.5px;color:var(--dim)}
+  label{display:block;margin:0 0 6px;font-size:12.5px;color:var(--dim)}
+  input{width:100%;background:#0d1119;border:1px solid var(--line);color:var(--fg);
+        border-radius:var(--radius-sm);padding:10px 12px;font:inherit;margin-bottom:14px}
+  input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,157,255,.18)}
+  button{width:100%;background:linear-gradient(180deg,#2b64c8,#1f4da3);color:#fff;
+         border:1px solid #3b74d8;border-radius:var(--radius-sm);padding:11px 14px;
+         font:inherit;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
+  .err{display:none;margin:0 0 14px;padding:9px 11px;border-radius:var(--radius-sm);
+       background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.4);
+       border-left:3px solid var(--err);font-size:12.5px;color:#ffb3ae}
+  .err.on{display:block}
+  .switch{margin:16px 0 0;text-align:center;font-size:12.5px;color:var(--dim)}
+  .switch a{color:var(--accent);cursor:pointer;text-decoration:none}
+  .hint{margin:14px 0 0;font-size:11.5px;color:var(--dim);text-align:center}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1 id="ttl">登录控制台</h1>
+  <p class="sub" id="sub">每个账号只能看到自己的游戏账号</p>
+  <div class="err" id="err"></div>
+  <form id="f" autocomplete="on">
+    <label for="u">用户名</label>
+    <input id="u" name="u" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+    <label for="p">密码</label>
+    <input id="p" name="p" type="password" autocomplete="current-password" required>
+    <label for="c" id="lblCode" style="display:none">邀请码</label>
+    <input id="c" name="c" autocomplete="off" spellcheck="false" style="display:none">
+    <button id="go" type="submit">登录</button>
+  </form>
+  <p class="switch" id="swWrap">
+    <span id="swText">没有账号？</span><a id="sw">注册一个</a>
+  </p>
+  <p class="hint">COK 直连控制台 · 多用户隔离</p>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let MODE = 'login';           // login | register
+
+function showErr(msg){
+  const e = $('err');
+  if(!msg){ e.className='err'; e.textContent=''; return; }
+  e.className='err on'; e.textContent=msg;
+}
+
+async function post(path, body){
+  const r = await fetch(path, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  let j = {};
+  try{ j = await r.json(); }catch(e){ j = {ok:false, error:'HTTP '+r.status}; }
+  return j;
+}
+
+function setMode(m){
+  MODE = m;
+  const reg = (m === 'register');
+  $('ttl').textContent = reg ? '注册账号' : '登录控制台';
+  $('sub').textContent = reg ? '需要一个邀请码' : '每个账号只能看到自己的游戏账号';
+  $('go').textContent = reg ? '注册并登录' : '登录';
+  $('lblCode').style.display = reg ? '' : 'none';
+  $('c').style.display = reg ? '' : 'none';
+  $('c').required = reg;
+  $('swWrap').style.display = reg ? 'none' : '';
+  $('swText').textContent = '没有账号？';
+  $('sw').textContent = '注册一个';
+  $('p').setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
+  showErr('');
+}
+
+$('sw').onclick = () => setMode('register');
+
+$('f').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  showErr('');
+  const u = $('u').value.trim(), p = $('p').value, c = $('c').value.trim();
+  if(!u || !p){ showErr('请输入用户名和密码'); return; }
+  if(MODE === 'register' && !c){ showErr('请输入邀请码'); return; }
+  const btn = $('go');
+  btn.disabled = true; btn.textContent = '处理中…';
+  try{
+    const path = MODE === 'register' ? '/api/register' : '/api/login';
+    const j = await post(path, {username:u, password:p, invite:c});
+    if(j.ok){
+      // 登录成功后整页跳到控制台 —— 不靠前端跳转拼 token,
+      // 会话在 Cookie 里(见后端 _auth)。
+      location.replace('/');
+      return;
+    }
+    showErr(j.error || '操作失败');
+  }catch(e){
+    showErr('网络错误: ' + (e && e.message ? e.message : e));
+  }finally{
+    btn.disabled = false; btn.textContent = MODE === 'register' ? '注册并登录' : '登录';
+  }
+});
+
+// 已经登录的人不该看到登录页
+(async function(){
+  try{
+    const r = await fetch('/api/me', {headers:{'Accept':'application/json'}});
+    if(r.ok){
+      const j = await r.json();
+      if(j && j.ok) location.replace('/');
+    }
+  }catch(e){}
+  setMode('login');
+  // 带上 ?next= 时提示一下来源(比如会话过期)
+  try{
+    const q = new URLSearchParams(location.search);
+    const rsn = q.get('reason');
+    if(rsn === 'expired') showErr('登录已过期, 请重新登录');
+    else if(rsn === 'required') showErr('请先登录');
+    else if(rsn === 'banned') showErr('账号已被禁用, 请联系管理员');
+  }catch(e){}
+})();
+</script>
+</body>
+</html>

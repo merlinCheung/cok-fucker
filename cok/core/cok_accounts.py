@@ -550,15 +550,31 @@ def set_label(key, label):
     return True
 
 
+def _owner_file(owner, name):
+    """某用户的"当前账号/并行集"文件路径。
+
+    平台模式下用户表在 SQLite(见 cok_platform), 但这两个文件是**每个用户
+    一份的小状态**, 没必要进库; 关键是它们按用户分目录 —— 共用一个
+    `accounts/.active` 会让"谁在看哪个号"互相覆盖。
+    """
+    d = os.path.join(DATA_ROOT, "u", safe_key(owner))
+    return os.path.join(d, name)
+
+
 def get_active_key(owner=None):
     """读当前选中账号 id; 没有则回退到注册表第一个; 再没有返回 ""。
 
-    owner 给了就**按人**存/取(多用户隔离, 见 cok_users.get_active)。
+    owner 给了就**按人**存/取(多用户隔离): 每人一个 `<data>/u/<owner>/active`。
     """
     if owner is not None:
-        import cok_users
-        k = cok_users.get_active(owner)
-        if k and get_account(k) is not None:
+        k = ""
+        try:
+            with open(_owner_file(owner, "active"), encoding="utf-8") as fh:
+                k = fh.read().strip()
+        except OSError:
+            k = ""
+        if k and get_account(k) is not None \
+                and (not owner or owner_of(k) == owner):
             return k
         accs = list_accounts(owner=owner)
         return accs[0]["key"] if accs else ""
@@ -574,12 +590,18 @@ def get_active_key(owner=None):
 
 
 def set_active_key(key, owner=None):
-    """把某账号设为当前选中(写入 .active)。key 必须已注册。"""
+    """把某账号设为当前选中。key 必须已注册(平台模式下还必须属于 owner)。"""
     if get_account(key) is None:
         raise ValueError("账号未注册: %s" % key)
     if owner is not None:
-        import cok_users
-        cok_users.set_active(owner, key)
+        if owner_of(key) != owner:
+            raise ValueError("账号不属于该用户: %s" % key)
+        p = _owner_file(owner, "active")
+        _ensure_dir(os.path.dirname(p))
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(str(key) + "\n")
+        os.replace(tmp, p)
         return key
     _ensure_dir(ACCOUNTS_DIR)
     tmp = ACTIVE_FILE + ".tmp"

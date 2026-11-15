@@ -305,6 +305,33 @@ def main():
     token = None if args.no_token else (args.token or cok_web.read_or_make_token())
     cok_web.Handler.token = token
     cok_web.Handler.engine = eng
+    # 多用户改造后 /api/state 走 `self._manager().view_engine()` —— 管理器为空
+    # 会在 snapshot() 上抛 AttributeError, 离线预览就全空白了。这里塞一个
+    # **只包着这一个引擎**的轻量管理器, 让预览继续走真实渲染路径。
+    class _SoloManager(object):
+        owner = ""
+        view_key = ""
+        engines = ()
+
+        def all_engines(self):
+            return ()
+
+        def view_engine(self):
+            return eng
+
+        def engine_for(self, key=None):
+            return eng
+
+        def accounts_overview(self):
+            return {}
+
+        def start(self):
+            pass
+
+        def stop_all(self):
+            pass
+
+    cok_web.Handler.manager = _SoloManager()
 
     # 填一份样例状态(预览服务不跑轮询)
     eng.daemon.poll_once()

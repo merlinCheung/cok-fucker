@@ -40,6 +40,7 @@ import re
 import subprocess
 import threading
 import time
+import traceback
 import webbrowser
 from urllib.parse import parse_qs  # noqa: E402
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -89,6 +90,29 @@ try:
 except Exception as _chan_cfg_exc:  # noqa: BLE001
     cok_channels = None
     CHANNEL_IMPORT_ERROR += "\ncok_channels: %s" % _chan_cfg_exc
+
+#: 平台层(SQLite: 用户/会话/邀请/审计/限流)。
+#:
+#: 为什么单独一个模块: 这些数据和"游戏账号"完全无关, 是**平台**自己的状态。
+#: 早期它是 users.json / sessions.json 两个 JSON 文件 —— 两个人同时登录时
+#: "读-改-写"没有锁, 后写的会把先写的整个覆盖掉(会话莫名其妙失效)。
+#: 现在统一进 SQLite(WAL), 见 cok/core/cok_platform.py。
+try:
+    import cok_platform as platform  # noqa: E402
+except Exception as _plat_exc:  # noqa: BLE001
+    platform = None
+    PLATFORM_IMPORT_ERROR = traceback.format_exc()
+else:
+    PLATFORM_IMPORT_ERROR = ""
+
+#: 口令 hash / 会话 TTL 的唯一实现(cok_users)。
+#: 平台层的用户表在 SQLite(见 cok_platform), 但**口令派生**仍复用这里 ——
+#: 一套算法、一套参数(scrypt 优先, 没有就 PBKDF2), 不在两个地方各写一份,
+#: 否则将来改强度时会漏掉一边。
+try:
+    import cok_users  # noqa: E402
+except Exception:  # noqa: BLE001
+    cok_users = None
 
 
 TOKEN_FILE = os.path.join(_pkg_data_dir(), ".cok-web-token")
@@ -223,10 +247,60 @@ def read_or_make_token():
     return t
 
 
+#: 资源文件的内存缓存(启动后读一次, 之后命中内存)。
+#:
+#: 为什么: `/` 和 `/login` 每次都要把 183KB 的 HTML 从磁盘读一遍 ——
+#: 10 个人各开一个页面就是 10 次磁盘 IO + 10 次解析, 而文件内容在进程
+#: 生命周期里根本不会变。缓存后每次只是内存切片。
+_RES_CACHE = {}
+
+# /api/state 短 TTL 缓存(仅用于"读操作, 刚写过就别读旧"):
+# 10 个用户每人每 5 秒一次 = 每秒 2 次完整序列化 + 视图引擎。
+# 加 3 秒 TTL 内存缓存后, 命中时**不重建引擎/不序列化**, 只是 bytes 回放。
+# 为什么是 3 秒: 轮询间隔 5 秒, 正好把用户级写操作后**一次**轮询吃掉,
+# 数据延迟在轮询周期内, 业务层感知不到。 key = 用户 uid + 当前查看账号。
+_STATE_CACHE = {}
+_STATE_TTL = 6.0  # 秒 (> 前端 5s 轮询, 命中率高)
+
+
+def _resource_bytes(name):
+    """读一个前端资源(带内存缓存)。"""
+    hit = _RES_CACHE.get(name)
+    if hit is not None:
+        return hit
+    try:
+        with open(_res(name), "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return ("缺少 %s" % name).encode("utf-8")
+    _RES_CACHE[name] = data
+    return data
+
+
+def _scan_child_nice():
+    """子进程里降 CPU 优先级(在 fork 之后、exec 之前跑)。
+
+    为什么不用 ``nice`` 前缀: 命令数组会被日志直接打给用户看(``cmd`` 字段),
+    加一层 ``nice`` 会让它变成用户看不懂的东西。preexec_fn 是"只影响这个
+    子进程"的钩子, 语义更干净。
+
+    ⚠️ 它只在 POSIX 有; Windows 没有 os.setpriority, 用 try 兜住。
+    """
+    try:
+        os.nice(10)          # 默认 nice 0 -> 10, 大约让出 60% 的 CPU 时间
+    except Exception:        # noqa: BLE001
+        pass
+    # 子进程最容易忽略 SIGPIPE(扫描中途被 kill 时), 明确恢复默认行为
+    try:
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    except Exception:        # noqa: BLE001
+        pass
+
+
 class Engine(object):
     """后台引擎: 轮询监控 + 收集 push + 执行写操作。"""
 
-    def __init__(self, args, pinned_key=None):
+    def __init__(self, args, pinned_key=None, owner=None):
         # pinned_key: 并行模型下, 这个引擎**只**服务这个账号(gameUid), 不跟
         # 全局 active 指针走。单引擎(切换模型)时为 None, 行为同 Phase 1。
         self.pinned_key = pinned_key
@@ -283,6 +357,9 @@ class Engine(object):
         # 多账号: 当前选中账号的 id(gameUid)与显示名; 空表示还没锁定具体账号
         self.account_key = ""
         self.account_label = ""
+        # 平台层归属(多用户平台): 这个引擎服务哪个用户。空 = 单用户/本地模式。
+        # 用于: ① 账号查询按 owner 过滤 ② 账号锁加 uid 命名空间(防跨用户抢号)
+        self.owner = str(owner or "")
         self._hunter_lock = None
         # 打怪从停客户端到猎人线程真正标记 running 之间也必须独占账号。
         # 仅检查 hunter.state["running"] 会留下一个建连空窗，后台轮询可能
@@ -391,16 +468,21 @@ class Engine(object):
             return True
         # 0) 账号来源:
         #    - 并行模型: 引擎被钉在 pinned_key 上, 只认自己的账号;
-        #    - 切换模型: 跟随账号库的 active 指针。
+        #    - 切换模型: 跟随账号库的 active 指针(平台模式下是**该用户**的)。
         if self.pinned_key:
             active = self.pinned_key
         else:
             try:
-                active = accounts.get_active_key()
+                active = accounts.get_active_key(owner=self.owner or None)
             except Exception:  # noqa: BLE001
                 active = ""
         if active:
             reg = accounts.get_account(active) or {}
+            # 平台层: 拿到的账号必须属于自己 —— 别人名下的号在这里等于"不存在"。
+            # (防的是越权: 直接构造 ?account=<别人的 uid> 来读别人的号。)
+            if getattr(self, "owner", "") and accounts.owner_of(active) != self.owner:
+                self.account_error = ""
+                return False
             reg_missing = [k for k in ACCOUNT_REQUIRED if not reg.get(k)]
             if reg and not reg_missing:
                 reg = dict(reg)
@@ -504,7 +586,15 @@ class Engine(object):
         只要已经解析出 gameUid，就必须按它分锁。未入库的旧默认引擎若继续
         使用全局锁，而新建的账号引擎使用 uid 锁，同一账号会绕过彼此的互斥，
         导致两条连接被服务端互踢。没有可用 uid 时才回退历史全局锁。
+
+        平台模式下再套一层 **owner 命名空间**(`owner/key`): 两台设备登录同一个
+        游戏账号时, 服务端同样只允许一个连接 —— 但那应该由"账号"本身来裁决,
+        不该让 A 用户的操作把 B 用户的同号锁死(反过来也一样)。
+        ⇒ 锁按 `用户/账号` 分, 语义清晰: 平台内"谁在用"由平台自己管。
         """
+        owner = getattr(self, "owner", "")
+        if owner and self.account_key:
+            return "%s/%s" % (owner, self.account_key)
         return self.account_key or None
 
     def _hunter_active(self):
@@ -663,6 +753,12 @@ class Engine(object):
             pass
 
     def _settings_file(self):
+        # 平台模式下配置落在**该用户**的目录里, 而不是所有账号共用的 data/。
+        # 否则两个人把不同账号设成同名 gameUid(或都还没入库)时, 后写的会覆盖前者。
+        owner = getattr(self, "owner", "")
+        if owner:
+            return os.path.join(accounts.DATA_ROOT, "u", accounts.safe_key(owner),
+                                "web-settings.json")
         if getattr(self, "account_isolated", False) and self.account_key:
             return accounts.data_path(self.account_key, "automation-settings.json")
         return self.SETTINGS_FILE
@@ -2997,6 +3093,40 @@ class Engine(object):
             return {"error": str(e)[:160]}
 
     # ---------------- 自动打怪(常驻连接) ----------------
+    def _hunter_host_port(self):
+        """猎人连接的 (host, port) —— **必须以账号库为准**, 不能只看 args。
+
+        为什么: 不同区服的 SmartFox 端口不同(COK2218=32181 / COK2223=32231)。
+        `args.game_host/game_port` 是**启动时**的全局参数(默认 42.192.152.154:32231),
+        账号入库后并不会回写 args —— 于是 COK2218 的号会连到 32231 这个**错误节点**,
+        服务端表现为登录后立刻断开。`Daemon.connect` 早就这么做了, 猎人这条路径
+        之前漏了。
+        """
+        gh = gp = None
+        acc = getattr(self.args, "account", None)
+        if isinstance(acc, dict):
+            gh = acc.get("host") or None
+            gp = acc.get("port") or None
+        if not (gh and gp):
+            # 账号库里查一次(平台模式/多账号模式下 args.account 可能还没 settle)
+            key = self.account_key or None
+            if not key:
+                try:
+                    key = accounts.account_key(acc) if acc else None
+                except Exception:  # noqa: BLE001
+                    key = None
+            reg = accounts.get_account(key) if key else None
+            if reg:
+                gh = gh or reg.get("host") or None
+                gp = gp or reg.get("port") or None
+        gh = gh or getattr(self.args, "game_host", None) or cok_client.DEFAULT_HOST
+        try:
+            gp = int(gp or getattr(self.args, "game_port", None)
+                     or cok_client.DEFAULT_PORT)
+        except (TypeError, ValueError):
+            gp = cok_client.DEFAULT_PORT
+        return gh, gp
+
     def _hunter_open_client(self):
         """建一条**新的**猎人专用连接(TCP + bin 握手 + 登录)。
 
@@ -3004,11 +3134,8 @@ class Engine(object):
         序列号要求绑在一起, 不能随便少一步。
         """
         from cok_client import CokClient
-        cl = CokClient(getattr(self.args, "game_host", None)
-                       or cok_client.DEFAULT_HOST,
-                       int(getattr(self.args, "game_port", None)
-                           or cok_client.DEFAULT_PORT),
-                       30.0, self.args.account)   # args.account 已是 dict
+        gh, gp = self._hunter_host_port()
+        cl = CokClient(gh, gp, 30.0, self.args.account)   # args.account 已是 dict
         cl.connect()
         cl.bin_handshake()
         cl.login()
@@ -3037,18 +3164,49 @@ class Engine(object):
         except Exception:  # noqa: BLE001
             pass
 
+    def _drop_daemon_client(self):
+        """彻底放弃网页自己的那条常驻连接(socket 真关掉 + 指针清空)。
+
+        重连猎人时必须先走这一步: 只 `close()` 不清指针, 或者反过来只清指针
+        不 close, 都会留下**半死连接** —— socket 还在, 服务端那边的会话也还在,
+        于是新连接一登录就把旧会话顶掉, 旧会话的关闭又反过来影响新连接。
+        实测(2026-11-14): 服务进程对一个游戏服同时挂着 CLOSE-WAIT + ESTAB
+        两条 socket, 日志里多条 `seq=1` 的连接交错出现, 猎人重连 2 次用尽后停止。
+        """
+        cli = self.daemon.client
+        self.daemon.client = None
+        if cli is not None:
+            try:
+                cli.close()
+            except Exception:  # noqa: BLE001
+                pass
+        with self.lock:
+            self.connected = False
+
     def _hunter_reconnect(self, old_client):
         """猎人连接被服务端踢掉之后重建连接。
 
         绝大多数情况是**同账号双连接**: 游戏 App 还在线, 游戏服只留一条,
         服务端会把后进来的那条直接关掉(表现为"连接被服务端关闭(已收 0/3 字节)")。
-        所以这里先再让一次路(停游戏 App), 等一下, 再重新连。
+        所以这里先把**本进程内所有同账号连接**都放掉, 再重连。
+
+        ⚠️ 这里最容易漏的是 `daemon.client`(网页轮询/推送监听那条常驻连接)。
+        只关 `old_client` 的话, daemon 那条还在, 重连出来的猎人连接一登录
+        就会和它互踢 —— 正是 2026-11-14 排查到的"猎人重连必失败"根因。
         返回新的 client(失败抛异常, 由调用方按失败处理)。
         """
-        try:
-            old_client.close()
-        except Exception:  # noqa: BLE001
-            pass
+        # 1) 先放掉旧猎人连接
+        if old_client is not None:
+            try:
+                old_client.close()
+            except Exception:  # noqa: BLE001
+                pass
+        with self.lock:
+            if self.hunter_client is old_client:
+                self.hunter_client = None
+        # 2) 再放掉网页自己那条(否则同账号两条连接, 服务端必互踢)
+        self._drop_daemon_client()
+        # 3) 再让一次路(停游戏 App), 等一下, 再重新连
         try:
             self.stop_app()
         except Exception:  # noqa: BLE001
@@ -3111,7 +3269,14 @@ class Engine(object):
                 pass
             with self.lock:
                 self.hunter = None
+                if self.hunter_client is not None:
+                    try:
+                        self.hunter_client.close()
+                    except Exception:  # noqa: BLE001
+                        pass
                 self.hunter_client = None
+            # 旧猎人可能留下一条半死的常驻连接, 一起放掉
+            self._drop_daemon_client()
         level = int(body.get("level") or 1)
         num = int(body.get("num") or 50)
         troop = body.get("troop") or None
@@ -3209,14 +3374,7 @@ class Engine(object):
         # 先断再连 = 任何时刻这个账号只有一条连接。
         try:
             with self.op_lock:
-                if self.daemon.client:
-                    try:
-                        self.daemon.client.close()
-                    except Exception:  # noqa: BLE001
-                        pass
-                self.daemon.client = None
-                with self.lock:
-                    self.connected = False
+                self._drop_daemon_client()
         except Exception:  # noqa: BLE001
             pass
         try:
@@ -3236,16 +3394,23 @@ class Engine(object):
 
         def emit(kind, payload):
             if kind == "stopped":
-                # 被服务端踢掉几乎等于"同账号双连接"。给一条能照做的提示,
+                # 被服务端踢掉几乎等于"同账号双连接"。给一条**能照做**的提示,
                 # 别只丢一句"连接被服务端关闭"(安卓端用户看不出该做什么)。
+                #
+                # ⚠️ 服务器/云端部署上根本没有 adb, `stop_app()` 是**必然失败**的
+                #    (ADB_CANDIDATES 指向 Mac 上的 platform-tools)。旧文案在这种情况下
+                #    会说"游戏 App 可能仍在线, 请先完全退出游戏 App" —— 用户照着做
+                #    也没用, 因为踢人的其实是**本进程自己的另一条连接**。
+                #    现在: 只有当 App 真被停掉过, 才提 App; 否则给出真实原因排查方向。
                 note = str(payload.get("note") or "")
                 if "连接" in note:
                     if self._app_stopped:
                         payload["note"] = (note + "｜已尝试停止游戏 App 仍被断开, "
                                            "请检查是否有别的设备登录了同一账号")
                     else:
-                        payload["note"] = (note + "｜游戏 App 可能仍在线, "
-                                           "请先完全退出游戏 App 再开始打怪")
+                        payload["note"] = (note + "｜同账号只允许一条连接: 请确认没有"
+                                           "别的设备/控制台在登录同一个账号"
+                                           "(云端部署无法自动停止手机上的游戏 App)")
             # 击杀增量记账(明细为空 = 只显示累计数)
             self._record_hunt_kills(payload.get("kills"))
             self.daemon.emit("hunt_" + kind, payload)
@@ -3343,6 +3508,9 @@ class Engine(object):
             pass
         with self.lock:
             self.hunter_client = None
+        # 猎人连接一断, 网页这边要能**自己接管**: 把残留的常驻连接也清干净,
+        # 下一轮轮询/操作会重新建一条(而不是复用一个已被服务端关掉的 socket)。
+        self._drop_daemon_client()
         self._release_hunter_lock()      # ← 先把跨进程账号锁还回去
         self._set_hunter_starting(False)
         if refresh:
@@ -4666,13 +4834,18 @@ class Engine(object):
 
     # ---------------- 多账号管理 ----------------
     def _accounts_summary(self):
-        """账号库概况: 列表 + 当前选中 id(给页面下拉框用)。"""
+        """账号库概况: 列表 + 当前选中 id(给页面下拉框用)。
+
+        平台模式下(self.owner 非空)**只列自己名下的账号** —— 这是隔离的
+        第一道闸: 前端根本拿不到别人的 key, 也就无从越权。
+        """
+        owner = getattr(self, "owner", "") or None
         try:
-            lst = accounts.list_accounts()
+            lst = accounts.list_accounts(owner=owner)
         except Exception:  # noqa: BLE001
             lst = []
         try:
-            active = accounts.get_active_key()
+            active = accounts.get_active_key(owner=owner)
         except Exception:  # noqa: BLE001
             active = ""
         return {
@@ -4688,15 +4861,19 @@ class Engine(object):
         key = str((body or {}).get("key") or "").strip()
         if not key:
             return {"ok": False, "error": "缺少账号 key"}
+        # 平台层: 别人的号在这里等于不存在(不报"存在但无权限", 不泄露信息)。
+        if getattr(self, "owner", "") and accounts.owner_of(key) != self.owner:
+            return {"ok": False, "error": "账号库里没有这个账号: %s" % key}
         if accounts.get_account(key) is None:
             return {"ok": False, "error": "账号库里没有这个账号: %s" % key}
         # 打怪是常驻连接且独占旧账号的锁, 切号会把它晾在半路 —— 先拦住。
         if self.hunter and self.hunter.state.get("running"):
             return {"ok": False, "error": "自动打怪进行中, 请先停掉打怪再切换账号"}
-        if key == accounts.get_active_key() and key == self.account_key:
+        if key == accounts.get_active_key(owner=getattr(self, "owner", "") or None) \
+                and key == self.account_key:
             return {"ok": True, "note": "已经是当前账号", "active": key}
         try:
-            accounts.set_active_key(key)
+            accounts.set_active_key(key, owner=getattr(self, "owner", "") or None)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": "切换失败: %s" % str(e)[:120]}
         # 清空当前连接与账号态, 让下一轮轮询(或下一次操作)按新账号重新解析。
@@ -4791,7 +4968,7 @@ class Engine(object):
                         skipped.append("%s[%s]: pf 实测失败(保留候选 %s)"
                                        % (pkg, tag, acc.get("pf")))
                 try:
-                    key = accounts.save_account(acc)
+                    key = accounts.save_account(acc, owner=getattr(self, "owner", "") or None)
                 except Exception as e:  # noqa: BLE001
                     skipped.append("%s[%s]: 入库失败(%s)" % (pkg, tag, str(e)[:60]))
                     continue
@@ -4806,8 +4983,8 @@ class Engine(object):
         label = str(body.get("label") or "").strip()
         if label and len(added) == 1:
             accounts.set_label(added[0]["key"], label)
-        if not accounts.get_active_key():
-            accounts.set_active_key(added[0]["key"])
+        if not accounts.get_active_key(owner=getattr(self, "owner", "") or None):
+            accounts.set_active_key(added[0]["key"], owner=getattr(self, "owner", "") or None)
         return {"ok": True, "key": added[0]["key"],
                 "added": added, "skipped": skipped,
                 "label": accounts.account_label(accounts.get_account(added[0]["key"])),
@@ -4822,15 +4999,15 @@ class Engine(object):
         if key == self.account_key and (self.hunter
                                         and self.hunter.state.get("running")):
             return {"ok": False, "error": "该账号正在打怪, 请先停掉再删除"}
-        ok = accounts.remove_account(key)
+        ok = accounts.remove_account(key, owner=getattr(self, "owner", "") or None)
         # 删的是当前 active, 把指针让给剩下的任意一个
-        if ok and key == accounts.get_active_key():
-            rest = accounts.list_accounts()
+        if ok and key == accounts.get_active_key(owner=getattr(self, "owner", "") or None):
+            rest = accounts.list_accounts(owner=getattr(self, "owner", "") or None)
             if rest:
-                accounts.set_active_key(rest[0]["key"])
+                accounts.set_active_key(rest[0]["key"], owner=getattr(self, "owner", "") or None)
         return {"ok": bool(ok),
                 "error": "" if ok else "账号库里没有这个账号",
-                "active": accounts.get_active_key()}
+                "active": accounts.get_active_key(owner=getattr(self, "owner", "") or None)}
 
     def _account_relabel(self, body):
         """给账号改个显示名。"""
@@ -4838,6 +5015,8 @@ class Engine(object):
         label = str((body or {}).get("label") or "").strip()
         if not key or not label:
             return {"ok": False, "error": "缺少 key 或 label"}
+        if getattr(self, "owner", "") and accounts.owner_of(key) != self.owner:
+            return {"ok": False, "error": "账号库里没有这个账号"}
         ok = accounts.set_label(key, label)
         if ok and key == self.account_key:
             self.account_label = label
@@ -4917,7 +5096,7 @@ class Engine(object):
         # 身份列表 -> 与果盘一致的结构, 前端那套"勾选加入"直接复用
         lib = {}
         try:
-            for a in accounts.list_accounts():
+            for a in accounts.list_accounts(owner=getattr(self, "owner", "") or None):
                 full = accounts.get_account(a.get("key")) or {}
                 if full.get("pfId"):
                     lib[full["pfId"]] = {"key": a.get("key"),
@@ -5020,7 +5199,7 @@ class Engine(object):
         items = res.get("smallAccounts") or []
         lib = {}
         try:
-            for a in accounts.list_accounts():
+            for a in accounts.list_accounts(owner=getattr(self, "owner", "") or None):
                 full = accounts.get_account(a.get("key")) or {}
                 if full.get("pfId"):
                     lib[full["pfId"]] = {"key": a.get("key"),
@@ -5132,7 +5311,8 @@ class Engine(object):
             if missing:
                 acc["incompleteFields"] = ",".join(missing)
             try:
-                key = accounts.save_account(acc, label=label or None)
+                key = accounts.save_account(acc, label=label or None,
+                                            owner=getattr(self, "owner", "") or None)
             except Exception as e:  # noqa: BLE001
                 skipped.append("%s: 入库失败(%s)" % (per, str(e)[:60]))
                 continue
@@ -5302,7 +5482,13 @@ class Engine(object):
         try:
             p = subprocess.Popen(
                 cmd, stdout=f, stderr=f, cwd=HERE,
-                env=dict(os.environ, PYTHONUNBUFFERED="1"))
+                env=dict(os.environ, PYTHONUNBUFFERED="1"),
+                # 扫描是 CPU 密集的活(全图几万格), 不降优先级会把整台机器
+                # 的响应拖慢 —— 尤其是 4 核 / 3.8G 的云主机上, 扫描 + 10 个
+                # 用户的页面轮询 + 后台托管账号会互相抢 CPU。
+                # 用 preexec_fn 在子进程里 setpriority: 比 `nice` 前缀稳
+                # (路径不含空格时也行, 而且不用改 cmd 数组的语义)。
+                preexec_fn=_scan_child_nice)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": "启动失败: %s" % str(e)[:140]}
         cok_map.write_scan_pid(p.pid, self._pid_path())
@@ -5446,64 +5632,94 @@ class EngineManager(object):
     - 查看引擎(view_engine): 页面当前正在看的那个账号的引擎, /api/state 等走它。
     - 并行引擎: 即使没在看, 也在后台轮询/守护/打怪的账号。
     - 账号库是空的(未登记)时退化为单引擎(pinned_key=None), 行为同 Phase 1。
+
+    **平台模式(owner 非空)**: 每个用户一个 `EngineManager` 实例 ——
+    见 `PlatformManager`。为什么要分实例: 并行集 / 查看指针 / 引擎表都是
+    这份对象上的状态, 两个用户共用一个实例 = 谁的号在跑、谁在看哪个号、
+    谁把谁从并行集里挤掉, 全都互相污染(表现是"我明明没开后台, 它却在跑")。
+    10 个人就是 10 个独立的小世界, 互不可见、互不干扰。
     """
 
     #: 并行账号集合的持久化文件(重启后自动恢复后台运行的账号)
     PARALLEL_FILE = os.path.join(accounts.ACCOUNTS_DIR, ".parallel")
     SCHEDULE_FILE = os.path.join(accounts.ACCOUNTS_DIR, ".automation-priorities")
 
-    def __init__(self, args):
+    def __init__(self, args, owner=None):
         self.args = args
+        self.owner = str(owner or "")
         self.lock = threading.RLock()
         self.engines = {}            # key(str, "" 表示默认单引擎) -> Engine
+        # 平台模式: 并行集/优先级按用户分开存(单用户模式仍用原来的全局文件,
+        # 老部署升级上来不用手工迁数据)。
         self.parallel = self._load_parallel()
         self.priorities = self._load_priorities()
         # 初始查看账号: 账号库 active 指针; 没有账号库就用默认引擎("")
         try:
-            self.view_key = accounts.get_active_key() or ""
+            self.view_key = accounts.get_active_key(owner=self.owner or None) or ""
         except Exception:  # noqa: BLE001
             self.view_key = ""
 
     # ---- 并行集合持久化 ----
+    def _state_path(self, filename):
+        """状态文件路径: 平台模式下落到**用户自己的目录**。
+
+        单用户模式沿用原来的 `accounts/.parallel`(老部署升级不用迁数据);
+        平台模式下每人一个文件 —— 否则 A 打开后台运行会把 B 的后台集也改了,
+        表现为"我没开后台, 它却在跑"。
+        """
+        if self.owner:
+            return os.path.join(accounts.DATA_ROOT, "u",
+                                accounts.safe_key(self.owner), filename)
+        return os.path.join(accounts.ACCOUNTS_DIR, filename)
+
     def _load_parallel(self):
         try:
-            with open(self.PARALLEL_FILE, encoding="utf-8") as fh:
+            with open(self._state_path(".parallel"), encoding="utf-8") as fh:
                 data = json.load(fh)
             return set(str(k) for k in data if k)
         except (OSError, ValueError):
             return set()
 
     def _save_parallel(self):
+        p = self._state_path(".parallel")
         try:
-            os.makedirs(accounts.ACCOUNTS_DIR, exist_ok=True)
-            tmp = self.PARALLEL_FILE + ".tmp"
+            os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+            tmp = p + ".tmp"
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(sorted(self.parallel), fh)
-            os.replace(tmp, self.PARALLEL_FILE)
+            os.replace(tmp, p)
         except OSError:
             pass
 
     def _load_priorities(self):
         try:
-            with open(self.SCHEDULE_FILE, encoding="utf-8") as fh:
+            with open(self._state_path(".automation-priorities"),
+                      encoding="utf-8") as fh:
                 data = json.load(fh)
             return {str(k): max(1, min(3, int(v))) for k, v in data.items()}
         except (OSError, ValueError, TypeError):
             return {}
 
     def _save_priorities(self):
+        p = self._state_path(".automation-priorities")
         try:
-            os.makedirs(accounts.ACCOUNTS_DIR, exist_ok=True)
-            tmp = self.SCHEDULE_FILE + ".tmp"
+            os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
+            tmp = p + ".tmp"
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(self.priorities, fh)
-            os.replace(tmp, self.SCHEDULE_FILE)
-        except OSError:
+            os.replace(tmp, p)
+        except (OSError, ValueError, TypeError):
             pass
 
     # ---- 引擎生命周期 ----
     def _make_engine(self, key):
-        eng = Engine(self.args, pinned_key=(key or None))
+        # 测试会注入"假引擎"(签名只有 args/pinned_key), 所以 owner 用 try 兜底 ——
+        # 少一个参数不该让并行模型本身跑不起来。
+        try:
+            eng = Engine(self.args, pinned_key=(key or None),
+                         owner=self.owner or None)
+        except TypeError:
+            eng = Engine(self.args, pinned_key=(key or None))
         eng.start()
         return eng
 
@@ -5610,10 +5826,13 @@ class EngineManager(object):
         """切换查看账号。key 必须已登记(或 "" 表示默认引擎)。"""
         if key and accounts.get_account(key) is None:
             return {"ok": False, "error": "账号库里没有这个账号: %s" % key}
+        # 平台层: 别人的号等于不存在
+        if self.owner and key and accounts.owner_of(key) != self.owner:
+            return {"ok": False, "error": "账号库里没有这个账号: %s" % key}
         with self.lock:
             if key:
                 try:
-                    accounts.set_active_key(key)
+                    accounts.set_active_key(key, owner=getattr(self, "owner", "") or None)
                 except Exception:  # noqa: BLE001
                     pass
             self.view_key = key or ""
@@ -5634,6 +5853,8 @@ class EngineManager(object):
             return {"ok": False, "error": "缺少账号 key"}
         if accounts.get_account(key) is None:
             return {"ok": False, "error": "账号库里没有这个账号: %s" % key}
+        if getattr(self, "owner", "") and accounts.owner_of(key) != self.owner:
+            return {"ok": False, "error": "账号库里没有这个账号: %s" % key}
         with self.lock:
             if on:
                 self.parallel.add(key)
@@ -5646,6 +5867,8 @@ class EngineManager(object):
 
     def set_priority(self, key, priority):
         if not key or accounts.get_account(key) is None:
+            return {"ok": False, "error": "账号库里没有这个账号"}
+        if getattr(self, "owner", "") and accounts.owner_of(key) != self.owner:
             return {"ok": False, "error": "账号库里没有这个账号"}
         try:
             priority = max(1, min(3, int(priority)))
@@ -5661,7 +5884,8 @@ class EngineManager(object):
         valid = []
         for raw in keys if isinstance(keys, list) else []:
             key = str(raw or "").strip()
-            if key and key not in valid and accounts.get_account(key) is not None:
+            if key and key not in valid and accounts.get_account(key) is not None \
+                    and (not self.owner or accounts.owner_of(key) == self.owner):
                 valid.append(key)
         if not valid:
             return {"ok": False, "error": "没有可管理的账号"}
@@ -5694,13 +5918,14 @@ class EngineManager(object):
                     self.engines.pop(key).stop()
                 except Exception:  # noqa: BLE001
                     pass
-            ok = accounts.remove_account(key)
-            if ok and key == accounts.get_active_key():
-                rest = accounts.list_accounts()
-                accounts.set_active_key(rest[0]["key"] if rest else "")
+            ok = accounts.remove_account(key, owner=getattr(self, "owner", "") or None)
+            if ok and key == accounts.get_active_key(owner=getattr(self, "owner", "") or None):
+                rest = accounts.list_accounts(owner=getattr(self, "owner", "") or None)
+                accounts.set_active_key(rest[0]["key"] if rest else "",
+                                        owner=self.owner or None)
             # 查看账号被删掉 -> 把视图挪到剩下的 active
             if key == self.view_key:
-                self.view_key = accounts.get_active_key() or ""
+                self.view_key = accounts.get_active_key(owner=self.owner or None) or ""
                 self._ensure(self.view_key)
                 self._prune()
         return {"ok": bool(ok),
@@ -5710,7 +5935,7 @@ class EngineManager(object):
     def accounts_overview(self):
         """账号库 + 运行状态(给页面下拉框 + 并行开关)。"""
         try:
-            lst = accounts.list_accounts()
+            lst = accounts.list_accounts(owner=getattr(self, "owner", "") or None)
         except Exception:  # noqa: BLE001
             lst = []
         with self.lock:
@@ -5745,10 +5970,103 @@ class EngineManager(object):
                 "running": sorted(k for k in running if k)}
 
 
+class PlatformManager(object):
+    """多用户平台: 用户目录 -> 各自的 EngineManager。
+
+    为什么要有这一层: `EngineManager` 的状态(并行集 / 查看指针 / 引擎表)
+    全是**对象属性**。10 个人共用一个实例, 等于 10 个人共用一套"谁在跑、
+    在看哪个号"的状态 —— A 点开后台运行, B 的账号列表里也会多一个;
+    A 切到小号, B 那边也跟着跳。所以每个登录用户一个独立实例。
+
+    生命周期: 登录时按需创建, 登出后**不立即销毁**(下一次登录大概率还是他,
+    重建引擎要重新连游戏服, 代价大), 交给 `_sweep()` 按空闲时间回收。
+    """
+
+    #: 用户运行时空闲多久回收(秒)。30 分钟没动作 = 没人看, 引擎停掉省内存。
+    IDLE_TTL = 30 * 60
+
+    def __init__(self, args):
+        self.args = args
+        self.lock = threading.RLock()
+        self.users = {}          # owner -> EngineManager
+        self.seen = {}           # owner -> 最后一次活跃时间戳
+
+    def get(self, owner, touch=True):
+        """取(或建)某用户的运行时。owner 为空表示单用户模式。"""
+        owner = str(owner or "")
+        with self.lock:
+            m = self.users.get(owner)
+            if m is None:
+                m = EngineManager(self.args, owner=owner or None)
+                try:
+                    m.start()
+                except Exception:  # noqa: BLE001
+                    pass
+                self.users[owner] = m
+            if touch:
+                self.seen[owner] = time.time()
+            return m
+
+    def touch(self, owner):
+        with self.lock:
+            self.seen[str(owner or "")] = time.time()
+
+    def drop(self, owner):
+        """立刻停掉并移除某用户的运行时(封禁 / 删用户时用)。"""
+        owner = str(owner or "")
+        with self.lock:
+            m = self.users.pop(owner, None)
+            self.seen.pop(owner, None)
+        if m is not None:
+            try:
+                m.stop_all()
+            except Exception:  # noqa: BLE001
+                pass
+        return m is not None
+
+    def sweep(self):
+        """回收长时间没人用的运行时。返回被回收的 owner 列表。"""
+        now = time.time()
+        dead = []
+        with self.lock:
+            for owner, m in list(self.users.items()):
+                if owner == "":          # 单用户/本地模式永不回收
+                    continue
+                if now - self.seen.get(owner, now) > self.IDLE_TTL:
+                    dead.append((owner, m))
+                    self.users.pop(owner, None)
+                    self.seen.pop(owner, None)
+        for _owner, m in dead:
+            try:
+                m.stop_all()
+            except Exception:  # noqa: BLE001
+                pass
+        return [o for o, _m in dead]
+
+    def stop_all(self):
+        with self.lock:
+            ms = list(self.users.values())
+            self.users.clear()
+            self.seen.clear()
+        for m in ms:
+            try:
+                m.stop_all()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def view_engine(self):
+        """单用户模式下的"当前查看引擎"(本地/安卓端沿用)。"""
+        return self.get("").view_engine()
+
+
 class Handler(BaseHTTPRequestHandler):
     engine = None
     manager = None
     token = None
+    #: 平台层: 非空 = 多用户模式(需要登录); None = 单用户/本地模式。
+    platform = None
+    #: 平台层会话 Cookie 名
+    SESSION_COOKIE = "cok_sid"
     server_version = "CokWeb/1.0"
 
     def log_message(self, fmt, *a):  # 静默默认访问日志
@@ -5758,17 +6076,99 @@ class Handler(BaseHTTPRequestHandler):
         q = self.path.split("?", 1)
         return parse_qs(q[1]) if len(q) > 1 else {}
 
+    def _cookie(self, name):
+        """从 Cookie 头里取一个值(不引第三方库)。"""
+        raw = self.headers.get("Cookie") or ""
+        for part in raw.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == name:
+                return v.strip()
+        return ""
+
+    def _client_ip(self):
+        """客户端 IP。
+
+        ⚠ 反向代理(以后要上 HTTPS 就会用)下 `client_address` 全是 127.0.0.1,
+        限流会全部算到代理身上 —— 所以优先读 `X-Forwarded-For` 的第一跳。
+        """
+        xff = self.headers.get("X-Forwarded-For") or ""
+        if xff:
+            return xff.split(",")[0].strip()[:64]
+        try:
+            return (self.client_address or [""])[0] or ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _current_user(self):
+        """当前登录用户 -> {uid, username, role, banned}; 未登录返回 None。
+
+        平台关闭时(platform is None)返回一个"匿名本地用户"占位, 让所有
+        下游的 owner 判定走同一条路径(空 owner = 单用户, 不隔离)。
+        """
+        if self.platform is None:
+            return {"uid": "", "username": "", "role": "admin", "banned": False}
+        sid = self._cookie(self.SESSION_COOKIE)
+        if not sid:
+            # 兼容: 也接受 X-Cok-Sid 头(脚本/curl 用), 但**不**接受 ?t= 里的 sid
+            sid = self.headers.get("X-Cok-Sid") or ""
+        if not sid or platform is None:
+            return None
+        uid = platform.session_user(sid)
+        if not uid:
+            return None
+        row = platform.user_get_by_uid(uid)
+        if not row:
+            return None
+        if row.get("banned"):
+            return {"uid": uid, "username": row["username"],
+                    "role": row.get("role") or "user", "banned": True}
+        return {"uid": uid, "username": row["username"],
+                "role": row.get("role") or "user", "banned": False}
+
+    def _require_user(self):
+        """要登录; 已登录返回 user dict, 否则回 None(并已写好响应)。"""
+        user = self._current_user()
+        if user is not None and user.get("banned"):
+            self._send(403, {"error": "banned", "note": "账号已被禁用"})
+            return None
+        return user
+
+    def _manager(self):
+        """当前请求该用的 EngineManager(按登录用户分区)。"""
+        user = self._current_user() or {}
+        if self.platform is None:
+            return self.manager
+        return self.platform.get(user.get("uid") or "")
+
     def _eng(self):
         """按 ?account=<key> 路由到对应引擎; 没给就用当前查看引擎。
 
         没有管理器(理论上不会)时退回旧的单引擎 Handler.engine。
         """
-        if self.manager is None:
+        m = self._manager()
+        if m is None:
             return self.engine
         key = (self._query().get("account") or [None])[0]
-        return self.manager.engine_for(key)
+        return m.engine_for(key)
 
     def _auth(self):
+        """鉴权: 平台模式看会话, 单用户模式看 token。
+
+        两种模式都保留, 是为了不破坏现有部署(本地控制台 / 安卓端内嵌服务器
+        都没有登录页, 用 `?t=<token>` 仍然对)。
+        """
+        if self.platform is not None:
+            user = self._current_user()
+            if user is None:
+                return False
+            if user.get("banned"):
+                return False
+            # 顺手记一下活跃时间(空闲回收靠它)
+            try:
+                self.platform.touch(user.get("uid") or "")
+            except Exception:  # noqa: BLE001
+                pass
+            return True
         if not self.token:
             return True
         got = self.headers.get("X-Cok-Token") or ""
@@ -5804,29 +6204,89 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "max-age=86400")
             self.end_headers()
             return
+        # 平台模式: 未登录 -> 登录页; 登录页本身不需要鉴权
+        if self.platform is not None and path in ("/login", "/login.html"):
+            if self._auth():
+                self.send_response(302)
+                self.send_header("Location", "/")
+                self.end_headers()
+                return
+            self._send(200, _resource_bytes("cok_login.html"),
+                       "text/html; charset=utf-8")
+            return
         if path in ("/", "/index.html"):
             if not self._auth():
-                self._send(403, "无效 token, 请用 ?t=<token> 访问")
+                if self.platform is not None:
+                    # 未登录: 直接给登录页(比 403 友好 —— 浏览器地址栏就能登)
+                    self._send(200, _resource_bytes("cok_login.html"),
+                               "text/html; charset=utf-8")
+                else:
+                    self._send(403, "无效 token, 请用 ?t=<token> 访问")
                 return
+            self._send(200, _resource_bytes("cok_webui.html"),
+                       "text/html; charset=utf-8")
+            return
+        if path == "/api/me":
+            # 谁登录了 + 他能看到几个账号。前端启动时用它判断要不要显示登录页。
+            user = self._current_user()
+            if user is None or user.get("banned"):
+                self._send(403, {"error": "unauthorized"})
+                return
+            m = self._manager()
             try:
-                html = open(_res("cok_webui.html"), "rb").read()
-            except OSError:
-                self._send(500, "缺少 cok_webui.html")
-                return
-            self._send(200, html, "text/html; charset=utf-8")
+                mine = accounts.list_accounts(owner=(user.get("uid") or None)
+                                              if self.platform is not None else None)
+            except Exception:  # noqa: BLE001
+                mine = []
+            row = platform.user_get_by_uid(user.get("uid") or "") if platform else None
+            self._send(200, {"ok": True, "user": user["username"],
+                             "role": user.get("role") or "user",
+                             "uid": user.get("uid") or "",
+                             "platform": self.platform is not None,
+                             "accounts": len(mine),
+                             # 初始随机密码没改过 -> 前端提示去改
+                             "must_change_pwd": bool(row and row.get("must_change_pwd")),
+                             "idle": (m is not None and not m.engines)})
             return
         if path == "/api/state":
             if not self._auth():
                 self._send(403, {"error": "unauthorized"})
                 return
-            snap = self._eng().snapshot()
-            # 用管理器的全局账号视图覆盖单引擎的(带 running / parallel 标记)
-            if self.manager is not None:
-                try:
-                    snap["accounts"] = self.manager.accounts_overview()
-                except Exception:  # noqa: BLE001
-                    pass
+            m = self._manager()
+            key = (getattr(m, "owner", "") or "") + "|" + (getattr(m, "view_key", "") or "")
+            now = time.time()
+            hit = _STATE_CACHE.get(key)
+            if hit and now - hit[0] < _STATE_TTL:
+                self._send(200, hit[1])
+                return
+            snap = m.view_engine().snapshot()
+            # 用管理器的账号视图覆盖单引擎的(带 running / parallel 标记;
+            # 平台模式下**只有自己名下的账号**)
+            try:
+                snap["accounts"] = m.accounts_overview()
+            except Exception:  # noqa: BLE001
+                pass
+            _STATE_CACHE[key] = (now, snap)
             self._send(200, snap)
+            return
+        if path == "/api/overview":
+            # 轻量总览: 只要"有哪些号 / 谁在跑 / 谁有罩"。
+            #
+            # 为什么要单独一个接口: `/api/state` 里塞了地图索引、技能表、
+            # 联盟、码头、天空岛等几十个模块的状态, 序列化一次是 **几百 KB**
+            # (单账号 180~200KB)。10 个人每人每 5 秒刷一次 = 每秒 400KB,
+            # 而其中 90% 的字段这一屏根本用不到。
+            # ⇒ 首页轮询走这个轻接口, 详情按需拉 `/api/state`。
+            if not self._auth():
+                self._send(403, {"error": "unauthorized"})
+                return
+            m = self._manager()
+            out = {"ok": True, "accounts": []}
+            try:
+                out["accounts"] = m.accounts_overview()
+            except Exception:  # noqa: BLE001
+                pass
+            self._send(200, out)
             return
         if path == "/api/scan/status":
             if not self._auth():
@@ -5839,6 +6299,42 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(403, {"error": "unauthorized"})
                 return
             self._send(200, self._eng()._scan_history())
+            return
+        if path == "/api/audit":
+            # 审计日志(仅管理员)
+            user = self._current_user()
+            if user is None or user.get("role") != "admin":
+                self._send(403, {"error": "forbidden"})
+                return
+            if platform is None:
+                self._send(200, {"ok": True, "rows": []})
+                return
+            uid = (self._query().get("uid") or [None])[0]
+            limit = int((self._query().get("limit") or ["100"])[0] or 100)
+            self._send(200, {"ok": True,
+                             "rows": platform.recent_audit(uid=uid, limit=limit)})
+            return
+        if path == "/api/admin/users":
+            # 用户管理(仅管理员)
+            user = self._current_user()
+            if user is None or user.get("role") != "admin":
+                self._send(403, {"error": "forbidden"})
+                return
+            if platform is None:
+                self._send(200, {"ok": True, "users": []})
+                return
+            self._send(200, {"ok": True, "users": platform.list_users()})
+            return
+        if path == "/api/admin/invites":
+            # 邀请码管理(仅管理员)
+            user = self._current_user()
+            if user is None or user.get("role") != "admin":
+                self._send(403, {"error": "forbidden"})
+                return
+            if platform is None:
+                self._send(200, {"ok": True, "invites": []})
+                return
+            self._send(200, {"ok": True, "invites": platform.invites_list()})
             return
         if path == "/api/export":
             # 导出地图索引成 Excel(xlsx); ?players=1 只导真实玩家(排除 NPC)
@@ -5871,18 +6367,141 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(404, {"error": "not found"})
 
+    def _read_body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if n else b"{}"
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except Exception:
+            body = {}
+        return body if isinstance(body, dict) else {}
+
+    def _send_cookie(self, sid, ttl):
+        self.send_response(200)
+        # HttpOnly: 前端 JS 读不到(降低 XSS 危害); SameSite=Lax: 跨站 POST 不带 Cookie
+        self.send_header("Set-Cookie",
+                         "%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax"
+                         % (self.SESSION_COOKIE, sid, int(ttl)))
+        body = b'{"ok":true}'
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _clear_cookie(self):
+        self.send_response(200)
+        self.send_header("Set-Cookie",
+                         "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+                         % self.SESSION_COOKIE)
+        body = b'{"ok":true}'
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _invalidate_state_cache(self, user):
+        """写操作后把该用户的 state 缓存清掉。"""
+        if self.platform is None:
+            return
+        uid = (user or {}).get("uid") or ""
+        prefix = str(uid) + "|"
+        for k in list(_STATE_CACHE.keys()):
+            if k == "" or k.startswith(prefix):
+                try:
+                    del _STATE_CACHE[k]
+                except KeyError:
+                    pass
+
+    def _audit_action(self, action, target, ok, detail=""):
+        """记一条审计(平台模式下)。单用户模式是 no-op。"""
+        if platform is None:
+            return
+        user = self._current_user() or {}
+        try:
+            platform.audit(user.get("uid") or "", action, target, ok,
+                           detail, self._client_ip())
+        except Exception:  # noqa: BLE001
+            pass
+
     def do_POST(self):  # noqa: N802
         path = self.path.split("?", 1)[0]
+
+        # ---- 改密码(任何登录用户) ----
+        if path == "/api/password":
+            # 改自己的密码(任何登录用户)
+            user = self._current_user()
+            if user is None:
+                self._send(403, {"ok": False, "error": "unauthorized"})
+                return
+            if platform is None:
+                self._send(404, {"ok": False, "error": "not found"})
+                return
+            body = self._read_body()
+            old_pw = str(body.get("old") or "")
+            new_pw = str(body.get("new") or "")
+            if len(new_pw) < 6:
+                self._send(400, {"ok": False, "error": "新密码至少 6 位"})
+                return
+            row = platform.user_get(user.get("username") or "")
+            if not row or not cok_users.verify_password(old_pw, row["pwd"],
+                                                        row["salt"]):
+                self._audit_action("password", "", False, "原密码不正确")
+                self._send(401, {"ok": False, "error": "原密码不正确"})
+                return
+            pwd, salt = cok_users.hash_password(new_pw)
+            platform.user_set_password(row["username"], pwd, salt)
+            try:
+                platform.conn().execute(
+                    "UPDATE users SET must_change_pwd=0 WHERE username=?",
+                    (row["username"],))
+                platform.conn().commit()
+            except Exception:  # noqa: BLE001
+                pass
+            self._audit_action("password", row["username"], True)
+            self._send(200, {"ok": True})
+            return
+
+        if path.startswith("/api/admin/"):
+            body = self._read_body()
+            self._handle_admin(path, body)
+            return
+
+        # ---- 平台层入口(不需要登录) ----
+        if path in ("/api/login", "/api/register", "/api/logout"):
+            if self.platform is None:
+                self._send(404, {"error": "not found"})
+                return
+            body = self._read_body()
+            if path == "/api/logout":
+                sid = self._cookie(self.SESSION_COOKIE)
+                uid = ""
+                if sid:
+                    try:
+                        uid = platform.session_user(sid, touch=False)
+                    except Exception:  # noqa: BLE001
+                        uid = ""
+                    try:
+                        platform.session_drop(sid)
+                    except Exception:  # noqa: BLE001
+                        pass
+                self._audit_action("logout", "", True)
+                self._clear_cookie()
+                return
+            self._handle_auth(path, body)
+            return
+
         if not self._auth():
             self._send(403, {"error": "unauthorized"})
             return
         if path in ("/api/scan/start", "/api/scan/stop", "/api/scan/history"):
-            n = int(self.headers.get("Content-Length") or 0)
-            raw = self.rfile.read(n) if n else b"{}"
-            try:
-                body = json.loads(raw.decode("utf-8"))
-            except Exception:
-                body = {}
+            body = self._read_body()
             if path == "/api/scan/start":
                 self._send(200, self._eng()._scan_start(body))
                 return
@@ -5894,22 +6513,165 @@ class Handler(BaseHTTPRequestHandler):
         if path != "/api/action":
             self._send(404, {"error": "not found"})
             return
-        n = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(n) if n else b"{}"
-        try:
-            body = json.loads(raw.decode("utf-8"))
-        except Exception:
-            body = {}
-        # 账号级操作交给管理器(影响全局注册表 / 运行集), 其余路由到对应引擎。
+        body = self._read_body()
+        # 账号级操作交给管理器(影响注册表 / 运行集), 其余路由到对应引擎。
         act = (body or {}).get("action")
-        if self.manager is not None and act in MANAGER_ACTIONS:
+        if act in MANAGER_ACTIONS:
             self._send(200, self._manager_action(act, body))
             return
-        self._send(200, self._eng().action(body))
+        r = self._eng().action(body)
+        # 任何写动作(set-setting 等)都让该用户的 state 缓存失效
+        if isinstance(r, dict) and r.get("ok"):
+            self._invalidate_state_cache(self._current_user() or {})
+        self._send(200, r)
+
+    # ---------------------------------------------------------------- 管理(admin only)
+    def _handle_admin(self, path, body):
+        """管理员操作: 封禁/解封用户、改角色、删除用户、生成邀请码。"""
+        user = self._current_user()
+        if user is None or user.get("role") != "admin":
+            self._send(403, {"ok": False, "error": "需要管理员权限"})
+            return
+        if platform is None:
+            self._send(404, {"ok": False, "error": "平台层未启用"})
+            return
+        target = str(body.get("username") or "").strip()
+        if not target:
+            self._send(400, {"ok": False, "error": "缺少 username"})
+            return
+
+        if path == "/api/admin/ban":
+            banned = bool(body.get("banned"))
+            # 不能封禁自己
+            if target == user.get("username"):
+                self._send(400, {"ok": False, "error": "不能封禁自己"})
+                return
+            ok = platform.user_set_banned(target, banned)
+            if ok:
+                self._audit_action("admin-ban" if banned else "admin-unban",
+                                   target, True)
+                # 封禁时踢掉该用户的所有会话
+                if banned:
+                    platform.session_drop_user(
+                        (platform.user_get(target) or {}).get("uid", ""))
+            self._send(200, {"ok": ok, "banned": banned})
+            return
+
+        if path == "/api/admin/role":
+            role = str(body.get("role") or "").strip()
+            if role not in ("user", "admin"):
+                self._send(400, {"ok": False, "error": "role 必须是 user 或 admin"})
+                return
+            if target == user.get("username"):
+                self._send(400, {"ok": False, "error": "不能改自己的角色"})
+                return
+            ok = platform.user_set_role(target, role)
+            if ok:
+                self._audit_action("admin-role", target, True, role)
+            self._send(200, {"ok": ok, "role": role})
+            return
+
+        if path == "/api/admin/delete-user":
+            if target == user.get("username"):
+                self._send(400, {"ok": False, "error": "不能删除自己"})
+                return
+            ok = platform.user_delete(target)
+            if ok:
+                self._audit_action("admin-delete", target, True)
+            self._send(200, {"ok": ok})
+            return
+
+        if path == "/api/admin/invite-new":
+            code = platform.invite_new(target or user.get("username", ""))
+            if code:
+                self._audit_action("admin-invite", code, True, target)
+            self._send(200, {"ok": bool(code), "code": code})
+            return
+
+        self._send(404, {"ok": False, "error": "not found"})
+
+    # ---------------------------------------------------------------- 登录/注册
+    def _handle_auth(self, path, body):
+        """登录 / 注册。成功后下发会话 Cookie(不是把凭据塞 URL)。
+
+        为什么不用 URL token: 它会进浏览器历史、Referer 头和访问日志 ——
+        等于把长期有效的凭据写在日志里。
+        """
+        username = str(body.get("username") or "").strip()
+        password = str(body.get("password") or "")
+        ip = self._client_ip()
+        bucket = "auth:%s" % ip
+        ok, retry = platform.rate_hit(bucket, 20, 60)
+        if not ok:
+            self._send(429, {"ok": False,
+                             "error": "尝试过于频繁, 请 %d 秒后再试" % retry})
+            return
+        if not username or not password:
+            self._send(400, {"ok": False, "error": "请输入用户名和密码"})
+            return
+        if path == "/api/register":
+            self._do_register(username, password, str(body.get("invite") or ""), ip)
+            return
+        self._do_login(username, password, ip)
+
+    def _do_login(self, username, password, ip):
+        row = platform.user_get(username)
+        if not row:
+            # 用户不存在: 不暴露"这个用户名存在与否"(防用户名枚举)
+            self._audit_action("login", "", False, "用户不存在")
+            self._send(401, {"ok": False, "error": "用户名或密码不正确"})
+            return
+        if row.get("banned"):
+            # 先判断封禁再验密码 —— 否则被封禁用户能靠"密码对不对"推断
+            # 自己的账号状态(安全上叫 oracle 攻击)
+            self._audit_action("login", username, False, "账号已被禁用")
+            self._send(403, {"ok": False, "error": "账号已被禁用, 请联系管理员"})
+            return
+        if not cok_users.verify_password(password, row["pwd"], row["salt"]):
+            # 失败也记审计 —— 有人在试弱口令时, 时间线上能看出来
+            self._audit_action("login", username, False, "密码不正确")
+            # 不暴露"用户名是否存在"(防用户名枚举): 统一回"用户名或密码不正确"
+            self._send(401, {"ok": False, "error": "用户名或密码不正确"})
+            return
+        sid = platform.new_sid()
+        platform.session_save(sid, row["uid"], cok_users.SESSION_TTL, ip=ip,
+                              ua=(self.headers.get("User-Agent") or "")[:200])
+        platform.user_touch_login(username)
+        platform.rate_reset("auth:%s" % ip)
+        self._audit_action("login", "", True)
+        self._send_cookie(sid, cok_users.SESSION_TTL)
+
+    def _do_register(self, username, password, invite, ip):
+        # 首个用户自动成为 admin 且免邀请码 —— 不然部署完没人能登进去。
+        first = (platform.user_count() == 0)
+        if not first:
+            if not invite:
+                self._send(400, {"ok": False, "error": "注册需要邀请码"})
+                return
+            ok, msg = platform.invite_consume(invite, username)
+            if not ok:
+                self._audit_action("register", username, False, msg)
+                self._send(403, {"ok": False, "error": msg})
+                return
+        # 平台模式下**用户表就是 SQLite**: 口令派生复用 cok_users 的算法,
+        # 但记录只写一处(以前先写 users.json 再同步过来, 等于两个真相)。
+        if cok_users is None:
+            self._send(500, {"ok": False, "error": "口令模块未加载"})
+            return
+        ok, msg = _platform_register_user(username, password,
+                                          role="admin" if first else "user")
+        if not ok:
+            self._send(400, {"ok": False, "error": msg})
+            return
+        self._audit_action("register", username, True,
+                           "首个用户(自动管理员)" if first else "邀请码注册")
+        self._do_login(username, password, ip)
 
     def _manager_action(self, act, body):
-        m = self.manager
+        m = self._manager()
         key = str((body or {}).get("key") or "").strip()
+        # 账号级写操作清掉该用户的 state 缓存(下次请求重算最新)
+        self._invalidate_state_cache(self._current_user() or {})
         if act == "account-switch":
             return m.set_view(key)
         if act == "account-parallel":
@@ -5922,16 +6684,25 @@ class Handler(BaseHTTPRequestHandler):
             keys = (body or {}).get("keys")
             return m.refresh_all(keys if isinstance(keys, list) else None)
         if act == "account-remove":
-            return m.remove_account(key)
+            r = m.remove_account(key)
+            self._audit_action("account-remove", key, bool(r.get("ok")),
+                               str(r.get("error") or ""))
+            return r
         if act == "account-add-device":
             # 入库仍走引擎(要读设备), 完成后按需拉起/刷新运行集
             r = m.view_engine()._account_add_device(body)
             if r.get("ok") and r.get("key"):
                 with m.lock:
                     m._ensure(m.view_key)
+                self._audit_action("account-add-device", str(r.get("key")), True)
+            else:
+                self._audit_action("account-add-device", "",
+                                   False, str(r.get("error") or "")[:160])
             return r
         if act == "account-relabel":
-            return m.view_engine()._account_relabel(body)
+            r = m.view_engine()._account_relabel(body)
+            self._audit_action("account-relabel", key, bool(r.get("ok")))
+            return r
         if act == "channel-add":
             # 渠道登录会话属于当前查看引擎；入库后必须同步切换管理器，
             # 否则状态/刷新仍会路由到启动时的默认空账号。
@@ -5954,6 +6725,221 @@ class Handler(BaseHTTPRequestHandler):
                                 + "，正在同步游戏状态"
             return r
         return {"ok": False, "error": "未知账号操作 %r" % act}
+
+
+def _platform_register_user(username, password, role="user"):
+    """在平台库里建一个用户。返回 (ok, msg)。
+
+    口令校验规则集中在 `cok_users.register` 里(长度/字符集), 这里直接复用
+    它的**校验**, 但**不写它的文件** —— 见 `platform.user_add` 的说明。
+    """
+    username = (username or "").strip()
+    if not cok_users._USER_RE.match(username):
+        return False, "用户名只允许 2-32 位字母数字 _ . -"
+    if len(password or "") < 6:
+        return False, "密码至少 6 位"
+    if platform.user_get(username):
+        return False, "用户名已存在"
+    pwd, salt = cok_users.hash_password(password)
+    uid = "u-" + secrets.token_hex(8)
+    if not platform.user_add(username, uid, pwd, salt, role=role):
+        return False, "写入用户失败(用户名可能已存在)"
+    return True, "注册成功"
+
+
+def _now():
+    return time.time()
+
+
+def _migrate_users():
+    """把旧的 ``users.json`` / ``sessions.json`` 迁进 SQLite, 返回统计 dict。
+
+    为什么要有这一步: 平台模式之前的版本把用户存在 JSON 文件里, 两边各有一份
+    就是"两个真相"。迁移**不删原文件**(改名成 ``*.migrated`` 留个后路),
+    所以做错了还能退回去。
+
+    幂等: 已经迁过的用户按 **uid** 认出来就跳过, 再跑一次不会重复写。
+    """
+    import time as _t
+    stats = {"users": 0, "sessions": 0, "skipped": 0, "errors": 0}
+    raw = cok_users._load(cok_users.USERS_FILE, {}) or {}
+    if not isinstance(raw, dict):
+        print("  users.json 格式不对(不是对象), 跳过")
+        return stats
+    for username, rec in raw.items():
+        if not isinstance(rec, dict):
+            continue
+        # 老格式没有 uid —— 用 "u-" + 用户名做稳定 id, 这样**重复迁移**时
+        # 还能认出是同一个人(否则每次跑都当成新用户)。
+        uid = str(rec.get("uid") or "").strip() or ("u-" + str(username))
+        old = platform.user_get_by_uid(uid) or platform.user_get(username)
+        if old:
+            stats["skipped"] += 1
+            continue
+        created = rec.get("created") or ""
+        ts = 0.0
+        if isinstance(created, str) and created:
+            try:
+                ts = _t.mktime(_t.strptime(created[:19], "%Y-%m-%dT%H:%M:%S"))
+            except (ValueError, OverflowError):
+                ts = 0.0
+        ok = platform.user_upsert(username, uid,
+                                  rec.get("pwd") or "", rec.get("salt") or "",
+                                  role=(rec.get("role") or "user"),
+                                  created=ts or 0.0)
+        if ok:
+            stats["users"] += 1
+        else:
+            stats["errors"] += 1
+    # 会话: sid 直接进库(库里存 sha256, 见 session_save)
+    sess = cok_users._load(cok_users.SESSIONS_FILE, {}) or {}
+    if isinstance(sess, dict):
+        for sid, rec in sess.items():
+            if not isinstance(rec, dict):
+                continue
+            row = platform.user_get(str(rec.get("user") or ""))
+            if not row:
+                continue
+            exp = float(rec.get("exp") or 0)
+            platform.session_save(str(sid), row["uid"],
+                                  max(1.0, exp - _now()), ip="")
+            stats["sessions"] += 1
+    if stats["users"] or stats["sessions"]:
+        try:
+            os.replace(cok_users.USERS_FILE, cok_users.USERS_FILE + ".migrated")
+            if os.path.exists(cok_users.SESSIONS_FILE):
+                os.replace(cok_users.SESSIONS_FILE,
+                           cok_users.SESSIONS_FILE + ".migrated")
+        except OSError as e:
+            print("  [!] 旧文件改名失败(不影响新库): %s" % e)
+    return stats
+
+
+def _migrate_accounts(owner_name):
+    """给"还没有主人"的账号认领归属, 返回统计 dict。
+
+    为什么要认领: 平台模式的账号过滤是按 ``owner == uid`` 做的。改造前导入的
+    号 ``owner`` 是空的 —— 平台模式下**一个都看不见**, 表现是"我明明有号,
+    登录后列表是空的"。这一步把无主号挂到指定用户名下。
+
+    ``owner_name`` 可以是用户名或 uid; 找不到就**什么都不做**并提示, 绝不瞎猜
+    一个归属(把号塞给错的人比空列表更糟)。
+    """
+    st = {"claimed": 0, "already": 0, "list": []}
+    row = platform.user_get(owner_name) or platform.user_get_by_uid(owner_name)
+    if not row:
+        print("  [!] 找不到用户: %s (先注册/迁移用户再认领)" % owner_name)
+        return st
+    owner = row["uid"]
+    for acc in accounts.list_accounts():
+        k = acc.get("key")
+        if (acc.get("owner") or ""):
+            st["already"] += 1
+            continue
+        try:
+            full = accounts.get_account(k) or {}
+            full["owner"] = owner
+            accounts.save_account(full, owner=owner)
+            st["claimed"] += 1
+            st["list"].append(k)
+        except Exception as e:  # noqa: BLE001
+            print("  [!] 认领失败 %s: %s" % (k, e))
+    return st
+
+
+def _platform_bootstrap(args):
+    """平台模式启动引导: 建管理员 / 生成邀请码。
+
+    为什么不在首次注册时"谁先来谁当管理员"就完事:
+      那样部署完的第一个小时里, 任何人扫到端口都能抢到 admin。
+      现在改成: 管理员由**部署者**用 `--admin` 指定(密码给了就用, 没给就
+      随机生成并打印在控制台), 邀请制只在这个基础上叠加。
+    """
+    if platform is None:
+        return
+    if platform.user_count() > 0:
+        return                      # 已经有用户了(管理员早就建过)
+    username = (getattr(args, "admin", "") or "admin").strip()
+    pwd = getattr(args, "admin_password", "") or secrets.token_urlsafe(9)
+    ok, msg = _platform_register_user(username, pwd, role="admin")
+    if not ok:
+        print("[!] 初始管理员创建失败: %s" % msg)
+        return
+    row = platform.user_get(username)
+    if row:
+        # 标记"密码是系统生成的", 登录后前端会提示改掉
+        try:
+            platform.conn().execute(
+                "UPDATE users SET must_change_pwd=1 WHERE username=?",
+                (username,))
+            platform.conn().commit()
+        except Exception:  # noqa: BLE001
+            pass
+    platform.audit(row["uid"] if row else "", "bootstrap", username, True,
+                   "初始管理员", "127.0.0.1")
+    print("-" * 60)
+    print("  初始管理员: %s" % username)
+    print("  初始密码  : %s" % pwd)
+    print("  (请登录后立刻用 `python3 -m cok users passwd %s` 改掉)" % username)
+    print("-" * 60, flush=True)
+
+
+def _run_migrate(args):
+    """执行 --migrate, 打印结果, 返回退出码。**不启动服务**。
+
+    用法::
+
+        # 1) 迁移用户与会话
+        python3 -m cok console --platform --migrate users
+
+        # 2) 给"没有主人"的存量账号认领归属(不指定就只报告)
+        python3 -m cok console --platform --migrate accounts \
+                --migrate-owner boss
+
+        # 3) 两步一起做
+        python3 -m cok console --platform --migrate users accounts \
+                --migrate-owner boss
+    """
+    if platform is None:
+        print("[!] 平台层 cok_platform 导入失败, 无法迁移:")
+        print(PLATFORM_IMPORT_ERROR or "  (未知原因)")
+        return 2
+    platform.init()
+    want = list(args.migrate or [])
+    print("=" * 60)
+    print("  平台库: %s" % platform.DB_PATH)
+    print("=" * 60)
+
+    if "users" in want:
+        st = _migrate_users()
+        print("  用户/会话迁移: 新增 %d 个用户, %d 条会话, 跳过 %d 个, 失败 %d 个"
+              % (st["users"], st["sessions"], st["skipped"], st["errors"]))
+    if "accounts" in want:
+        if not (args.migrate_owner or "").strip():
+            # 不猜归属: 没有 --migrate-owner 就只把"谁没主人"列出来
+            orphans = [a["key"] for a in accounts.list_accounts()
+                       if not (a.get("owner") or "")]
+            print("  账号认领: 有 %d 个账号没有主人%s"
+                  % (len(orphans), (": " + ", ".join(orphans)) if orphans else ""))
+            if orphans:
+                print("  → 加 --migrate-owner <用户名> 指定归谁")
+        else:
+            st = _migrate_accounts(args.migrate_owner)
+            print("  账号认领: 新认领 %d 个, 已有归属 %d 个%s"
+                  % (st["claimed"], st["already"],
+                     ("(" + ", ".join(st["list"]) + ")") if st["list"] else ""))
+
+    row = platform.first_user()
+    print("-" * 60)
+    print("  当前用户总数: %d%s" % (platform.user_count(),
+                                  ("(最早: %s / %s)" % (row["username"], row["role"]))
+                                  if row else ""))
+    orphan_n = len([a for a in accounts.list_accounts()
+                    if not (a.get("owner") or "")])
+    print("  账号总数: %d (其中无主: %d)"
+          % (len(accounts.list_accounts()), orphan_n))
+    print("=" * 60)
+    return 0
 
 
 def main():
@@ -5992,6 +6978,17 @@ def main():
                     default=["push.world.injured"])
     ap.add_argument("--token", help="访问 token(默认自动生成)")
     ap.add_argument("--no-token", action="store_true", help="不启用鉴权(仅本机可用)")
+    ap.add_argument("--platform", action="store_true",
+                    help="多用户平台模式: 登录页 + 会话 Cookie + 每用户独立账号空间")
+    ap.add_argument("--admin", help="平台模式下指定初始管理员用户名(密码首次登录时设置)")
+    ap.add_argument("--admin-password", help="初始管理员密码(不给则首次启动生成随机密码并打印)")
+    ap.add_argument("--migrate", choices=["users", "accounts"], nargs="*",
+                    help="把旧数据迁进平台库后退出: users=用户/会话, "
+                         "accounts=给无主账号指定归属(--migrate-owner)")
+    ap.add_argument("--migrate-owner", default="",
+                    help="配合 --migrate accounts: 把无主账号归到哪个用户")
+    ap.add_argument("--migrate-yes", action="store_true",
+                    help="跳过确认直接迁移")
     ap.add_argument("--persistent", action="store_true",
                     help="常驻连接(实时监控, 但会把 App 踢下线)")
     ap.add_argument("--open", action="store_true", help="启动后打开浏览器")
@@ -5999,6 +6996,12 @@ def main():
     ap.add_argument("--json", action="store_true", help="日志用 JSON 行(与 daemon 同参数)")
     args = ap.parse_args()
     args.json = False   # 网页控制台走自己的事件流, 这里保持 daemon 的文本输出
+
+    # ---- 一次性迁移(做完就退出; 不启服务) ----
+    # 放这里而不是 main 开头: 要保证 platform.init() 已经建好库,
+    # 否则迁移会往一个还没建表的地方写。
+    if args.migrate is not None:
+        return _run_migrate(args)
     # 补齐 daemon 需要但网页不暴露的参数默认值
     for k, v in dict(
         # Keep the proven lightweight task endpoints first.  Some channel
@@ -6023,20 +7026,45 @@ def main():
     token = None if args.no_token else (args.token or read_or_make_token())
     Handler.token = token
     # 多账号并行: 管理器为每个活跃账号持有一个引擎; 账号库为空时退化为单引擎。
-    Handler.manager = EngineManager(args)
-    Handler.manager.start()
-    # 兼容: 留一个 engine 引用指向当前查看引擎(极少数不带 ?account 的旧调用兜底)
-    Handler.engine = Handler.manager.view_engine()
+    if args.platform:
+        # 平台模式: 每个登录用户一个独立 EngineManager(见 PlatformManager)。
+        # 这里仍然建一个"匿名"运行时, 给未登录时的 /api/me 等路由兜底。
+        if platform is None:
+            print("[!] 平台层 cok_platform 导入失败, 无法启用多用户模式:")
+            print(PLATFORM_IMPORT_ERROR or "  (未知原因)")
+            return 2
+        platform.init()
+        # 顺序很重要: **先** bootstrap 再建运行时 —— 反过来会出现一个
+        # "还没建管理员就被别人注册走 admin"的窗口期。
+        _platform_bootstrap(args)
+        Handler.platform = PlatformManager(args)
+        # 匿名运行时只给未登录时的 /api/me 兜底(读账号数为 0), 不建引擎
+        # 也能正常回答; 真引擎等第一个登录用户来建。
+        Handler.manager = None
+        Handler.engine = None
+    else:
+        Handler.manager = EngineManager(args)
+        Handler.manager.start()
+        # 兼容: 留一个 engine 引用指向当前查看引擎(极少数不带 ?account 的旧调用兜底)
+        Handler.engine = Handler.manager.view_engine()
 
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     url = "http://%s:%d/" % (args.host, args.port)
-    if token:
-        url += "?t=%s" % token
     print("=" * 60)
-    print("  COK 直连控制台已启动")
-    print("  打开: %s" % url)
-    if not token:
-        print("  (未启用 token —— 仅建议本机访问)")
+    if args.platform:
+        print("  COK 直连控制台已启动 · 多用户平台模式")
+        print("  打开: %s  (首次访问会要求登录)" % url)
+        try:
+            st = platform.stats()
+            print("  用户 %d 个 · 有效会话 %d 个 · 未用邀请码 %d 个"
+                  % (st["users"], st["sessions"], st["invites_unused"]))
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        print("  COK 直连控制台已启动")
+        print("  打开: %s" % (url + ("?t=%s" % token if token else "")))
+        if not token:
+            print("  (未启用 token —— 仅建议本机访问)")
     print("  Ctrl+C 停止")
     print("=" * 60, flush=True)
     if args.open:
@@ -6049,7 +7077,10 @@ def main():
     except KeyboardInterrupt:
         print("\n[*] 停止中 ...")
     finally:
-        Handler.manager.stop_all()
+        if Handler.platform is not None:
+            Handler.platform.stop_all()
+        elif Handler.manager is not None:
+            Handler.manager.stop_all()
         srv.server_close()
     return 0
 
