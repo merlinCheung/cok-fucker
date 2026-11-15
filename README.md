@@ -18,7 +18,7 @@ Python 核心**。
 make run          # 启动桌面端控制台 → http://127.0.0.1:8770/?t=<token>
 make build-apk    # 编译安卓 App(debug APK)
 make install-app  # 编译并直接装到已连接的手机
-make test         # 跑离线回归测试(26 个用例, 几秒钟)
+make test         # 跑离线回归测试(29 个用例, 几秒钟)
 make help         # 看全部入口
 ```
 
@@ -123,6 +123,80 @@ make install-app               # 直接装到已连接设备
 | Python 来源 | 仓库 `cok/core/` | 打进 APK 的同一批模块 |
 | 资源目录 | `cok/resources/` | APK assets 解出的 `resources/` |
 | 数据目录 | `cok/data/` | `files/cok/data` |
+
+### 平台模式(多用户 + 登录 + 邀请码)
+
+不加 `--platform` 时是**单机模式**: 一个 token 管全部, 谁拿到地址就是谁。
+加了就是**平台模式**: 登录页 + 会话 Cookie, 每个用户一套独立的账号空间。
+
+```bash
+python3 -m cok console --platform --admin boss              # 建管理员, 密码随机生成后打印
+python3 -m cok console --platform --admin boss --admin-password '***'
+python3 -m cok console --platform --migrate users          # 旧 users.json → SQLite
+python3 -m cok console --platform --migrate accounts --migrate-owner boss \
+        --migrate-yes                                      # 给无主账号指定归属
+```
+
+| | 单机模式(默认) | 平台模式(`--platform`) |
+|---|---|---|
+| 鉴权 | `?t=<token>`, token 在 `cok/data/.cok-web-token` | 用户名 + 密码, 会话 Cookie |
+| 账号归属 | 所有人共用账号库 | **每个用户只看得到自己的号**(按 `owner` 隔离) |
+| 首屏 | 直接进控制台 | 未登录先给登录页 `cok_login.html` |
+| 注册 | 无 | 需要**邀请码**, 首个用户自动成为 admin 且免邀请码 |
+
+启动时 bootstrap 的顺序很关键: **先**建管理员**再**开监听 —— 反过来会有一个
+「还没建管理员就被别人注册走 admin」的窗口期。管理员密码没给就随机生成并打印,
+同时打 `must_change_pwd` 标记, 登录后页面会提示改掉。
+
+**邀请码**(管理员在页面右上角「管理」里发, 或走 API):
+
+```bash
+# 发一个邀请码(target 是备注, 记给谁用的)
+curl -b <cookie> -X POST http://host:8770/api/admin/invite-new \
+     -H 'Content-Type: application/json' -d '{"target":"someone"}'
+```
+
+注册页要把码填进「邀请码」输入框(先点「注册一个」切到注册模式)。
+码是**一次性**的(用过即失效), 本身**不过期**; 过期只在建码时显式给
+`expires_at` 才有意义。
+
+**管理员能做的**(页面上只有 `role=admin` 才显示「管理」「审计」两个按钮):
+
+| 能力 | API |
+|---|---|
+| 列用户 / 列邀请码 | `GET /api/admin/users` · `GET /api/admin/invites` |
+| 封禁 / 解封(会踢掉该用户所有会话) | `POST /api/admin/ban` |
+| 设普通 / 管理员 | `POST /api/admin/role` |
+| 删用户 | `POST /api/admin/delete-user` |
+| 发邀请码 | `POST /api/admin/invite-new` |
+| 看操作审计 | `GET /api/audit?limit=100` |
+| 改自己的密码 | `POST /api/password` |
+
+不能封禁/改角色/删**自己** —— 否则管理员一键把自己锁在门外。
+
+**数据落在哪**: 用户、会话、邀请码、审计全在 SQLite
+(`cok/data/platform.db`, 可用 `COK_PLATFORM_DB` 覆盖);
+账号凭据仍在账号库, 用 `owner` 字段挂到用户名下。
+
+**跑在服务器上**(部署示例, 内网 + 反代):
+
+```ini
+# /etc/systemd/system/cok-console.service
+[Service]
+WorkingDirectory=/home/merlin/cok-deploy
+Environment=COK_DATA_ROOT=/home/merlin/cok-deploy/cok/data
+ExecStart=/usr/bin/python3 -m cok console --host 0.0.0.0 --port 8770 \
+          --platform --admin boss
+Restart=always
+```
+
+```bash
+sudo systemctl enable --now cok-console
+journalctl -u cok-console -f          # 首次启动会打印初始管理员密码
+```
+
+> ⚠️ `--host 0.0.0.0` 会暴露到整个网段。公网机器**必须**放在 HTTPS 反代后面
+> (Caddy / nginx 终止 TLS), 否则会话 Cookie 和密码都是明文过网。
 
 ---
 
