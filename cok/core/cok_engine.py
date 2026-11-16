@@ -1440,7 +1440,7 @@ class Engine(object):
                     msg = "自动保护失败: %s" % str(e)[:120]
                     self._automation_record("autoShield", "failed", msg, msg)
         # 自动签到 / 自动开罩 / webhook —— 全部以网页保存的设置为准
-        """legacy marker: automation is handled above with policy enforcement."""
+        # (legacy marker: automation is handled above with policy enforcement)
         hook_url = self.settings.get("hookURL")
         if hook_url:
             self.daemon.alert.url = hook_url
@@ -2539,6 +2539,7 @@ class Engine(object):
                     "autoshield": self.autoshield_enabled,
                     "slots": (self.shield_state or {}).get("slots") or [],
                     "specs": (self.shield_state or {}).get("specs") or [],
+                    "backpack_items": (self.shield_state or {}).get("backpack_items") or [],
                     "persistent": self.persistent,
                     # 自动开罩的推送监听心跳(证明它确实在跑)
                     "watch_ticks": self.shield_watch_ticks,
