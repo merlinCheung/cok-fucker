@@ -1446,8 +1446,178 @@ function renderScore(st){
     b.classList.toggle('primary', n>0);
     b.textContent=n>0?('一键领取 ('+n+')'):'一键领取';
   }
-  const sum=$('sumScore');
-  if(sum) sum.textContent=sc.ok?('积分 '+(sc.monthIntegral!=null?sc.monthIntegral:'-')+' · 可领 '+(sc.claimable||0)):'';
+const sum=$('sumScore');
+if(sum) sum.textContent=sc.ok?('积分 '+(sc.monthIntegral!=null?sc.monthIntegral:'-')+' · 可领 '+(sc.claimable||0)):'';
+
+/* 积分商城自动购买配置渲染 */
+function renderScoreBuy(st){
+  const sc=st.score||{};
+  const box=$('scoreBuyList');
+  const hint=$('scoreBuyHint');
+  const chk=$('chkScoreAutoBuy');
+  if(!box) return;
+
+  // 自动购买总开关
+  if(chk){
+    chk.checked = !!sc.autoBuy;
+    chk.onchange=async()=>{
+      const items = (window.__scoreBuyItems||[]).map(it=>({
+        targetId: it.targetId, name: it.name, period: it.period,
+        maxPrice: it.maxPrice, num: it.num, forceBuy: it.forceBuy, enabled: it.enabled
+      }));
+      const r=await api('/api/action',{action:'score',op:'set-auto-buy',enabled:chk.checked,items:items});
+      if(r.ok===false){
+        setRes('resScoreBuy','保存失败: '+(r.errorText||r.error||''),'err'); toast('自动购买保存失败','err');
+      }else{
+        toast('自动购买'+(chk.checked?'开启':'关闭'),'ok');
+        await refresh(true);
+      }
+    };
+  }
+
+  const goods=sc.buyable||[];
+  const monthIntegral=sc.buyableMonthIntegral!=null?sc.buyableMonthIntegral:'-';
+  if(hint){
+    hint.textContent = goods.length
+      ? ('可用积分 '+monthIntegral+' · 商品 '+goods.length+' 个 · 自动购买='+(sc.autoBuy?'开':'关'))
+      : (sc.buyableError?('读取商品失败: '+esc(sc.buyableError)):'点「刷新商品」加载可购买列表');
+  }
+
+  if(goods.length===0){
+    box.innerHTML='<div class="empty">没有可购买商品</div>';
+    return;
+  }
+
+  const autoItems = (sc.autoBuyItems||[]).reduce((m,it)=>{ m[it.targetId]=it; return m; }, {});
+
+  box.innerHTML='<table class="sqtable"><thead><tr>'
+    +'<th style="width:26px"><input type="checkbox" id="selAllBuy" title="全选"></th>'
+    +'<th>商品</th><th class="mini">价格</th><th class="mini">已买/上限</th>'
+    +'<th class="mini">周期</th><th class="mini">最大价格</th><th class="mini">数量</th>'
+    +'<th class="mini">启用</th><th>操作</th></tr></thead><tbody>'
+    +goods.map(g=>{
+      const it=autoItems[g.targetId]||{};
+      const enabled=!!it.enabled;
+      const already=intVal(g.alreadyBuyTimes), limit=intVal(g.buyTimes);
+      const limitText = limit?(`${already}/${limit}`):('-/-');
+      const canBuy = !limit || already<limit;
+      const periodSel = `
+        <select class="buyPeriod" data-tid="${esc(g.targetId)}">
+          <option value="daily"${it.period==='daily'?'selected':''}>每天</option>
+          <option value="weekly"${it.period==='weekly'?'selected':''}>每周</option>
+          <option value="monthly"${it.period==='monthly'?'selected':''}>每月</option>
+        </select>`;
+      const maxPriceInp = `
+        <input type="number" class="buyMaxPrice" data-tid="${esc(g.targetId)}"
+               value="${it.maxPrice!=null?it.maxPrice:''}" placeholder="无上限">`;
+      const numInp = `
+        <input type="number" class="buyNum" data-tid="${esc(g.targetId)}"
+               value="${it.num!=null?it.num:1}" min="1">`;
+      const enabledChk = `
+        <label style="margin:0"><input type="checkbox" class="buyEnabled" data-tid="${esc(g.targetId)}"${enabled?'checked':''}></label>`;
+      const buyBtn = canBuy
+        ? `<button class="buyOne" data-tid="${esc(g.targetId)}" data-itemid="${esc(g.itemId||'')}" data-name="${esc(g.name||'')}" data-price="${esc(String(g.price||''))}">购买</button>`
+        : '<span class="tag">已达上限</span>';
+      return '<tr>'
+        +'<td style="width:26px"><input type="checkbox" class="buyRow" data-tid="'+esc(g.targetId)+'"></td>'
+        +'<td>'+esc(g.name||g.itemId||'-')+' <span class="mini">'+esc(g.targetId||'')+'</span></td>'
+        +'<td class="mini">'+esc(String(g.price||'-'))+' 积分</td>'
+        +'<td class="mini">'+esc(limitText)+'</td>'
+        +'<td class="mini">'+periodSel+'</td>'
+        +'<td class="mini">'+maxPriceInp+'</td>'
+        +'<td class="mini">'+numInp+'</td>'
+        +'<td class="mini">'+enabledChk+'</td>'
+        +'<td>'+buyBtn+'</td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table>';
+
+  // 全选/反选
+  const selAll=$('selAllBuy');
+  if(selAll){
+    selAll.onchange=()=>{
+      const checked=selAll.checked;
+      box.querySelectorAll('.buyRow').forEach(cb=>cb.checked=checked);
+    };
+  }
+
+  // 单个商品购买按钮
+  box.querySelectorAll('.buyOne').forEach(btn=>{
+    btn.onclick=async()=>{
+      await buyOne(btn.dataset.tid, btn.dataset.itemid, btn.dataset.name, btn.dataset.price);
+    };
+  });
+
+  // 参数变更时自动保存
+  box.querySelectorAll('.buyPeriod,.buyMaxPrice,.buyNum,.buyEnabled,.buyRow').forEach(el=>{
+    el.onchange=async()=>{
+      await saveBuyItems();
+    };
+  });
+}
+
+function intVal(v){
+  try{ return v==null?0:parseInt(v,10)||0; }catch(e){ return 0; }
+}
+
+async function saveBuyItems(){
+  const chk=$('chkScoreAutoBuy');
+  const items=[];
+  document.querySelectorAll('#scoreBuyList .buyRow').forEach(cb=>{
+    const tid=cb.dataset.tid;
+    const row=cb.closest('tr');
+    if(!row) return;
+    const periodSel=row.querySelector('.buyPeriod');
+    const maxPriceInp=row.querySelector('.buyMaxPrice');
+    const numInp=row.querySelector('.buyNum');
+    const enabledChk=row.querySelector('.buyEnabled');
+    items.push({
+      targetId: tid,
+      name: (row.dataset.name||''),
+      period: periodSel?periodSel.value:'daily',
+      maxPrice: maxPriceInp? (maxPriceInp.value===''?null:parseFloat(maxPriceInp.value)) : null,
+      num: numInp? parseInt(numInp.value||'1',10) : 1,
+      forceBuy: 0,
+      enabled: enabledChk? enabledChk.checked : false
+    });
+  });
+  window.__scoreBuyItems=items;
+  const r=await api('/api/action',{action:'score',op:'set-auto-buy',enabled:!!chk.checked,items:items});
+  if(r.ok===false){
+    setRes('resScoreBuy','保存失败: '+(r.errorText||r.error||''),'err'); toast('自动购买配置保存失败','err');
+  }else{
+    toast('自动购买配置已保存','ok');
+  }
+}
+
+async function buyOne(targetId, itemId, name, price){
+  const r=await api('/api/action',{action:'score',op:'buy',targetId:targetId,num:1,forceBuy:0});
+  if(r.ok===false){
+    const why=r.errorText||r.errorCode||r.error||'未知错误';
+    setRes('resScoreBuy','购买失败: '+esc(why),'err'); toast('购买 '+esc(name||targetId)+' 失败: '+why,'err');
+  }else{
+    const cost=r.currObj?('花费 '+r.currObj.costNum+' 积分'):'';
+    const got=r.goodsObj?('获得 '+r.goodsObj.itemId+' ×'+(r.goodsObj.addNum||r.goodsObj.num||r.goodsObj.count||'')):'';
+    setRes('resScoreBuy','已购买 '+esc(name||targetId)+' · '+cost+' · '+got,'ok'); toast('购买 '+esc(name||targetId)+' 成功','ok');
+  }
+  await refresh(true);
+}
+
+$('btnScoreBuyRefresh').onclick=async()=>{
+  await busy($('btnScoreBuyRefresh'),'读取中…',async()=>{
+    const r=await api('/api/action',{action:'score',op:'list-buy'});
+    if(r.ok===false){
+      setRes('resScoreBuy','读取失败: '+(r.errorText||r.errorCode||r.error||''),'err'); toast('读取商品失败','err');
+    }else{
+      window.__scoreBuyItems = (r.items||[]).map(it=>({
+        targetId: it.targetId, name: it.name, period: it.period,
+        maxPrice: it.maxPrice, num: it.num, forceBuy: it.forceBuy, enabled: it.enabled
+      }));
+      toast('已加载 '+r.goods.length+' 个商品','ok');
+    }
+    await refresh(true);
+  });
+};
 }
 
 /* 福利中心(每日好礼 / 龙之馈赠) */
@@ -1739,7 +1909,7 @@ async function refresh(silent){
   if(st.error==='unauthorized'){ $('connText').textContent='token 无效'; return null; }
   S.state=st;
   renderHeader(st); renderAccounts(st); renderFleet(st); renderCardsStable(st); renderTaskStats(st); renderQueues(st); renderItems(st);
-  renderShield(st); renderEvents(st); renderHunt(st); renderDock(st); renderSky(st); renderWelfare(st); renderScore(st); renderAlliance(st); renderAssist(st);
+  renderShield(st); renderEvents(st); renderHunt(st); renderDock(st); renderSky(st); renderWelfare(st); renderScore(st); renderScoreBuy(st); renderAlliance(st); renderAssist(st);
   renderStaminaItems(st.stamina_items);
   renderOverview(st); renderSummaries(st); renderScan(st);
   if(!silent) $('sLast').title='页面读取时间';

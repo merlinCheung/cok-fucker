@@ -239,9 +239,15 @@ class Engine(object):
         self._hunter_starting = False
         self.shield_state = {}
         # 背包快照(login.init 实时拉取): {"at": 秒, "items": [原始条目]}
-        # None = 本进程还没拉过。保护罩下拉/药水数量都从这里来,
+        # None = 还没拉过。保护罩下拉/药水数量/加速道具都从这里来,
         # 不再依赖 frida 时代的 bag-items.json(服务器上根本采不到)。
+        # 按账号落盘(accounts/<uid>.bag.json), 启动时 _ensure_account 后加载。
         self.bag_snapshot = None
+        # 背包正在后台拉取中(login.init ~45 秒): 置位期间 push-watch 不碰连接,
+        # 轮询循环也不重复发起拉取。
+        self._bag_refreshing = False
+        # 上次自动拉背包的时间戳(秒); 轮询循环按 TTL 定时补一次。
+        self._bag_auto_at = 0.0
         self.persistent_arg = self.persistent
         # ⚠⚠ 自动开罩靠的是**服务端推送**(push.world.injured), 而推送是在
         # "等命令响应"时从 socket 读出来的 —— **短连接根本收不到**
@@ -261,6 +267,10 @@ class Engine(object):
         self.welfare_state = {}
         # 积分商城(ScoreMall, mallId=125)积分任务奖励
         self.score_state = {}
+        # 积分商城自动购买配置: [{targetId,name,period,maxPrice,num,enabled}]
+        self.score_auto_buy = []
+        # 积分商城可购买商品列表(供页面配置，由 list-buy 填充)
+        self.score_buyable = {}
         # 联盟(科技树/任务板/捐献/使命/商店)状态
         self.alliance_state = {}
         self.alliance_at = 0.0
@@ -438,6 +448,12 @@ class Engine(object):
             # 顺带把"重启后卡片一直空着"和"数据过期"两种情况分开了：
             # 有内容就是回填生效，没内容就是还没轮询到。
             self._restore_states()
+            # 背包快照也按账号隔离: 换账号时先清掉内存里上一个号的快照,
+            # 再从这个号自己的 bag.json 加载(没有就保持 None, 等拉取)。
+            with self.lock:
+                self.bag_snapshot = None
+                self._bag_auto_at = 0.0
+            self._load_bag_from_disk()
         # 这两个模块的数据目录现在是**按账号的作用域**(cok_scope), 不再是
         # 进程内全局。同进程里 N 个引擎并行轮询时, 各写各的桶 —— 原来
         # "谁最后解析账号谁赢"(A 号的索引/boss 注册表写进 B 号文件)的问题
@@ -659,6 +675,8 @@ class Engine(object):
         "autoWelfare": False,
         # 积分商城积分任务: 可领时自动领(领奖, 风险低), 默认关
         "scoreAutoClaim": False,
+        # 积分商城自动购买(按用户勾选的商品、周期购买): 默认关
+        "scoreAutoBuy": False,
         # 港口(码头航海贸易)自动: 默认都关, 由用户显式打开
         "dockAutoReward": False, "dockAutoSend": False,
         # 天空之境(探索消耗战力/部队, 风险高): 默认都关, 由用户显式打开
@@ -691,6 +709,7 @@ class Engine(object):
         ("autoShield", "被攻击自动保护"),
         ("autoWelfare", "福利自动领取"),
         ("scoreAutoClaim", "积分任务自动领取"),
+        ("scoreAutoBuy", "积分商城自动购买"),
         ("dockAutoReward", "港口自动领取"),
         ("dockAutoSend", "港口自动分派"),
         ("skyAutoReward", "天空之境自动领奖"),
@@ -1552,6 +1571,17 @@ class Engine(object):
         hook_kind = self.settings.get("hookType")
         if hook_kind:
             self.daemon.alert.kind = hook_kind
+        # 背包快照定时自动拉取(login.init): 没拉过, 或距上次超过 TTL 就补一次。
+        # 复用本轮已持有的 op_lock + account_lock 连接, 不额外占号、不互踢。
+        # ⚠️ login.init 要 40~50 秒, 所以**严格 TTL 门控**(默认 4 小时):
+        #    背包里保护罩/加速道具数量变化不频繁; 药水被猎人喝掉那条路径
+        #    由猎人自己 fetch_bag 刷新, 不靠这里。
+        try:
+            self.phase = "背包"
+            if self._bag_should_auto_refresh():
+                self._refresh_bag_snapshot()
+        except Exception as e:  # noqa: BLE001
+            _quiet(e, "定时拉背包")
         # 保护罩状态(槽位 + 当前到期时间) —— 复用本轮连接, 不额外占号。
         # 服务端**只在有罩时**才给 shieldEndTime, 所以这一项天然"有罩才有值"。
         try:
@@ -1582,6 +1612,9 @@ class Engine(object):
         # 积分商城: 积分任务奖励, 按设置自动领
         self.phase = "积分商城"
         self._safe_tick(self._score_tick)
+        # 积分商城: 自动购买(按用户勾选的商品、周期购买)
+        self.phase = "积分商城购买"
+        self._safe_tick(self._score_auto_buy_tick)
         # 联盟: 科技树/任务板/捐献/使命/商店(只读, 写操作由页面显式触发)
         self._safe_tick(self._alliance_tick)
         # 领地自动收取(定时结算已产出的资源, 无损)
@@ -1917,7 +1950,104 @@ class Engine(object):
             "last_auto": st.get("last_auto") or "",
             "last_claim": st.get("last_claim"),
             "autoClaim": bool(self.settings.get("scoreAutoClaim", False)),
+            # 积分商城自动购买配置(给页面编辑)
+            "autoBuy": bool(self.settings.get("scoreAutoBuy", False)),
+            "autoBuyItems": [dict(it) for it in (self.score_auto_buy or [])],
+            # 当前商城可购买商品列表(供页面配置)
+            "buyable": (self.score_buyable or {}).get("goods") or [],
+            "buyableMonthIntegral": (self.score_buyable or {}).get("monthIntegral"),
+            "buyableError": (self.score_buyable or {}).get("error"),
         }
+
+    def _score_auto_buy_tick(self, client=None):
+        """积分商城自动购买: 按用户勾选的商品+周期，每天/每周/每月购买一次。
+
+        复用当前连接，不额外占号。购买是**真实写操作**(扣积分)，
+        所以只有在：
+          1. 用户开启了 scoreAutoBuy；
+          2. 该商品本周期内尚未购买(按 alreadyBuyTimes/buyTimes 或本地去重)；
+          3. 价格未超过用户设的 maxPrice；
+        时才发 mall.buy。
+        """
+        cli = client or self.daemon.client
+        if cli is None:
+            return
+        if not bool(self.settings.get("scoreAutoBuy", False)):
+            return
+        items = [it for it in (self.score_auto_buy or []) if it.get("enabled")]
+        if not items:
+            return
+        try:
+            st = cok_scoremall.list_buyable(cli)
+        except Exception as e:  # noqa: BLE001
+            with self.lock:
+                self.score_auto_buy_error = str(e)[:160]
+            return
+        if not st.get("ok"):
+            with self.lock:
+                self.score_auto_buy_error = st.get("error") or "积分商城读取失败"
+            return
+        now = int(time.time())
+        today = self._today_str()
+        acted = []
+        for it in items:
+            target_id = str(it.get("targetId") or "")
+            if not target_id:
+                continue
+            period = str(it.get("period") or "daily")
+            max_price = it.get("maxPrice")
+            # 去重: 同一周期内已买过就不再买
+            last_key = "score_buy_%s" % target_id
+            last = getattr(self, last_key, None)
+            if last:
+                last_day = last.get("day", "")
+                last_period = last.get("period", period)
+                if last_period == period and last_day == today:
+                    continue  # 本周期已买
+            # 找商品
+            goods = None
+            for g in st.get("goods") or []:
+                if str(g.get("targetId")) == target_id:
+                    goods = g
+                    break
+            if not goods:
+                acted.append("商品 %s 未在商城中找到" % target_id)
+                continue
+            # 检查是否已达购买上限(服务端字段)
+            already = int(goods.get("alreadyBuyTimes") or 0)
+            limit = int(goods.get("buyTimes") or 0)
+            if limit and already >= limit:
+                acted.append("商品 %s 已达上限(%d/%d)" % (target_id, already, limit))
+                continue
+            # 检查价格上限
+            price = goods.get("price")
+            if max_price is not None and price is not None:
+                try:
+                    if float(price) > float(max_price):
+                        acted.append("商品 %s 价格%s超过上限%s，跳过" % (target_id, price, max_price))
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            # 执行购买
+            r = cok_scoremall.buy_item(cli, target_id, num=int(it.get("num") or 1), force_buy=int(it.get("forceBuy") or 0))
+            if r.get("ok"):
+                acted.append("已购买 %s(%s) ×%d，花费%s" % (
+                    goods.get("name") or target_id, target_id, int(it.get("num") or 1),
+                    r.get("costNum") or "?"))
+                setattr(self, last_key, {"day": today, "period": period})
+            else:
+                acted.append("购买 %s 失败: %s" % (target_id, r.get("errorCode") or r.get("error") or "未知"))
+        if acted:
+            note = "; ".join(acted)
+            self.daemon.emit("score_auto_buy", {"note": note})
+            with self.lock:
+                self.score_auto_buy_last_note = note
+                self.score_auto_buy_last_at = now
+
+    def _today_str(self):
+        """按服务器日期(北京时间)返回今天字符串，用于日/周/月去重。"""
+        lt = time.localtime(time.time() + 8 * 3600)
+        return time.strftime("%Y-%m-%d", lt)
 
     # ---------------- 联盟(科技/任务板/捐献/使命/商店) ----------------
 
@@ -2713,6 +2843,8 @@ class Engine(object):
                 "stamina_items": cok_stamina.status(self.account_key),
                 # 背包快照拉取时间(秒): 前端据此显示"数据是刚拉的/还没拉"
                 "bag_at": (self.bag_snapshot or {}).get("at") or 0,
+                # 背包分类视图(保护罩/体力药水 + 总数): 前端背包卡片直接渲染
+                "bag": self._bag_view(),
                 # 编队预设(11 个, 对齐游戏) + 当前选中的
                 "squad_presets": self._squad_preset_list(),
                 "squad_preset": self.settings.get("squadPreset") or "",
@@ -3420,28 +3552,44 @@ class Engine(object):
         return {"ok": str(spec_id) in got, "slot": slot, "itemIds": got,
                 "errorCode": p.get("errorCode")}
 
-    def _refresh_bag_snapshot(self, timeout=25.0):
-        """拉一次实时背包(login.init), 存进内存快照。返回 (ok, info)。
+    def _refresh_bag_snapshot(self, timeout=60.0):
+        """拉一次实时背包(login.init), 存进内存快照并落盘。返回 (ok, info)。
 
-        ⚠️ login.init 的响应是 ~95 万字节, 真机实测要 **40~50 秒** ——
-        调用方必须放后台线程并给用户"拉取中"提示, 不要在请求线程里同步跑。
+        ⚠️⚠️ **必须全程持 op_lock**(2026-11-17 根因): login.init 的响应是
+        ~95 万字节的**裸 zlib 大流**, 要 40~50 秒才收完。期间如果 push 监听线程
+        (自动开罩常驻连接每 20 秒戳一次 cmd.ping)往**同一条连接**插了一帧,
+        就会把这条 zlib 流冲断 —— 解析报 `unknown type 0x40` / `buffer underrun`,
+        表现就是"点刷新道具没反应、没拿到真实道具"(服务器实测日志)。
+        op_lock 是**所有**碰游戏服操作的总闸(push-watch 也走它), 全程持有即可
+        保证这 45 秒内没有别的帧混进来。页面 /api/state 读内存不走 op_lock,
+        所以持锁不卡页面。
+
         服务端丢弃新连接首条业务请求, 所以 retries=1。
 
         info: {"total": 背包条目数, "shield": N 种保护罩道具, "at": ts}
         """
-        cli = self.daemon.client
-        if cli is None:
-            return False, {"error": "还没有连接游戏服"}
-        try:
-            r = cli.call("login.init", {}, retries=1, timeout=timeout)
-        except Exception as e:  # noqa: BLE001
-            return False, {"error": "拉背包失败: %s" % str(e)[:120]}
+        with self.op_lock:
+            cli = self.daemon.client
+            if cli is None:
+                return False, {"error": "还没有连接游戏服"}
+            try:
+                r = cli.call("login.init", {}, retries=1, timeout=timeout)
+            except Exception as e:  # noqa: BLE001
+                return False, {"error": "拉背包失败: %s" % str(e)[:120]}
         p = r.get("__params__") or {}
         items = p.get("items")
         if not isinstance(items, list):
             return False, {"error": "login.init 没有返回 items 字段(服务端版本不同?)"}
+        now = int(time.time())
         with self.lock:
-            self.bag_snapshot = {"at": int(time.time()), "items": items}
+            self.bag_snapshot = {"at": now, "items": items}
+            self._bag_auto_at = time.time()
+        # 整背包落盘(按账号): 重启后无需重拉就能显示, 保护罩/加速/药水共享
+        if self.account_key:
+            try:
+                cok_stamina.save_bag(self.account_key, items)
+            except Exception:  # noqa: BLE001
+                pass
         # 药水实例 uuid/数量顺手落盘(猎人喝药要用)
         try:
             potions = cok_stamina.scan_potions(items)
@@ -3449,7 +3597,7 @@ class Engine(object):
                 cache = cok_stamina.load_items(self.account_key)
                 for iid, ent in potions.items():
                     ent = dict(ent)
-                    ent["at"] = int(time.time())
+                    ent["at"] = now
                     cache[iid] = ent
                 if cache:
                     cok_stamina.save_items(self.account_key, cache)
@@ -3460,8 +3608,91 @@ class Engine(object):
                         if isinstance(it, dict)
                         and str(it.get("itemId") or "") in specs
                         and int(it.get("count") or 0) > 0])
-        return True, {"total": len(items), "shield": n_shield,
-                      "at": int(time.time())}
+        return True, {"total": len(items), "shield": n_shield, "at": now}
+
+    def _bag_view(self):
+        """背包快照的分类视图(给前端背包卡片)。
+
+        按账号隔离, 数据来自 login.init 快照(内存/落盘)。只挑控制台用得上的
+        两类道具展示: 保护罩 + 体力药水。其余道具只计入 total(背包很大,
+        全列出来对自动化没意义)。
+        """
+        snap = self.bag_snapshot or {}
+        items = snap.get("items") or []
+        at = int(snap.get("at") or 0)
+        if not items:
+            return {"at": at, "total": 0, "shields": [], "potions": [],
+                    "loaded": False, "refreshing": bool(self._bag_refreshing)}
+        specs = self._shield_specs()
+        shields, potions = [], []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            iid = str(it.get("itemId") or "")
+            try:
+                cnt = int(it.get("count") or 0)
+            except (TypeError, ValueError):
+                cnt = 0
+            if cnt <= 0:
+                continue
+            if iid in specs:
+                sp = specs.get(iid) or {}
+                shields.append({
+                    "itemId": iid, "count": cnt,
+                    "name": sp.get("name") or self._tr_item(iid) or ("道具 " + iid),
+                    "duration": sp.get("duration")})
+            elif iid in cok_stamina.STAMINA_ITEMS:
+                potions.append({
+                    "itemId": iid, "count": cnt,
+                    "name": self._tr_item(iid) or ("体力药水 " + iid),
+                    "gain": cok_stamina.STAMINA_ITEMS[iid]})
+        shields.sort(key=lambda x: x["count"], reverse=True)
+        potions.sort(key=lambda x: -x.get("gain", 0))
+        return {"at": at, "total": len(items), "shields": shields,
+                "potions": potions, "loaded": True,
+                "refreshing": bool(self._bag_refreshing)}
+
+    def _load_bag_from_disk(self):
+        """启动/切账号后, 从磁盘加载上次拉到的背包快照到内存。
+
+        没拉过(文件不存在)就保持 None —— 前端据此提示"点刷新拉一次"。
+        """
+        if self.bag_snapshot is not None or not self.account_key:
+            return
+        try:
+            snap = cok_stamina.load_bag(self.account_key)
+        except Exception:  # noqa: BLE001
+            snap = None
+        if snap:
+            with self.lock:
+                self.bag_snapshot = snap
+                self._bag_auto_at = float(snap.get("at") or 0)
+
+    def _bag_ttl(self):
+        """背包自动拉取的 TTL 秒数(默认 4 小时)。
+
+        背包里保护罩/加速道具的数量变化不频繁, 而 login.init 要 40~50 秒,
+        所以拉得很省。药水被猎人喝掉那条由猎人 fetch_bag 自己刷新, 不靠这里。
+        """
+        try:
+            return max(300, int(self.settings.get("bagRefreshTTL") or 14400))
+        except (TypeError, ValueError):
+            return 14400
+
+    def _bag_should_auto_refresh(self):
+        """轮询循环里判断: 这一轮要不要顺手拉一次背包。
+
+        条件(全满足才拉):
+          * 不在后台拉取中(避免和手动「刷新道具」撞车);
+          * 从没拉过(含落盘也没有), 或距上次拉取已超过 TTL。
+        """
+        with self.lock:
+            if self._bag_refreshing:
+                return False
+            last = float(self._bag_auto_at or 0)
+        if last <= 0:
+            return True
+        return (time.time() - last) >= self._bag_ttl()
 
     @property
     def _app_cached(self):
@@ -4116,47 +4347,31 @@ class Engine(object):
             # 体力药水实例的当前状态(有没有抓到 uuid / 是哪一瓶)
             return {"ok": True, "stamina": cok_stamina.status(self.account_key)}
         if op == "stamina-sync":
-            # 拉一次背包(`login.init`), 直接拿到体力药水的**道具实例 uuid**
-            # (含数量)。不消耗玩家任何奖励。
-            # ⚠️ 同步到**本引擎的内存快照**(bag_snapshot), 不只是落盘缓存 ——
+            # 拉一次完整背包(`login.init`): 走统一入口 _refresh_bag_snapshot ——
+            # 它全程持 op_lock(挡住 push-watch 的帧), 落盘整背包 + 药水缓存,
             # 保护罩下拉列表读的也是这份快照, 两个功能一次拉取都刷新。
+            # 这里已经在 _action_locked 里(op_lock 可重入 + 账号锁已持), 安全。
             if cl is None:
                 return {"ok": False, "error": "还没连上游戏服"}
-            ok, info = cok_stamina.fetch_bag(cl, self.account_key)
-            if ok:
-                try:
-                    with self.lock:
-                        self.bag_snapshot = {"at": int(time.time()),
-                                             "items": []}
-                        # fetch_bag 的响应没有保留 items 原文, 这里用缓存里的
-                        # 药水 + 保护罩道具重建一个轻量快照(数量取缓存值)
-                        specs = self._shield_specs()
-                        cache = cok_stamina.load_items(self.account_key)
-                        items = []
-                        for iid, ent in cache.items():
-                            if not isinstance(ent, dict):
-                                continue
-                            cnt = int(ent.get("count") or 0)
-                            if cnt > 0 and (iid in specs
-                                            or iid in cok_stamina.STAMINA_ITEMS):
-                                items.append({"itemId": str(iid),
-                                              "count": cnt,
-                                              "uuid": ent.get("uuid", "")})
-                        self.bag_snapshot["items"] = items
-                except Exception:  # noqa: BLE001
-                    pass
-            if ok and info.get("potions"):
-                st = cok_stamina.status(self.account_key)
-                names = ", ".join("%s x%s" % (k, v.get("count"))
-                                  for k, v in sorted(info["potions"].items()))
-                return {"ok": True, "note": "已同步体力药水: %s" % names,
-                        "stamina": st}
-            ok2, info2 = cok_stamina.claim_stamina_reward(cl, self.account_key)
+            ok, info = self._refresh_bag_snapshot()
             st = cok_stamina.status(self.account_key)
-            if not ok2:
-                err = (info.get("error") if not ok else "") or info2.get("error") or "同步失败"
-                return {"ok": False, "error": err, "stamina": st}
-            return {"ok": True, "note": info2.get("note") or "已同步",
+            if not ok:
+                return {"ok": False, "error": info.get("error") or "同步失败",
+                        "stamina": st}
+            # 快照里挑出体力药水, 报给用户看
+            potions = {}
+            try:
+                potions = cok_stamina.scan_potions(
+                    (self.bag_snapshot or {}).get("items") or [])
+            except Exception:  # noqa: BLE001
+                pass
+            if potions:
+                names = ", ".join("%s x%s" % (k, v.get("count"))
+                                  for k, v in sorted(potions.items()))
+                return {"ok": True, "note": "已同步背包(%d 种道具), 体力药水: %s"
+                        % (info.get("total", 0), names), "stamina": st}
+            return {"ok": True,
+                    "note": "已同步背包(%d 种道具), 未发现体力药水" % info.get("total", 0),
                     "stamina": st}
         if op == "set-level":
             lo = int(body.get("low") or 1)
@@ -4792,12 +5007,14 @@ class Engine(object):
         # 否则里面的 _ensure_client 会立刻把连接又建回来。
         if act == "disconnect":
             return self.disconnect()
-        # 拉背包(login.init, ~45 秒): 先建连(快), 再在后台线程里拉 ——
-        # 账号锁必须全程持有, 否则拉一半被手机 App 顶掉(同账号一条连接)。
+        # 拉背包(login.init, ~45 秒): 放后台线程跑, 请求线程立即返回。
         if act == "bag-refresh":
             if self._hunter_active():
                 return {"ok": False,
                         "error": "自动打怪正在占用连接, 先停止打怪再拉背包"}
+            with self.lock:
+                if self._bag_refreshing:
+                    return {"ok": True, "note": "背包正在拉取中(约 45 秒), 请稍候"}
             lk = self._lock_key()
             holder = cok_client.account_holder(lk)
             if holder and ("scan-world" in holder or "auto-hunt" in holder
@@ -4805,28 +5022,37 @@ class Engine(object):
                 return {"ok": False,
                         "error": "账号正被任务占用(%s), 等它结束后再拉背包"
                                  % holder.split()[-1][:40]}
-            try:
-                with self.op_lock:
-                    self._ensure_account()
-                    with cok_client.account_lock_retry(
-                            timeout=12.0, purpose="bag-refresh", key=lk):
-                        self._ensure_client()
-                        if self.daemon.client is None:
-                            return {"ok": False, "error": "连不上游戏服"}
-            except cok_client.AccountBusy as e:
-                return {"ok": False, "error": str(e)[:120]}
-            except Exception as e:  # noqa: BLE001
-                return {"ok": False,
-                        "error": "连不上游戏服: %s" % str(e)[:120]}
-            # op_lock 已释放: login.init 的 40~50 秒不能占着它
-            # (会把页面轮询/别的操作全堵死)。账号锁继续持有, 防互踢;
-            # 放后台线程跑, 请求线程立即返回。
+            with self.lock:
+                self._bag_refreshing = True
+
+            # ⚠️ 锁顺序必须和轮询一致: **op_lock → account_lock**。
+            # 轮询是 op_lock 外、account_lock 内; 若这里反过来(account 外、op 内)
+            # 两者并发就会死锁。_refresh_bag_snapshot 里的 op_lock 是 RLock,
+            # 同线程重入, 不会自锁。
             def run():
                 try:
-                    with cok_client.account_lock_retry(
-                            timeout=12.0, purpose="bag-refresh", key=lk):
-                        ok, info = self._refresh_bag_snapshot()
-                        self.daemon.emit("bag_refreshed", dict(info, ok=ok))
+                    self._ensure_account()
+                    with self.op_lock:
+                        with cok_client.account_lock_retry(
+                                timeout=12.0, purpose="bag-refresh", key=lk):
+                            self._ensure_client()
+                            if self.daemon.client is None:
+                                self.daemon.emit("bag_refreshed",
+                                                 {"ok": False,
+                                                  "error": "连不上游戏服"})
+                                return
+                            ok, info = self._refresh_bag_snapshot()
+                            self.daemon.emit("bag_refreshed", dict(info, ok=ok))
+                            # 按需模式: 拉完把连接还给 App
+                            if not self.persistent:
+                                try:
+                                    if self.daemon.client:
+                                        self.daemon.client.close()
+                                except Exception:
+                                    pass
+                                self.daemon.client = None
+                                with self.lock:
+                                    self.connected = False
                 except cok_client.AccountBusy:
                     self.daemon.emit("bag_refreshed",
                                      {"ok": False, "error": "拉背包期间账号被占用"})
@@ -4834,16 +5060,8 @@ class Engine(object):
                     self.daemon.emit("bag_refreshed",
                                      {"ok": False, "error": str(e)[:120]})
                 finally:
-                    # 按需模式: 拉完把连接还给 App(和 action() 的 finally 同规矩)
-                    if not self.persistent:
-                        try:
-                            if self.daemon.client:
-                                self.daemon.client.close()
-                        except Exception:
-                            pass
-                        self.daemon.client = None
-                        with self.lock:
-                            self.connected = False
+                    with self.lock:
+                        self._bag_refreshing = False
             threading.Thread(target=run, name="cok-bag-refresh",
                              daemon=True).start()
             return {"ok": True, "note": "正在拉背包(login.init 约需 45 秒), "
@@ -5403,6 +5621,64 @@ class Engine(object):
                         "claimed": r.get("claimed", 0), "failed": r.get("failed", 0),
                         "rewards": rewards, "fails": fails, "acted": acted,
                         "view": self._score_view()}
+            if sub == "list-buy":
+                # 读取积分商城所有可购买商品(供页面配置自动购买)
+                st = cok_scoremall.list_buyable(cli)
+                with self.lock:
+                    self.score_buyable = st if isinstance(st, dict) else {}
+                return {"ok": bool(st.get("ok")),
+                        "goods": st.get("goods") or [],
+                        "monthIntegral": st.get("monthIntegral"),
+                        "curStar": st.get("curStar"),
+                        "error": st.get("error"),
+                        "errorCode": st.get("errorCode"),
+                        "view": self._score_view()}
+            if sub == "buy":
+                # 手动购买单个商品
+                target_id = body.get("targetId")
+                if not target_id:
+                    return {"ok": False, "error": "缺少 targetId"}
+                num = int(body.get("num") or 1)
+                r = cok_scoremall.buy_item(cli, target_id, num=num, force_buy=int(body.get("forceBuy") or 0))
+                if r.get("ok"):
+                    self.daemon.emit("score_buy", {"note": "手动购买 %s" % target_id})
+                # 重读商城状态
+                try:
+                    st = cok_scoremall.list_buyable(cli)
+                    with self.lock:
+                        self.score_buyable = st if isinstance(st, dict) else {}
+                except Exception as e:
+                    _quiet(e, "积分商城购买后重读")
+                return {"ok": bool(r.get("ok")),
+                        "errorCode": r.get("errorCode"),
+                        "error": r.get("error"),
+                        "errorText": self._err_text(r.get("errorCode")),
+                        "goodsObj": r.get("goodsObj"),
+                        "currObj": r.get("currObj"),
+                        "view": self._score_view()}
+            if sub == "set-auto-buy":
+                # 保存自动购买配置: [{targetId,name,period,maxPrice,num,enabled}]
+                items = body.get("items") or []
+                if not isinstance(items, list):
+                    return {"ok": False, "error": "items 必须是数组"}
+                clean = []
+                for it in items:
+                    tid = str(it.get("targetId") or "").strip()
+                    if not tid:
+                        continue
+                    clean.append({
+                        "targetId": tid,
+                        "name": str(it.get("name") or ""),
+                        "period": str(it.get("period") or "daily"),
+                        "maxPrice": it.get("maxPrice"),
+                        "num": int(it.get("num") or 1),
+                        "forceBuy": int(it.get("forceBuy") or 0),
+                        "enabled": bool(it.get("enabled", False)),
+                    })
+                self.settings["scoreAutoBuy"] = bool(body.get("enabled", False))
+                self.score_auto_buy = clean
+                return {"ok": True, "autoBuy": bool(self.settings.get("scoreAutoBuy")),
+                        "items": clean}
             return {"ok": False, "error": "未知积分商城操作 %r" % sub}
         if act == "locate":
             return self._locate_action(body)

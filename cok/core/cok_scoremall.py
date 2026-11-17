@@ -195,3 +195,100 @@ def claim_all(client, mall_id=MALL_ID, state=None, delay=0.3):
         "failed": len(results) - ok_n,
         "pending": len(st.get("claimable") or []),
     }
+
+
+def buy_item(client, target_id, mall_id=MALL_ID, num=1, force_buy=0):
+    """积分商城购买单个商品(真实写操作，会扣积分)。
+
+    参数:
+      target_id: 商品 targetId(字符串)
+      mall_id: 商城编号，默认 125
+      num: 购买数量
+      force_buy: 是否强制购买(0/1)
+
+    返回 {ok, success, goodsObj, currObj, errorCode, error}
+    """
+    try:
+        r = client.call(CMD_REWARD if False else "mall.buy",
+                        {"mallId": str(mall_id), "targetId": str(target_id),
+                         "num": int(num), "forceBuy": int(force_buy)})
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "targetId": str(target_id),
+                "error": str(e)[:160]}
+    p = _params(r)
+    if p.get("errorCode"):
+        return {"ok": False, "targetId": str(target_id), "errorCode": p.get("errorCode")}
+    goods = p.get("goodsObj") or {}
+    curr = p.get("currObj") or {}
+    return {
+        "ok": True,
+        "success": bool(p.get("success")),
+        "targetId": str(target_id),
+        "goodsObj": goods,
+        "currObj": curr,
+        "itemId": str(goods.get("itemId") or ""),
+        "addNum": goods.get("addNum") or goods.get("num") or goods.get("count"),
+        "costNum": curr.get("costNum") or curr.get("num") or curr.get("count"),
+        "currItemId": str(curr.get("itemId") or ""),
+    }
+
+
+def list_buyable(client, mall_id=MALL_ID):
+    """读取积分商城所有可购买商品(只读)。
+
+    返回 {ok, goods:[{targetId,itemId,itemNum,price,star,refresh,currType,currId,
+       buyTimes,alreadyBuyTimes,name}], monthIntegral, curStar, keys}
+    """
+    try:
+        r = client.call(CMD_DATA, {"mallId": str(mall_id)})
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)[:160]}
+    p = _params(r)
+    if p.get("errorCode"):
+        return {"ok": False, "errorCode": p.get("errorCode"), "keys": sorted(p.keys())}
+    names = _load_item_names()
+    ga = p.get("goodsArray") or []
+    goods = []
+    for g in ga:
+        iid = str(g.get("itemId") or "")
+        goods.append({
+            "targetId": str(g.get("targetId") or ""),
+            "itemId": iid,
+            "itemNum": g.get("itemNum"),
+            "price": g.get("price"),
+            "star": g.get("star"),
+            "refresh": g.get("refresh"),
+            "currType": g.get("currType"),
+            "currId": g.get("currId"),
+            "buyTimes": g.get("buyTimes"),
+            "alreadyBuyTimes": g.get("alreadyBuyTimes"),
+            "name": names.get(iid) or ("道具 " + iid),
+        })
+    return {
+        "ok": True,
+        "goods": goods,
+        "monthIntegral": p.get("monthIntegral"),
+        "curStar": p.get("curStar"),
+        "keys": sorted(p.keys()),
+    }
+
+
+_ITEM_NAMES = None
+
+
+def _load_item_names():
+    """加载 id-names.json 的 item_names 表(进程级缓存)。"""
+    global _ITEM_NAMES
+    if _ITEM_NAMES is not None:
+        return _ITEM_NAMES
+    _ITEM_NAMES = {}
+    try:
+        import os as _os, json as _json
+        _here = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+        _path = _os.path.join(_here, "resources", "id-names.json")
+        with open(_path, "r", encoding="utf-8") as f:
+            data = _json.load(f)
+        _ITEM_NAMES = data.get("item_names", {}) or {}
+    except Exception:  # noqa: BLE001
+        _ITEM_NAMES = {}
+    return _ITEM_NAMES
