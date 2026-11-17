@@ -43,10 +43,14 @@ tasks.register("preparePythonSources") {
             from(protocolSource) {
                 include "cok_sfs.py"           // 协议编解码(所有模块的底座)
                 include "cok_paths.py"         // 路径适配层(安卓端必读)
+                include "cok_scope.py"         // 账号作用域容器(cok_map/cok_rally 的底座)
+                include "cok_errorlog.py"      // 静默异常留痕(quiet)
+                include "cok_identity.py"      // 账号概念唯一真相层
                 include "cok_client.py"        // 连接/登录/账号锁
                 include "cok_account.py"       // 账号读写
                 include "cok_accounts.py"      // 多账号注册表 + 公共字段真值
                 include "cok_users.py"         // 多用户(网页端登录)
+                include "cok_platform.py"      // 多用户存储层(平台模式必需)
                 include "cok_gamesvc.py"       // 渠道身份 -> 角色解析
                 include "cok_channel_login.py" // 渠道账号密码登录
                 include "cok_hunt.py"          // 自动打怪
@@ -64,6 +68,10 @@ tasks.register("preparePythonSources") {
                 include "cok_locate.py"        // 按名字查坐标
                 include "cok_speedup.py"       // 加速
                 include "cok_daemon.py"        // 轮询/推送引擎
+                include "cok_store.py"         // 业务状态入库(配置/运行态/索引)
+                include "cok_web_shared.py"    // web 共享层(常量/别名/小工具)
+                include "cok_engine.py"        // 引擎层(Engine/EngineManager/PlatformManager)
+                include "cok_channels.py"      // 渠道档案(渠道登录的下拉框/协议解析)
                 include "cok_web.py"           // 本地控制台(安卓端被 WebView 加载)
             }
             // 全图扫描核心: 安卓端进程内线程调用 scan_world.run_scan(), 必须进包
@@ -82,6 +90,16 @@ tasks.register("preparePythonSources") {
                 include "command-catalog-typed.json"
                 include "param-types-override.json"
                 include "cok_webui.html"
+                // 控制台拆出来的样式/脚本。少这两行的话手机上打开控制台
+                // 是"有结构没样式、点了没反应"(HTML 里是外链, 取不到就白屏),
+                // 而桌面端因为读的是本地磁盘所以看不出来 —— 必须显式带上。
+                include "cok_webui.css"
+                include "cok_webui.js"
+                // 独立管理后台(/admin)。少这一行的话 cok_web._resource_bytes
+                // 在手机上读不到文件, 返回纯文本「缺少 cok_admin.html」——
+                // 表现是"页面一片白字", 完全看不出是打包漏了。
+                include "cok_admin.html"
+                include "cok_login.html"
             }
             into(output)
         }
@@ -305,8 +323,14 @@ except ImportError:
         // its own mobile information architecture and presentation layer.
         def html = new File(output, "cok_webui.html")
         // 手机端的全部覆盖样式都在 mobile-console.css 里（桌面样式原样继承）。
+        //
+        // ⚠ 注入点改了: 控制台样式拆成外链的 /webui.css 之后, cok_webui.html 里
+        //   **已经没有 <style> 块**了 —— 原来那句 replaceFirst("</style>") 找不到目标,
+        //   replaceFirst 会抛 IllegalArgumentException, 整个 APK 直接构建不出来。
+        //   现在改成在 </head> 前插一整块 <style>(排在 <link> 之后, 优先级更高)。
         def mobileCss = file("${rootDir}/mobile-console.css").getText("UTF-8")
-        html.text = html.text.replaceFirst("</style>", java.util.regex.Matcher.quoteReplacement(mobileCss) + "</style>")
+        def cssBlock = "<style>\n" + mobileCss + "\n</style>"
+        html.text = html.text.replaceFirst("</head>", java.util.regex.Matcher.quoteReplacement(cssBlock) + "</head>")
         def mobileJs = file("${rootDir}/mobile-console.js").getText("UTF-8")
         html.text = html.text.replaceFirst("</body>", java.util.regex.Matcher.quoteReplacement("<script>" + mobileJs + "</script>") + "</body>")
     }

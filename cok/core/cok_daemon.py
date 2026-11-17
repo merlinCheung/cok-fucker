@@ -347,6 +347,8 @@ class Daemon(object):
         gp = int(account.get("port") or getattr(self.args, "game_port", None)
                  or self.args.port)
         c = CokClient(gh, gp, self.args.timeout, account)
+        # 标记这条连接是谁建的: 同账号多引擎/多运行时的问题要能一眼看出占用者
+        c.owner_tag = "daemon:%s" % (account.get("gameUid") or "-")
         c.connect()
         c.bin_handshake()
         c.login()

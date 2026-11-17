@@ -274,11 +274,50 @@ def _as_int(v, default=0):
         return default
 
 
-def read_max_level(client):
-    """玩家当前可打的最高怪等级(实测 30)。"""
-    r = client.call("autoQueue.levelMaxMonster")
+def read_max_level(client, timeout=None):
+    """玩家当前可打的最高怪等级(实测 30)。
+
+    ⚠️ `timeout` 要给**短一点**: 新连接的第一条业务请求会被服务端丢弃
+    (不返回任何东西), 客户端只能等超时后重发 —— 用默认 30 秒超时的话,
+    开打后会**干等 30 秒**才开始第一轮(2026-11-16 线上实测)。
+    """
+    r = client.call("autoQueue.levelMaxMonster", timeout=timeout)
     p = r.get("__params__") or {}
     return int(p.get("maxLevel") or 0)
+
+
+def read_game_lv(client):
+    """游戏自己「自动打怪」面板里存的**等级范围**(下限;上限)。
+
+    实测: `autoQueue.data` 的 `lv` 字段, 例如 `"15;16"`。
+    这是**玩家自己在游戏里选的范围** —— 也就是说"哪档怪能打得到",
+    游戏比我们知道得更清楚。
+
+    ⚠️ 为什么网页猎人要跟着它走(2026-11-16):
+    我们的 `res.tile.find` 只接受**单个等级**(传区间直接 E000000),
+    所以用户填了"30 级"而世界上只有 15~16 级的怪时, 猎人只能空转 ——
+    既打不到怪, 又把请求刷满(服务端还可能因此掐线)。
+    ⇒ 找不到怪时, 自动改用游戏里的这个范围(见 AutoHunter._fallback_level)。
+    """
+    try:
+        r = client.call("autoQueue.data")
+    except Exception:  # noqa: BLE001
+        return 0, 0
+    p = r.get("__params__") or {}
+    lv = str(p.get("lv") or "").strip()
+    lo = hi = 0
+    if ";" in lv:
+        a, b = lv.split(";", 1)
+        try:
+            lo, hi = int(a), int(b)
+        except (TypeError, ValueError):
+            lo = hi = 0
+    elif lv.isdigit():
+        try:
+            lo = hi = int(lv)
+        except (TypeError, ValueError):
+            lo = hi = 0
+    return lo, hi
 
 
 def read_stamina(client):
@@ -872,7 +911,7 @@ class AutoHunter(object):
     def __init__(self, client, level=1, num=50, troop_id=None, max_kills=0,
                  on_event=None, poll=2.0, wait_stamina=60.0,
                  squads=4, squad_spec=None, on_tick=None, min_stamina=None,
-                 on_reconnect=None, max_reconnects=2, mix=1,
+                 on_reconnect=None, max_reconnects=6, mix=1,
                  auto_stamina=False, stamina_items=None, uid=None):
         self.client = client
         self.level = int(level)
@@ -885,6 +924,11 @@ class AutoHunter(object):
         # 连接被服务端踢掉时的补救: 由调用方重建连接(多半是同账号双连接,
         # 游戏 App 还在线)。on_reconnect(old_client) 返回新的 client,
         # 返回 None / 抛异常都按"救不回来"处理。
+        #
+        # ⚠️ 2026-11-16: 默认 2 次改成 6 次。服务端踢线是**常态**(手机上的
+        # 游戏 App 一登录就把我们这条顶掉), 2 次重连窗口只有 ~1 分钟,
+        # 用户几乎必然看到"自动停止"。多给几次 + 退避重试, 只要用户在
+        # 这段时间里把手机上的 App 关掉, 猎人就能自己活过来。
         self.on_reconnect = on_reconnect
         self.max_reconnects = max(0, int(max_reconnects or 0))
         self._reconnects = 0
@@ -924,6 +968,14 @@ class AutoHunter(object):
         self._fatal_streak = 0
         self._squads = []          # 运行期的队伍对象
         self._last_find = 0.0      # 上次找怪的时间(找怪有服务端节流)
+        #: 连续"世界上没有这个等级的怪"的轮数(用来退避, 别空转刷搜索)
+        self._no_target_streak = 0
+        #: 游戏自己「自动打怪」面板里的等级范围 (下限, 上限)
+        self._game_lv = (0, 0)
+        #: 有没有已经降级过一次(避免在几个等级之间来回横跳)
+        self._fallback_used = False
+        #: 最高可打等级读过了没(读一次就够, 而且要放在第一条命令之后)
+        self._max_level_done = False
         #: **本进程内**已用的找怪次数 —— 只用来**显示**「今日已用 N 次」,
         #: **绝不用来拦截**(2026-11-12 改):
         #: 服务端对 SVIP 账号不限次数, 但 `world.maxSearchCount` 照样下发 6,
@@ -944,8 +996,17 @@ class AutoHunter(object):
         if not self.on_reconnect or self._reconnects >= self.max_reconnects:
             return None
         self._reconnects += 1
-        self.state["note"] = "连接被断开, 正在重连(第 %d 次)" % self._reconnects
+        # ⚠️ 退避重试(2026-11-16): 越往后等越久(2/4/6/8/10/12 秒)。
+        # 被踢的典型原因是"同账号有另一条连接"(手机上的游戏 App 又登录了),
+        # 立刻重连只会再被踢一次; 等一等, 对方的连接可能已经自己断了。
+        wait = min(2.0 * self._reconnects, 12.0)
+        self.state["note"] = "连接被断开, 正在重连(第 %d 次, %d 秒后重试)" % (
+            self._reconnects, int(wait))
         self._emit("reconnect", dict(self.state))
+        try:
+            time.sleep(wait)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             new_client = self.on_reconnect(self.client)
         except Exception as e:  # noqa: BLE001
@@ -960,6 +1021,71 @@ class AutoHunter(object):
         self.state["note"] = "已重连, 继续打怪"
         self._emit("reconnected", dict(self.state))
         return new_client
+
+    def _game_lv_text(self):
+        """游戏自己「自动打怪」面板里的等级范围(文本, 如 "15;16")。"""
+        lo, hi = self._game_lv or (0, 0)
+        if not lo:
+            return ""
+        return "%d;%d" % (lo, hi) if hi and hi != lo else str(lo)
+
+    def _fallback_level(self):
+        """找不到这个等级的怪时, 该换成的等级(0 = 没有可换的)。
+
+        用**游戏自己「自动打怪」面板里存的等级范围**(`autoQueue.data.lv`):
+        那是玩家自己在游戏里选的范围 —— 游戏知道哪档有怪, 我们只接受单个
+        等级(传区间服务端回 E000000), 所以取范围里的**下限**先用。
+
+        返回 0 表示"没有可换的等级"(范围和当前等级一样 / 读不到范围)。
+        """
+        if self._fallback_used:
+            return 0
+        if not self._game_lv:
+            try:
+                self._game_lv = read_game_lv(self.client)
+            except Exception:  # noqa: BLE001
+                self._game_lv = (0, 0)
+        lo, hi = self._game_lv or (0, 0)
+        if not lo:
+            return 0
+        # 范围里挑一个**不是当前等级**的: 先下限, 再上限
+        for cand in (lo, hi):
+            if cand and int(cand) != int(self.level):
+                self._fallback_used = True
+                return int(cand)
+        return 0
+
+    def _no_target_sleep(self):
+        """连续找不到怪时的退避时长(秒)。
+
+        阶梯 2 → 5 → 10 → 20 → 30。
+        为什么要退避: 每轮都会发一次 `res.tile.find`, 空转 7 分钟就是
+        150 次找怪请求(2026-11-16 服务器实测), 既浪费也容易招来服务端掐线。
+        """
+        n = int(self._no_target_streak or 0)
+        if n <= 0:
+            return self.poll
+        ladder = [5.0, 10.0, 20.0, 30.0]
+        extra = ladder[min(n - 1, len(ladder) - 1)]
+        return max(self.poll, extra)
+
+    def _conn_diag(self):
+        """当前连接的诊断信息(被踢时告诉用户"活了多久 / 发了多少请求")。
+
+        用途: 服务端只说"连接被服务端关闭", 单独看没法判断是谁踢的。
+        带上"活了多久 + 发了多少请求", 就能区分:
+        * 刚连上几秒就被踢 -> 一定有**别的连接**在抢(同账号双连接)
+        * 跑了十几分钟被踢 -> 更可能是服务端自己的策略/请求量限制
+        """
+        cl = self.client
+        d = {}
+        try:
+            d = cl.conn_diag() or {}
+        except Exception:  # noqa: BLE001
+            d = {}
+        age = int(d.get("age") or 0)
+        reqs = int(d.get("requests") or 0)
+        return "这条连接活了 %d 秒 / 发了 %d 个请求" % (age, reqs)
 
     def _read_stamina(self):
         st = read_stamina(self.client)
@@ -1367,6 +1493,17 @@ class AutoHunter(object):
                 if self._round <= 3 or self._round % 30 == 0:
                     self._emit("step", {"step": "stamina", "round": self._round})
                 st = self._read_stamina()
+                # 服务端当前可打的最高怪等级(读一次就够, **放在第一条命令之后**)。
+                # 用途: 用户把等级设到"世界上还没刷出来的"等级时, 页面能直接告诉他
+                # "服务端最高只能打到 N 级"(2026-11-16: 一直空转却看不出原因)。
+                # ⚠️ 必须放在 _read_stamina 之后: 新连接的第一条业务请求会被服务端
+                # 丢弃(客户端只能等超时重发), 放第一个会白等 30 秒才开始打怪。
+                if not self._max_level_done:
+                    self._max_level_done = True
+                    try:
+                        self.state["maxLevel"] = read_max_level(self.client, timeout=8.0) or 0
+                    except Exception:  # noqa: BLE001
+                        self.state["maxLevel"] = 0
                 # ⚠️ 体力掉得太快 -> 立刻停(保命阀: 异常结算会白烧体力)
                 burst = self._stamina_burst()
                 if burst > STAMINA_BURST_LIMIT:
@@ -1449,6 +1586,7 @@ class AutoHunter(object):
                     ok, info = self._launch(s, army)
                     if ok:
                         launched += 1
+                        self._no_target_streak = 0
                         st["stamina"] = max(0, st["stamina"] - STAMINA_COST)
                     elif _is_stamina_error(info.get("errorCode")):
                         # 服务端说体力不足(E100047) —— 这是**正常等待**, 不是失败:
@@ -1470,16 +1608,61 @@ class AutoHunter(object):
                                   "SVIP 无限)。已停止, 明天再来" % FIND_LIMIT_DAILY)
                         break
                     elif str(info.get("errorCode")) in ("NO_TARGET", "BAD_COORD"):
-                        # 世界上没有这个等级的怪 / 坐标非法 —— 不是失败, 但也派不出去。
-                        round_note = info.get("error") or "没找到怪"
+                        # NO_TARGET = 世界上没有这个等级的怪(稳定的"不存在")
+                        # BAD_COORD = 坐标非法(瞬时错误, 重试即可)
+                        #
+                        # ⚠️ **别空转, 更别白烧**(2026-11-16 线上反馈):
+                        # 原来这里只是 break, 下一轮(2 秒后)又去 `res.tile.find` 一次
+                        # —— 服务器实测空转 7 分钟发了 150 次找怪请求, 既浪费又
+                        # 可能招来服务端掐线; 用户看到的还只是"莫名其妙自动停止"。
+                        #
+                        # 现在:
+                        #  * NO_TARGET -> 先按**游戏自己「自动打怪」面板里的等级范围**
+                        #    降级(实测 `autoQueue.data.lv` = "15;16" —— 游戏知道
+                        #    哪档有怪, 而我们只接受单个等级, 所以取范围下限);
+                        #    降级后还找不到 -> **直接停**, 把原因写清楚。
+                        #  * BAD_COORD -> 退避重试(2→5→10→20→30 秒)。
+                        code = str(info.get("errorCode"))
+                        if code == "BAD_COORD":
+                            self._no_target_streak += 1
+                            round_note = info.get("error") or "坐标异常, 重试"
+                            break
+                        old_level = self.level
+                        fb = self._fallback_level()
+                        if fb:
+                            self.level = fb
+                            self.state["level"] = fb
+                            self._no_target_streak = 0
+                            round_note = ("世界上没有 %d 级的野怪, 已改用游戏里的 %d 级"
+                                          "(游戏「自动打怪」用的是 %s 级)"
+                                          % (old_level, fb, self._game_lv_text()))
+                            break
+                        maxlv = self.state.get("maxLevel") or 0
+                        round_note = "世界上没有 %d 级的野怪" % old_level
+                        if maxlv and int(maxlv) <= int(old_level):
+                            round_note += ("(服务端当前最高可打 %d 级 —— 你要的 %d 级"
+                                           "世界上可能还没刷出来)" % (int(maxlv), old_level))
+                        if self._game_lv_text():
+                            round_note += ("；游戏里「自动打怪」用的是 %s 级, "
+                                           "照那个设就能打到" % self._game_lv_text())
+                        # ⚠️ **停**, 别再空转刷搜索(也别让用户以为是"莫名其妙停了")
+                        self.stop(round_note + "。已停止, 换个等级再开")
                         break
                 self._sync_squads(all_army, marches)
                 # ⚠️ 别把本轮的说明覆盖掉(原来无条件写 "打怪中",
                 # 把 E100047 / 找怪次数用完这些**真正的信息**冲掉了)。
-                self.state["note"] = round_note or self.state["wait_for"] or "打怪中"
+                #
+                # ⚠️⚠️ **而且停止后更不能覆盖**(2026-11-16 线上反馈):
+                # `self.stop(reason)` 刚写好的停止原因, 会被这一行无条件改成
+                # "打怪中" —— 用户在页面上只看到"打怪中"然后就没了,
+                # 完全不知道是因为"今日找怪次数用完"还是别的。
+                # ⇒ 停止了就保留停止原因。
+                if not self.stop_flag:
+                    self.state["note"] = round_note or self.state["wait_for"] or "打怪中"
                 self._emit("tick", dict(self.state))
                 self._maybe_tick()
-                time.sleep(self.poll)
+                # 连续找不到怪 -> 退避(2 → 5 → 10 → 20 → 30 秒)
+                time.sleep(self._no_target_sleep())
             except Exception as e:  # noqa: BLE001
                 msg = str(e)
                 self.state["note"] = "异常: %s" % msg[:120]
@@ -1505,7 +1688,8 @@ class AutoHunter(object):
                     # 救不回来 —— 必须**停下来把账号还回去**。
                     # 否则它会一直占着这个连接, 整个控制台的轮询都被跳过
                     # ("自动打怪占用连接, 已跳过本轮"), 页面看着像卡死。
-                    self.state["note"] = "连接断开, 已自动停止: %s" % msg[:80]
+                    self.state["note"] = "连接断开, 已自动停止: %s｜%s" % (
+                        msg[:80], self._conn_diag())
                     self._emit("stopped", dict(self.state))
                     break
                 self._fatal_streak += 1

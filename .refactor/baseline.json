@@ -1,0 +1,756 @@
+{
+ "at": "2026-11-16T13:43:39",
+ "note": "P1 重构前基线。字节级保真对照用：src/refactor_readiness.py 会核这些文件的 sha256",
+ "files": {
+  "cok/__init__.py": {
+   "lines": 18,
+   "bytes": 743,
+   "sha256": "9ee086c8082c31bc"
+  },
+  "cok/__main__.py": {
+   "lines": 191,
+   "bytes": 7560,
+   "sha256": "5d5eaa0015b8bab0"
+  },
+  "cok/_flatimport.py": {
+   "lines": 53,
+   "bytes": 1899,
+   "sha256": "d984b785b4f64552"
+  },
+  "cok/core/__init__.py": {
+   "lines": 1,
+   "bytes": 11,
+   "sha256": "2d9d99d560026021"
+  },
+  "cok/core/cok_account.py": {
+   "lines": 309,
+   "bytes": 11911,
+   "sha256": "d3a28f9850c81876"
+  },
+  "cok/core/cok_accounts.py": {
+   "lines": 720,
+   "bytes": 27640,
+   "sha256": "cb450e32940be373"
+  },
+  "cok/core/cok_alliance.py": {
+   "lines": 866,
+   "bytes": 34093,
+   "sha256": "b1e2c6c5f05ebf51"
+  },
+  "cok/core/cok_assist.py": {
+   "lines": 308,
+   "bytes": 12047,
+   "sha256": "470220edbf9b91d7"
+  },
+  "cok/core/cok_channel_login.py": {
+   "lines": 1358,
+   "bytes": 57074,
+   "sha256": "0c5569f52360fbb5"
+  },
+  "cok/core/cok_channel_x7sy.py": {
+   "lines": 477,
+   "bytes": 18696,
+   "sha256": "4bbfbbab2a69890c"
+  },
+  "cok/core/cok_channels.py": {
+   "lines": 177,
+   "bytes": 6319,
+   "sha256": "711e40d1a1a1ea2f"
+  },
+  "cok/core/cok_client.py": {
+   "lines": 1333,
+   "bytes": 56665,
+   "sha256": "40db09d18f635469"
+  },
+  "cok/core/cok_daemon.py": {
+   "lines": 978,
+   "bytes": 43903,
+   "sha256": "f26563f8ba361a6b"
+  },
+  "cok/core/cok_daily_quest.py": {
+   "lines": 745,
+   "bytes": 31028,
+   "sha256": "ec20705ad27e851c"
+  },
+  "cok/core/cok_dock.py": {
+   "lines": 421,
+   "bytes": 16243,
+   "sha256": "3b17c1866637670c"
+  },
+  "cok/core/cok_elex_account.py": {
+   "lines": 243,
+   "bytes": 9141,
+   "sha256": "43afa6ff1e66711b"
+  },
+  "cok/core/cok_elex_game_login.py": {
+   "lines": 145,
+   "bytes": 5482,
+   "sha256": "c69523e981f86fc7"
+  },
+  "cok/core/cok_emu_login.py": {
+   "lines": 340,
+   "bytes": 12246,
+   "sha256": "b10e53303ca1650f"
+  },
+  "cok/core/cok_engine.py": {
+   "lines": 6331,
+   "bytes": 314572,
+   "sha256": "9f8b17052536ff05"
+  },
+  "cok/core/cok_excel.py": {
+   "lines": 287,
+   "bytes": 12979,
+   "sha256": "a6370d8c7ba0f845"
+  },
+  "cok/core/cok_gamesvc.py": {
+   "lines": 190,
+   "bytes": 7333,
+   "sha256": "2fdefac3ab96488a"
+  },
+  "cok/core/cok_hunt.py": {
+   "lines": 1668,
+   "bytes": 78416,
+   "sha256": "8798b8bb53c6684a"
+  },
+  "cok/core/cok_locate.py": {
+   "lines": 216,
+   "bytes": 7879,
+   "sha256": "bdb1ebffcbb92d99"
+  },
+  "cok/core/cok_map.py": {
+   "lines": 613,
+   "bytes": 24664,
+   "sha256": "21176b23edba9339"
+  },
+  "cok/core/cok_paths.py": {
+   "lines": 104,
+   "bytes": 3473,
+   "sha256": "e4ebda3d5eca5170"
+  },
+  "cok/core/cok_platform.py": {
+   "lines": 568,
+   "bytes": 19775,
+   "sha256": "93d22d05f91e93c6"
+  },
+  "cok/core/cok_rally.py": {
+   "lines": 906,
+   "bytes": 35225,
+   "sha256": "959867c8244bb47a"
+  },
+  "cok/core/cok_scoremall.py": {
+   "lines": 197,
+   "bytes": 7379,
+   "sha256": "58aabe5a95ba121c"
+  },
+  "cok/core/cok_sfs.py": {
+   "lines": 601,
+   "bytes": 21444,
+   "sha256": "3c64399e2a40b452"
+  },
+  "cok/core/cok_sky.py": {
+   "lines": 315,
+   "bytes": 12736,
+   "sha256": "90d5d2277d0a28a5"
+  },
+  "cok/core/cok_speedup.py": {
+   "lines": 195,
+   "bytes": 7512,
+   "sha256": "16f6deb7e7524e48"
+  },
+  "cok/core/cok_stamina.py": {
+   "lines": 371,
+   "bytes": 13795,
+   "sha256": "17f47c30bb957975"
+  },
+  "cok/core/cok_store.py": {
+   "lines": 1205,
+   "bytes": 46055,
+   "sha256": "80da694ea67d9bac"
+  },
+  "cok/core/cok_users.py": {
+   "lines": 317,
+   "bytes": 9901,
+   "sha256": "4da9332bd2693ee8"
+  },
+  "cok/core/cok_web.py": {
+   "lines": 1798,
+   "bytes": 81454,
+   "sha256": "87de5202c5405b1c"
+  },
+  "cok/core/cok_web_shared.py": {
+   "lines": 618,
+   "bytes": 25019,
+   "sha256": "4080432f6c55c991"
+  },
+  "cok/core/cok_welfare.py": {
+   "lines": 263,
+   "bytes": 9459,
+   "sha256": "77dc1da78386ddca"
+  },
+  "cok/tests/__init__.py": {
+   "lines": 1,
+   "bytes": 12,
+   "sha256": "abdd838d089835d7"
+  },
+  "cok/tests/run_all.py": {
+   "lines": 67,
+   "bytes": 2254,
+   "sha256": "afe6035014da78da"
+  },
+  "cok/tests/test_account_isolation.py": {
+   "lines": 442,
+   "bytes": 18329,
+   "sha256": "7d21b6bcc74b5a25"
+  },
+  "cok/tests/test_account_types.py": {
+   "lines": 154,
+   "bytes": 6371,
+   "sha256": "209156b5e9b224e0"
+  },
+  "cok/tests/test_alert.py": {
+   "lines": 63,
+   "bytes": 2235,
+   "sha256": "68cd8b597e7b999c"
+  },
+  "cok/tests/test_alliance.py": {
+   "lines": 597,
+   "bytes": 26427,
+   "sha256": "1113a90c0ac24be6"
+  },
+  "cok/tests/test_apk_seed.py": {
+   "lines": 188,
+   "bytes": 7888,
+   "sha256": "6702358b9d6459a2"
+  },
+  "cok/tests/test_assist.py": {
+   "lines": 187,
+   "bytes": 7994,
+   "sha256": "c80be2700bd0e5f0"
+  },
+  "cok/tests/test_channel_import.py": {
+   "lines": 243,
+   "bytes": 9544,
+   "sha256": "b0bbce876cfc646c"
+  },
+  "cok/tests/test_channel_module.py": {
+   "lines": 248,
+   "bytes": 11062,
+   "sha256": "b896542629526c13"
+  },
+  "cok/tests/test_channel_shadow.py": {
+   "lines": 151,
+   "bytes": 6474,
+   "sha256": "612e700f2cf1b53b"
+  },
+  "cok/tests/test_dock.py": {
+   "lines": 230,
+   "bytes": 10868,
+   "sha256": "7cdee449a59eeec5"
+  },
+  "cok/tests/test_engine_manager.py": {
+   "lines": 167,
+   "bytes": 6374,
+   "sha256": "3c409a7b5dd88f67"
+  },
+  "cok/tests/test_excel.py": {
+   "lines": 156,
+   "bytes": 6964,
+   "sha256": "8d3a9abf6279c73d"
+  },
+  "cok/tests/test_hunt_conn_exclusive.py": {
+   "lines": 189,
+   "bytes": 6879,
+   "sha256": "16909a2160adcbdb"
+  },
+  "cok/tests/test_hunt_double_conn.py": {
+   "lines": 306,
+   "bytes": 11125,
+   "sha256": "bda6e4cf60a79152"
+  },
+  "cok/tests/test_hunt_find.py": {
+   "lines": 146,
+   "bytes": 5789,
+   "sha256": "931d395359157826"
+  },
+  "cok/tests/test_hunt_mix.py": {
+   "lines": 293,
+   "bytes": 14663,
+   "sha256": "b44381fa885c8b50"
+  },
+  "cok/tests/test_hunt_squads.py": {
+   "lines": 431,
+   "bytes": 20670,
+   "sha256": "d2e03435f6e56132"
+  },
+  "cok/tests/test_local_admin.py": {
+   "lines": 164,
+   "bytes": 6712,
+   "sha256": "6fd2cf9db2487529"
+  },
+  "cok/tests/test_locate.py": {
+   "lines": 162,
+   "bytes": 6880,
+   "sha256": "799999439b5ade4c"
+  },
+  "cok/tests/test_map.py": {
+   "lines": 201,
+   "bytes": 9389,
+   "sha256": "579446e76eb71d38"
+  },
+  "cok/tests/test_multi_account.py": {
+   "lines": 122,
+   "bytes": 4470,
+   "sha256": "969d6b957dd9d5af"
+  },
+  "cok/tests/test_pfid_rebuild.py": {
+   "lines": 100,
+   "bytes": 3660,
+   "sha256": "20b57dadcbb0db5e"
+  },
+  "cok/tests/test_platform.py": {
+   "lines": 758,
+   "bytes": 36209,
+   "sha256": "6d8807570a78589a"
+  },
+  "cok/tests/test_rally.py": {
+   "lines": 354,
+   "bytes": 15580,
+   "sha256": "5dc98b8700e70faa"
+  },
+  "cok/tests/test_shield.py": {
+   "lines": 162,
+   "bytes": 5910,
+   "sha256": "13cc9d5e57d84170"
+  },
+  "cok/tests/test_sign.py": {
+   "lines": 52,
+   "bytes": 1518,
+   "sha256": "310df1c5b5be0ed6"
+  },
+  "cok/tests/test_sky.py": {
+   "lines": 64,
+   "bytes": 2201,
+   "sha256": "7608f0d7e5e8d5d2"
+  },
+  "cok/tests/test_squad_isolation.py": {
+   "lines": 149,
+   "bytes": 5377,
+   "sha256": "e3c0157123f0f971"
+  },
+  "cok/tests/test_stamina.py": {
+   "lines": 294,
+   "bytes": 11761,
+   "sha256": "ac0a6a589884930b"
+  },
+  "cok/tests/test_store.py": {
+   "lines": 441,
+   "bytes": 18921,
+   "sha256": "9b85251146c83978"
+  },
+  "cok/tests/test_takeover_and_sky.py": {
+   "lines": 422,
+   "bytes": 16540,
+   "sha256": "59954c891f74d2f7"
+  },
+  "cok/tests/test_web_concurrency.py": {
+   "lines": 613,
+   "bytes": 32180,
+   "sha256": "feba3ac18aea6942"
+  },
+  "cok/tests/test_web_hunt_mix.py": {
+   "lines": 182,
+   "bytes": 7908,
+   "sha256": "9ce18f9e20a20782"
+  },
+  "cok/tests/test_web_hunt_stop.py": {
+   "lines": 192,
+   "bytes": 6856,
+   "sha256": "10feca69e5caf9dd"
+  },
+  "cok/tests/test_welfare.py": {
+   "lines": 185,
+   "bytes": 8040,
+   "sha256": "65fde467b496e2a1"
+  },
+  "cok/tools/__init__.py": {
+   "lines": 1,
+   "bytes": 12,
+   "sha256": "ea534807eaba6e5c"
+  },
+  "cok/tools/apply_donate_encoding.py": {
+   "lines": 138,
+   "bytes": 5466,
+   "sha256": "3be4d9edb5b00ded"
+  },
+  "cok/tools/capture_rally_boss.py": {
+   "lines": 95,
+   "bytes": 2906,
+   "sha256": "017fcd6676bb608e"
+  },
+  "cok/tools/decode_capture.py": {
+   "lines": 128,
+   "bytes": 4471,
+   "sha256": "21e83cd7dc32f212"
+  },
+  "cok/tools/diag_cover.py": {
+   "lines": 89,
+   "bytes": 3028,
+   "sha256": "65796de61e377320"
+  },
+  "cok/tools/diag_world_get.py": {
+   "lines": 127,
+   "bytes": 5135,
+   "sha256": "d943f219af264acf"
+  },
+  "cok/tools/dump_bag.py": {
+   "lines": 273,
+   "bytes": 10852,
+   "sha256": "5a481019eb2bd03c"
+  },
+  "cok/tools/dump_init_push.py": {
+   "lines": 159,
+   "bytes": 5898,
+   "sha256": "9020259b51c0f362"
+  },
+  "cok/tools/dump_state.py": {
+   "lines": 41,
+   "bytes": 1234,
+   "sha256": "0966eb5f765489ae"
+  },
+  "cok/tools/export_excel.py": {
+   "lines": 109,
+   "bytes": 4585,
+   "sha256": "9a2504318dbb2beb"
+  },
+  "cok/tools/find_cmd_table.py": {
+   "lines": 75,
+   "bytes": 2365,
+   "sha256": "56db5f94661e63fb"
+  },
+  "cok/tools/locate_bag_cmd.py": {
+   "lines": 174,
+   "bytes": 6074,
+   "sha256": "ace53558ef118b84"
+  },
+  "cok/tools/preview_web.py": {
+   "lines": 547,
+   "bytes": 25156,
+   "sha256": "1834f7596759a855"
+  },
+  "cok/tools/probes/__init__.py": {
+   "lines": 1,
+   "bytes": 19,
+   "sha256": "e4d14cf08f96733b"
+  },
+  "cok/tools/probes/probe_alliance.py": {
+   "lines": 191,
+   "bytes": 8458,
+   "sha256": "b6d27c4736bcb0d8"
+  },
+  "cok/tools/probes/probe_autoqueue.py": {
+   "lines": 61,
+   "bytes": 2232,
+   "sha256": "28071cbc35fe950e"
+  },
+  "cok/tools/probes/probe_autoqueue2.py": {
+   "lines": 85,
+   "bytes": 3568,
+   "sha256": "262346eec0b96443"
+  },
+  "cok/tools/probes/probe_autoqueue_run.py": {
+   "lines": 101,
+   "bytes": 3723,
+   "sha256": "aa07da6952a8acac"
+  },
+  "cok/tools/probes/probe_bag_cmd.py": {
+   "lines": 127,
+   "bytes": 3923,
+   "sha256": "35d6eb5cc3ad9be4"
+  },
+  "cok/tools/probes/probe_bag_cmd2.py": {
+   "lines": 159,
+   "bytes": 4829,
+   "sha256": "cd485ea9e3a60aa6"
+  },
+  "cok/tools/probes/probe_bag_pull.py": {
+   "lines": 112,
+   "bytes": 3900,
+   "sha256": "851b86af621ef571"
+  },
+  "cok/tools/probes/probe_bag_push.py": {
+   "lines": 130,
+   "bytes": 4164,
+   "sha256": "6a0edf17e5ec57ad"
+  },
+  "cok/tools/probes/probe_bag_sweep.py": {
+   "lines": 165,
+   "bytes": 6690,
+   "sha256": "e43d0d17092fefae"
+  },
+  "cok/tools/probes/probe_bag_v2.py": {
+   "lines": 109,
+   "bytes": 4013,
+   "sha256": "42f67eebac9339f8"
+  },
+  "cok/tools/probes/probe_boss_zone.py": {
+   "lines": 100,
+   "bytes": 3031,
+   "sha256": "692632a96334633e"
+  },
+  "cok/tools/probes/probe_boss_zone2.py": {
+   "lines": 124,
+   "bytes": 3955,
+   "sha256": "8bb810c07d620f3d"
+  },
+  "cok/tools/probes/probe_claim_uuid.py": {
+   "lines": 119,
+   "bytes": 4348,
+   "sha256": "71739024cef01d8f"
+  },
+  "cok/tools/probes/probe_device_bind.py": {
+   "lines": 79,
+   "bytes": 2817,
+   "sha256": "fed02e8e4d8a2cdb"
+  },
+  "cok/tools/probes/probe_hunt_mix_e2e.py": {
+   "lines": 110,
+   "bytes": 4732,
+   "sha256": "0fbe6384d230b85f"
+  },
+  "cok/tools/probes/probe_init_allfields.py": {
+   "lines": 121,
+   "bytes": 4428,
+   "sha256": "186e3d67b6d69eb4"
+  },
+  "cok/tools/probes/probe_init_full.py": {
+   "lines": 130,
+   "bytes": 4695,
+   "sha256": "e2e9b15b193e3675"
+  },
+  "cok/tools/probes/probe_init_storage.py": {
+   "lines": 96,
+   "bytes": 3779,
+   "sha256": "69b986942bd120f6"
+  },
+  "cok/tools/probes/probe_item_buy.py": {
+   "lines": 85,
+   "bytes": 3312,
+   "sha256": "19b58f7bdd3cc34f"
+  },
+  "cok/tools/probes/probe_item_push.py": {
+   "lines": 135,
+   "bytes": 4955,
+   "sha256": "6575ea89c5c10cd4"
+  },
+  "cok/tools/probes/probe_item_use.py": {
+   "lines": 113,
+   "bytes": 4407,
+   "sha256": "e974b22358b997fc"
+  },
+  "cok/tools/probes/probe_item_use2.py": {
+   "lines": 83,
+   "bytes": 3460,
+   "sha256": "8c3a0341eb1cd906"
+  },
+  "cok/tools/probes/probe_item_use3.py": {
+   "lines": 85,
+   "bytes": 3400,
+   "sha256": "ab3499dbdfaadc2d"
+  },
+  "cok/tools/probes/probe_mall_potion.py": {
+   "lines": 113,
+   "bytes": 4286,
+   "sha256": "8c8501b13a920554"
+  },
+  "cok/tools/probes/probe_multiproop_armid.py": {
+   "lines": 125,
+   "bytes": 5249,
+   "sha256": "c6485178b9b8e85f"
+  },
+  "cok/tools/probes/probe_multiproop_order.py": {
+   "lines": 114,
+   "bytes": 4628,
+   "sha256": "d69a0e755cb80f43"
+  },
+  "cok/tools/probes/probe_multiproop_order2.py": {
+   "lines": 131,
+   "bytes": 5287,
+   "sha256": "45a145e85bb62f73"
+  },
+  "cok/tools/probes/probe_multiproop_struct.py": {
+   "lines": 107,
+   "bytes": 3946,
+   "sha256": "edd97ee5ca582ab3"
+  },
+  "cok/tools/probes/probe_multitroop.py": {
+   "lines": 167,
+   "bytes": 6732,
+   "sha256": "85a89b63ddbe7d26"
+  },
+  "cok/tools/probes/probe_multitroop2.py": {
+   "lines": 113,
+   "bytes": 4509,
+   "sha256": "3100fb3b935dcb16"
+  },
+  "cok/tools/probes/probe_multitroop3.py": {
+   "lines": 125,
+   "bytes": 5227,
+   "sha256": "534de616b5193762"
+  },
+  "cok/tools/probes/probe_native_marchkey.py": {
+   "lines": 52,
+   "bytes": 1479,
+   "sha256": "521a69f5a0a617d2"
+  },
+  "cok/tools/probes/probe_native_marchkey2.py": {
+   "lines": 63,
+   "bytes": 1966,
+   "sha256": "ce90288945384a60"
+  },
+  "cok/tools/probes/probe_push_bag.py": {
+   "lines": 87,
+   "bytes": 3159,
+   "sha256": "72ecd66b70464ca6"
+  },
+  "cok/tools/probes/probe_rally_boss.py": {
+   "lines": 91,
+   "bytes": 3206,
+   "sha256": "16e9891adfa3befb"
+  },
+  "cok/tools/probes/probe_rally_boss2.py": {
+   "lines": 102,
+   "bytes": 3751,
+   "sha256": "f4733c11ad18836d"
+  },
+  "cok/tools/probes/probe_rally_boss3.py": {
+   "lines": 81,
+   "bytes": 3254,
+   "sha256": "6998fd5f9566a4f6"
+  },
+  "cok/tools/probes/probe_rally_boss4.py": {
+   "lines": 109,
+   "bytes": 3969,
+   "sha256": "38d7129347d9f3e4"
+  },
+  "cok/tools/probes/probe_rally_boss6.py": {
+   "lines": 122,
+   "bytes": 4817,
+   "sha256": "2a8a5603af301aee"
+  },
+  "cok/tools/probes/probe_rally_march.py": {
+   "lines": 146,
+   "bytes": 5106,
+   "sha256": "faec0ff3436eed34"
+  },
+  "cok/tools/probes/probe_rally_march2.py": {
+   "lines": 192,
+   "bytes": 6457,
+   "sha256": "ac6b0c6829c9b951"
+  },
+  "cok/tools/probes/probe_rally_wtindex.py": {
+   "lines": 119,
+   "bytes": 3882,
+   "sha256": "7fd9c2400488ce40"
+  },
+  "cok/tools/probes/probe_raw_stream.py": {
+   "lines": 74,
+   "bytes": 2635,
+   "sha256": "6adefe1ceb9c3d68"
+  },
+  "cok/tools/probes/probe_readonly.py": {
+   "lines": 93,
+   "bytes": 3718,
+   "sha256": "43fde6f9d41ea155"
+  },
+  "cok/tools/probes/probe_round2.py": {
+   "lines": 92,
+   "bytes": 3705,
+   "sha256": "d483e4ccb1b1754c"
+  },
+  "cok/tools/probes/probe_stamina_cmd.py": {
+   "lines": 79,
+   "bytes": 3196,
+   "sha256": "84bb0d4c16a62eea"
+  },
+  "cok/tools/probes/probe_stamina_item.py": {
+   "lines": 129,
+   "bytes": 5151,
+   "sha256": "0b421a9744c16110"
+  },
+  "cok/tools/probes/probe_suggest_use.py": {
+   "lines": 80,
+   "bytes": 2982,
+   "sha256": "b191220c38e95faf"
+  },
+  "cok/tools/probes/probe_table_value.py": {
+   "lines": 95,
+   "bytes": 3374,
+   "sha256": "73f54c1d1216374d"
+  },
+  "cok/tools/probes/probe_use_id.py": {
+   "lines": 97,
+   "bytes": 3758,
+   "sha256": "f532475a5cf507d5"
+  },
+  "cok/tools/probes/probe_use_on_target.py": {
+   "lines": 85,
+   "bytes": 3177,
+   "sha256": "20857c02fcbe3abc"
+  },
+  "cok/tools/probes/probe_use_stamina.py": {
+   "lines": 95,
+   "bytes": 3260,
+   "sha256": "7560584f96029862"
+  },
+  "cok/tools/quick_test.py": {
+   "lines": 43,
+   "bytes": 1346,
+   "sha256": "76010f26de5e7159"
+  },
+  "cok/tools/retest_donate.py": {
+   "lines": 174,
+   "bytes": 6808,
+   "sha256": "f0e82a8fa1cf20a9"
+  },
+  "cok/tools/retest_donate_poll.py": {
+   "lines": 291,
+   "bytes": 11776,
+   "sha256": "275ea8514c480b5e"
+  },
+  "cok/tools/scan_world.py": {
+   "lines": 429,
+   "bytes": 19310,
+   "sha256": "50b4c431bcebce20"
+  },
+  "cok/tools/seed_boss_registry.py": {
+   "lines": 90,
+   "bytes": 2832,
+   "sha256": "bf6101de1b578360"
+  },
+  "cok/tools/sweep_bag.py": {
+   "lines": 182,
+   "bytes": 6175,
+   "sha256": "0ea42b5cadd718ba"
+  },
+  "cok/tools/tmp_hunt_e2e.py": {
+   "lines": 78,
+   "bytes": 3292,
+   "sha256": "f2e2aaf296c2774c"
+  },
+  "cok/tools/verify_points.py": {
+   "lines": 106,
+   "bytes": 3809,
+   "sha256": "32efefc5c5158366"
+  },
+  "cok/tools/xref.py": {
+   "lines": 114,
+   "bytes": 3758,
+   "sha256": "1159b30e94effa21"
+  },
+  "cok/tools/xref_callers.py": {
+   "lines": 153,
+   "bytes": 5045,
+   "sha256": "cfc8122dd2b19f89"
+  }
+ }
+}

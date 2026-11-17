@@ -69,12 +69,34 @@ class _Args:
         self.__dict__.update(kw)
 
 
+def resolve_account(ak):
+    """把账号 key 解析成账号库里的**纯 gameUid**。
+
+    平台模式下锁 key 是 `owner/gameUid`, 而账号库里存的是纯 gameUid ——
+    拿带前缀的 key 去查会找不到(2026-11-15 服务器事故: 扫描进程秒退,
+    页面表现为"一键扫全图点了没反应")。
+
+    返回 (account_dict|None, 纯 gameUid|"")。
+    """
+    if not ak:
+        return None, ""
+    acc = accounts.get_account(ak)
+    if acc:
+        return acc, str(ak)
+    if "/" in str(ak):
+        tail = str(ak).rsplit("/", 1)[-1]
+        acc = accounts.get_account(tail)
+        if acc:
+            return acc, tail
+    return None, str(ak)
+
+
 def run_scan(args, stop_event=None, install_signals=True,
              stop_app_fn=None, log=print):
     """执行一次扫描。CLI(独立进程)和安卓(进程内线程)共用这一份实现。
 
     args: 带以下字段的对象(见 _Args / argparse.Namespace):
-      out, account_key, radius, step, max_requests, resume, server,
+      out, account_key, lock_key, radius, step, max_requests, resume, server,
       keep_app, reconnect_every, delay, fresh
     stop_event: 可选 threading.Event —— 置位后在下一个中心点抛 KeyboardInterrupt
       优雅收尾(断点已随 progress 落盘)。安卓端没有信号可用, 靠它停止。
@@ -87,14 +109,25 @@ def run_scan(args, stop_event=None, install_signals=True,
     #   * account_key 给了 -> 用账号库的凭据, 并把数据目录隔离到该账号子目录
     #   * 没给           -> 沿用环境里的 COK_DATA_DIR(父进程网页已设好)或默认目录
     account = None
-    if getattr(args, "account_key", None):
-        account = accounts.get_account(args.account_key)
+    ak = getattr(args, "account_key", None)
+    # ⚠️⚠️ **账号 key ≠ 锁 key**(2026-11-15 修):
+    #   账号 key = 账号库里的纯 gameUid(文件是 accounts/<gameUid>.json)
+    #   锁   key = 平台模式下的 `owner/gameUid`(互斥用, 和网页控制台同一把)
+    # 平台模式下网页控制台曾经把**锁 key** 当账号 key 传下来 -> 这里去账号库
+    # 找 "u-xxx/351542128002216.json" 找不到 -> 扫描进程秒退 -> 页面像"点了没反应"。
+    # 锁 key 单独给; 没给就退回账号 key(单用户模式两者相同)
+    lock_key = getattr(args, "lock_key", None) or ak
+    if ak:
+        account, pure_key = resolve_account(ak)
+        if account and pure_key != str(ak):
+            log("[*] 账号 key 带 owner 前缀, 已按 %s 解析" % pure_key)
+            ak = pure_key
         if not account:
-            log("[!] 账号库里没有 %s" % args.account_key)
+            log("[!] 账号库里没有 %s" % ak)
             return 2
-        cok_map.set_data_dir(accounts.data_dir(args.account_key))
+        cok_map.set_data_dir(accounts.data_dir(ak), uid=ak)
     if getattr(args, "out", None) is None:
-        args.out = cok_map.DEFAULT_INDEX
+        args.out = cok_map.index_path(ak or None)
 
     # ⚠️ 全图重扫必须从**空白索引**开始: 旧索引里的坐标属于**上一次地图布局**
     # (服务端会重排地图), 混进新扫描后, 旧坐标的票数可能反而更多 ——
@@ -112,7 +145,7 @@ def run_scan(args, stop_event=None, install_signals=True,
 
     # ---- 扫描身份: pid 文件 + 历史记录(网页据此显示"扫描中"和历史) ----
     run_id = time.strftime("%Y%m%d-%H%M%S")
-    cok_map.write_scan_pid(os.getpid())
+    cok_map.write_scan_pid(os.getpid(), uid=(ak or None))
 
     if install_signals:
         def _on_term(signum, frame):
@@ -156,7 +189,25 @@ def run_scan(args, stop_event=None, install_signals=True,
             "dropped_out_of_range": int(m.get("dropped_out_of_range") or 0),
             "self_point": m.get("self_point") or {},
         })
-        cok_map.clear_scan_pid()
+        # 历史也进库（页面读历史时可以跨进程查到；文件仍是快照）
+        try:
+            import cok_store as _st
+            _st.account_state_set(
+                str(args.account_key or ""),
+                scan_history=cok_map.load_history(uid=(ak or None)))
+            _st.archive_add("scan", str(args.account_key or ""),
+                            _st.scan_owner_of(args.account_key),
+                            {"id": run_id, "status": status,
+                             "players": len(players), "real": real_n},
+                            size=int(m.get("requests_done") or 0))
+            _st.scan_index_set(_st.scan_owner_of(args.account_key),
+                               str(args.account_key or ""),
+                               progress=int(m.get("requests_done") or 0),
+                               scanned=len(players),
+                               step=int(args.step), done=(status == "completed"))
+        except Exception:
+            pass
+        cok_map.clear_scan_pid(uid=(ak or None))
 
     # 自己的 uid(用于自动记录自己坐标)
     own_uid = str((cok_client.ACCOUNT or {}).get("gameUid") or "")
@@ -173,13 +224,13 @@ def run_scan(args, stop_event=None, install_signals=True,
 
     # 中心点: 用索引里记录的 self_point(扫描时自动记录的, 不写死坐标)
     # ⚠️ 先读本次的索引, 再退回正式索引 —— 不能写成 for/else, 那样
-    # args.out == DEFAULT_INDEX 时会直接 break, 永远读到 (0,0)。
+    # args.out == 默认索引时会直接 break, 永远读到 (0,0)。
     cx = cy = 0
     sp = (meta.get("self_point") or {})
     if sp.get("x") is not None:
         cx, cy = int(sp["x"]), int(sp["y"])
     else:
-        for path in (args.out, cok_map.DEFAULT_INDEX):
+        for path in (args.out, cok_map.index_path(ak or None)):
             try:
                 m = (cok_map.load_index(path).get("meta") or {})
             except Exception:
@@ -245,13 +296,23 @@ def run_scan(args, stop_event=None, install_signals=True,
         now = time.time()
         # 实时落盘(扫描中也能查到已扫到的), 并记录断点
         meta2 = dict(index.get("meta") or {})
-        meta2.update({"updated_at": int(time.time()), "partial": True,
+        meta2.update({"account_key": str(args.account_key or ""),
+                      "updated_at": int(time.time()), "partial": True,
                       "next_x": px, "next_y": py,
                       "scanning": True,
                       "requests_done": st["requests"],
                       "requests_total": total})
         index["meta"] = meta2
         cok_map.save_index(index, args.out)
+        # 进度同步进库（跨进程可见）：页面/管理页不必等文件刷完也能看到"扫到哪了"
+        try:
+            import cok_store as _st
+            _st.scan_index_set(_st.scan_owner_of(args.account_key),
+                               str(args.account_key or ""),
+                               meta=meta2, progress=int(st["requests"]),
+                               step=int(args.step), done=0)
+        except Exception:
+            pass
         if now - last_print[0] >= 5.0 or st.get("done"):
             last_print[0] = now
             done = st["requests"]
@@ -281,8 +342,10 @@ def run_scan(args, stop_event=None, install_signals=True,
 
     try:
         # 多账号: 锁 key 用账号 id, 不同账号互不阻塞; 没指定账号则默认全局锁。
+        # ⚠️ 用 **lock_key**(平台模式带 owner 前缀), 不是账号 key ——
+        # 必须和网页控制台锁的是同一把, 否则两边都以为账号闲着 -> 双连接互踢。
         with cok_client.account_lock(timeout=120.0, purpose="scan-world",
-                                     key=args.account_key):
+                                     key=lock_key):
             c = make_conn()
             try:
                 st = cok_map.scan_area(
@@ -333,6 +396,9 @@ def main():
                     help="索引文件(默认用当前账号的数据目录下 map-index.json)")
     ap.add_argument("--account-key", default=None,
                     help="账号库里的账号 id(gameUid); 给了就用该账号连接并隔离数据目录")
+    ap.add_argument("--lock-key", default=None,
+                    help="账号互斥锁的 key; 平台模式是 `owner/gameUid`, "
+                         "必须和网页控制台锁同一把(默认跟 --account-key 一样)")
     ap.add_argument("--radius", type=int, default=0,
                     help="只扫自己周围 N 格(0 = 全图)")
     ap.add_argument("--step", type=int, default=cok_map.STEP)

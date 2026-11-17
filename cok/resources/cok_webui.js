@@ -719,7 +719,10 @@ function renderHeader(st){
   let cls='wait', label='空闲';
   if(st.account_error){ cls='off'; label='设备未连接'; }
   // 用户主动断开: 这是**预期**状态, 不是故障 —— 要排在 st.error 之前
-  else if(st.disconnected){ cls='wait'; label='已断开 · 点「重连」恢复'; }
+  // offline_hold 是**落盘**的断开意图: 服务器刚重启、循环还没跑第一轮时,
+  // 内存里的 disconnected 还是 false, 但这个已经为真 —— 一起认, 免得顶灯
+  // 在重启后短暂误显示成"空闲"。
+  else if(st.disconnected || st.offline_hold){ cls='wait'; label='已断开 · 点「重连」恢复'; }
   // ⚠️ 自动打怪时账号被独占是**设计内**的(让路给打怪), 不是异常 ——
   // 所以必须排在 st.error 前面, 否则会误报"连接异常"。
   else if(st.hunter&&st.hunter.running){ cls='on'; label='自动打怪中'; }

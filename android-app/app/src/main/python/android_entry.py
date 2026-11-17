@@ -104,6 +104,11 @@ def start(files_dir, port, token):
     #   现在改成目录: `<该目录>/<uid>.lock`, 每个账号一把, 互不阻塞。
     #   同账号仍然互斥(flock 按文件), 所以"同账号只允许一个连接"的保护没变。
     os.environ["COK_ACCOUNT_LOCK_FILE"] = os.path.join(data_dir, "locks")
+    # 平台库(用户/会话/审计)位置: 必须显式指到 files 下。
+    # 不指的话 cok_platform 用 `cok_paths.data_dir()`, 而那个函数在
+    # **模块导入时**就被读走成模块级常量 DB_PATH —— 这台设备上它算出来的是
+    # Chaquopy 的 assets 目录(只读), 建表/写审计全部静默失败。
+    os.environ["COK_PLATFORM_DB"] = os.path.join(data_dir, "platform.db")
     # 资源目录: Chaquopy 把 cok/resources 里的文件解到 assets 根, 与模块同级。
     # 显式指出来, 免得 cok_paths 去仓库里找(手机上不存在仓库)。
     _res_dir = os.path.dirname(os.path.abspath(__file__))
@@ -153,6 +158,9 @@ def start(files_dir, port, token):
                 args = scan_world._Args(
                     out=params["out"],
                     account_key=params.get("account_key"),
+                    # 锁 key 跟账号 key 分开(平台模式带 owner 前缀);
+                    # 安卓端单用户, 两者相同, 但保持字段齐全
+                    lock_key=params.get("lock_key") or params.get("account_key"),
                     radius=int(params.get("radius") or 0),
                     step=int(params.get("step") or cok_map.STEP),
                     max_requests=int(params.get("max_requests") or 0),
@@ -216,9 +224,23 @@ def start(files_dir, port, token):
 
             cok_web.Engine._spawn_scanner = _spawn_scanner_inproc
             cok_web.Engine._scan_stop = _scan_stop_inproc
+            # ⚠ 平台模式 + 本机管理员: 手机上也要有 /admin(管理后台)。
+            #
+            # 为什么不再用单用户模式:
+            #   单用户模式下 `Handler.platform is None`, 而 /admin 的路由明确
+            #   写「单用户模式没有管理后台」→ 404。管理页是完整的运维界面,
+            #   App 里 WebView 能开, 唯独这一页打不开, 说不通。
+            #
+            # 为什么不走登录:
+            #   手机是"打开即用", 塞一个登录页等于把 5 个号的日常操作藏到
+            #   一层密码后面。所以给 `--local-admin <token>`: 带这个 token 的
+            #   请求(仅 127.0.0.1)直接被认成本机管理员 —— 不查会话、不建额外
+            #   用户; 账号库归属挂到固定的 local-admin 名下(启动时自动把老号的
+            #   空 owner 认领过来, 否则平台模式的 owner 过滤会让账号列表全空)。
             sys.argv = [
                 "cok_web.py", "--host", "127.0.0.1", "--port", str(port),
                 "--token", str(token),
+                "--platform", "--local-admin", str(token),
             ]
             cok_web.main()
 

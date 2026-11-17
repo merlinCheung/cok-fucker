@@ -230,6 +230,77 @@ class AccountBusy(CokError):
     """账号正被别的进程/线程占用(同账号只允许一个连接)。"""
 
 
+# ---------------------------------------------------------------------------
+# 进程内「同账号只允许一条活连接」登记表
+# ---------------------------------------------------------------------------
+#: 账号连接身份 -> 当前活着的 CokClient
+#:
+#: ⚠️ **为什么需要(2026-11-16 服务器实测)**:
+#:   游戏服同账号**只保留最新的一条连接**。实测: 同账号开第二条连接后,
+#:   旧的那条立刻被服务端关闭("连接被服务端关闭(已收 0/3 字节)"),
+#:   新连接毫发无损 —— 即"后登录的赢"。
+#:   于是网页控制台只要在自动打怪期间**又连一次**同账号(轮询重连、
+#:   页面点一下按钮、`_ensure_client()` 发现 client 是 None 就重连……),
+#:   猎人那条连接就会被踢掉, 表现是
+#:   「连接断开, 已自动停止: 连接被服务端关闭(已收 0/3 字节)」。
+#:
+#: ⇒ 所以**在进程内先管住**: 同一账号同时只允许一个 CokClient 活着。
+#:   第二条连接直接拒绝(AccountBusy), 而不是让服务端去踢我们自己的连接。
+#:
+#: 跨进程(命令扫描器 vs 网页控制台)靠 flock 文件锁(cok_client.account_lock)。
+_LIVE_CONNS = {}
+_LIVE_CONNS_MUTEX = threading.Lock()
+
+
+def conn_identity(account=None, host=None, port=None):
+    """算一个账号的"连接身份": 同一个身份 = 同一个游戏账号 + 同一个区服节点。
+
+    身份算不出来(没有 uid 字段)时返回 None —— 那就不参与进程内互斥,
+    避免把不相干的连接误判成同一个账号。
+    """
+    acc = account or {}
+    uid = str(acc.get("gameUid") or acc.get("uid") or acc.get("platformUid") or "")
+    if not uid:
+        return None
+    h = host or acc.get("host") or ""
+    p = port or acc.get("port") or ""
+    return "%s@%s:%s" % (uid, h, p)
+
+
+def live_connection(identity):
+    """查这个账号身份当前有没有活着的连接(没有返回 None)。"""
+    if not identity:
+        return None
+    with _LIVE_CONNS_MUTEX:
+        cur = _LIVE_CONNS.get(identity)
+    if cur is None:
+        return None
+    if cur.sock is None:
+        return None
+    # 服务端已经把连接关了的话(sock 还在但已 EOF), 不算"活着" —— 允许重连。
+    if cur.sock_dead():
+        return None
+    return cur
+
+
+def claim_connection(identity, client):
+    """登记一条活连接(同身份已有活连接时返回 False)。"""
+    if not identity:
+        return True
+    with _LIVE_CONNS_MUTEX:
+        _LIVE_CONNS[identity] = client
+    return True
+
+
+def release_connection(identity, client=None):
+    """注销一条连接(close 时调用)。"""
+    if not identity:
+        return
+    with _LIVE_CONNS_MUTEX:
+        if client is None or _LIVE_CONNS.get(identity) is client:
+            _LIVE_CONNS.pop(identity, None)
+
+
 #: 进程内持锁状态。flock 是**按 fd**生效的, 同一进程里另开一个 fd 去 flock
 #: 同一个文件会和自己冲突 —— 所以同线程嵌套取锁必须走计数, 不能再 flock。
 #:
@@ -376,9 +447,40 @@ def account_lock(timeout=0.0, purpose="", key=None):
 
 
 def account_holder(key=None):
-    """当前锁文件里记的持有者(给页面显示用)。"""
+    """当前锁文件里记的持有者(给页面显示用)。
+
+    ⚠️ **以 flock 为准, 不以文件内容为准**(2026-11-16 服务器实测):
+    文件里的 "pid purpose" 是**拿锁时写、还锁时清**的; 持有者进程被
+    kill / 脚本被 timeout 杀掉时, 锁早就随进程退出释放了, 但文件里还留着
+    "12345 web-poll" —— 页面据此显示
+    「账号正被占用 · 当前持有: 12345 web-poll」, 极具误导性
+    (实测就是探测脚本被 timeout 杀掉后留下的残留)。
+
+    ⇒ 先探一次 flock: 拿得到 = 没人真的占着 = 返回空;
+      拿不到 = 真有人占着 = 再读文件里的 holder 文本。
+    """
+    path = lock_file_for(key)
+    held = True
     try:
-        with open(lock_file_for(key), encoding="utf-8", errors="replace") as f:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    except OSError:
+        return ""
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            held = False
+        except OSError:
+            held = True
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    if not held:
+        return ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
             # 清掉 NUL / 空白 —— 文件可能被旧版本写过空洞
             raw = " ".join(f.read().split("\0")).strip()
             # "free" 是空闲占位, 不是持有者
@@ -420,6 +522,72 @@ def account_holder_info(key=None):
             pid = None
     return {"holder": raw, "pid": pid,
             "self": pid is not None and pid == os.getpid()}
+
+
+#: 持有者用途里代表「**长时独占**」的关键词 —— 碰到这些不该等, 要立刻让路。
+#: (自动打怪要整段占着账号; 全图扫描同理)
+_LONG_HOLD_PURPOSES = ("auto-hunt", "hunter", "scan-world", "scan", "collect")
+
+
+def holder_is_transient_self(key=None):
+    """锁的持有者是不是**本进程的短时占用**(比如网页后台轮询线程)。
+
+    ⚠️ 为什么需要这个判断(2026-11-16 线上反馈):
+    flock 绑在 open file description 上, **同进程用另一个 fd 再 flock 也会失败** ——
+    所以网页后台轮询线程拿着锁的时候, 用户点「重连」会被**自己人**挡下,
+    报「账号正被占用(同账号只允许一个连接)」, 而用户明明看到所有连接都已断开。
+    这类占用是**瞬时**的(轮询一轮就还), 正确做法是**退避重试**, 不是直接失败。
+
+    但持有者是「自动打怪 / 全图扫描」时(长时独占), 就不该等 ——
+    那种情况要立刻让路并给明确提示。
+
+    返回 True = 本进程短时占用(可以等); False = 不是(不该等)。
+    """
+    info = account_holder_info(key)
+    if not info.get("self"):
+        return False
+    holder = (info.get("holder") or "").lower()
+    for kw in _LONG_HOLD_PURPOSES:
+        if kw in holder:
+            return False
+    return True
+
+
+@contextlib.contextmanager
+def account_lock_retry(timeout=12.0, purpose="", key=None,
+                       backoff=0.3, max_backoff=1.2):
+    """拿不到锁时, 遇到「本进程短时占用」就退避重试。
+
+    与 `account_lock` 的区别:
+    * `account_lock(timeout=N)` —— 拿不到就干等 N 秒, 等不到就抛 AccountBusy;
+      等的过程中**不看**是谁占着。
+    * `account_lock_retry` —— 等不到时先看持有者:
+      - 持有者是**本进程**的后台轮询(短时) -> 继续退避重试(它马上就还)
+      - 持有者是别的进程 / 自动打怪 / 全图扫描 -> 立刻抛, 别让用户干等
+
+    用在「网页操作」这类必须真正拿到锁才行的路径上(点重连 / 开自动打怪)。
+    """
+    deadline = time.time() + max(0.0, timeout)
+    attempt = 0
+    ctx = None
+    while True:
+        attempt += 1
+        ctx = account_lock(timeout=0.0, purpose=purpose, key=key)
+        try:
+            ctx.__enter__()
+        except AccountBusy:
+            if time.time() >= deadline or not holder_is_transient_self(key):
+                raise
+            time.sleep(min(backoff * attempt, max_backoff))
+            continue
+        break
+    try:
+        yield
+    finally:
+        try:
+            ctx.__exit__(None, None, None)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def apply_account_types(acc, template=None):
@@ -500,7 +668,9 @@ def encode_param(value, type_name):
 
 class CokClient(object):
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=30.0, account=None):
-        self.timeout = timeout
+        # ⚠️ 超时**永远不能是 None**(None = 阻塞模式): 服务端把连接踢掉后
+        # recv 会永远不返回, 整个进程卡死。兜一个默认值。
+        self.timeout = timeout or 30.0
         self.account = dict(ACCOUNT)
         if account:
             self.account.update(account)
@@ -565,9 +735,20 @@ class CokClient(object):
         # 账号里带的服务器地址优先(设备上的 account_ip/account_port)
         self.host = self.account.get("host") or host
         self.port = int(self.account.get("port") or port)
+        # 建连者身份(进程 + 线程): "这个账号的连接是谁占着" 要能一眼看出来,
+        # 否则同账号多引擎/多运行时的问题只能靠猜。
+        self.owner_pid = os.getpid()
+        self.owner_tid = threading.get_ident()
+        self.owner_tag = ""
         self.sock = None
         self.key = None
         self.key_id = None
+        #: 进程内互斥用的账号身份(同账号同节点 = 同一条连接身份)
+        self.conn_identity = conn_identity(self.account, self.host, self.port)
+        #: 统计: 这条连接发了多少条业务命令(诊断"被踢前发了多少请求"用)
+        self.req_count = 0
+        #: 这条连接是什么时候建立的(诊断"活了多久被踢"用)
+        self.connected_at = 0.0
         self.cok_prefix = random.randint(100000, 999999)
         self.seq = 0
         self.catalog = load_typed_catalog()
@@ -586,13 +767,73 @@ class CokClient(object):
         self.init_params = {}
 
     # ---------------- 底层 ----------------
-    def connect(self, retries=3, backoff=5.0):
+    def sock_dead(self):
+        """这条连接是不是已经死了(服务端关了 / socket 没了)。
+
+        判据: socket 没了 = 死; socket 还能 select 出"可读"且 peek 到底是
+        **空** = 服务端已发 FIN = 死; 可读但有数据 = 服务端推了包(正常)。
+        """
+        s = self.sock
+        if s is None:
+            return True
+        try:
+            import select as _select
+            r, _, _ = _select.select([s], [], [], 0)
+            if not r:
+                return False
+            try:
+                peek = s.recv(1, socket.MSG_PEEK)
+            except (BlockingIOError, InterruptedError):
+                return False
+            except OSError:
+                return True
+            return peek == b""
+        except Exception:  # noqa: BLE001
+            return False
+
+    def connect(self, retries=3, backoff=5.0, force=False):
+        """连游戏服。
+
+        ⚠️ **同账号只允许一条活连接**(进程内互斥):
+        游戏服只保留**最新**的连接, 旧的那条会被服务端立刻关掉
+        (实测 2026-11-16)。所以这里在建连**之前**先查登记表:
+        同一个账号已经有活连接时直接抛 AccountBusy ——
+        **绝不能**去建第二条连接把网页自己的/打怪那条踢掉。
+
+        `force=True` 给" rightful owner"(自动打怪)用: 它会把别人那条
+        **真正关掉**再建自己的。
+
+        ⚠️⚠️ **force 不是"跳过检查", 是"我来接管"**(2026-11-16 服务器实测):
+        原来 force=True 只是**跳过**检查, 自己那条照样建 —— 于是
+        "无主运行时"的网页连接(见 `PlatformManager.get("")`)和猎人那条
+        **同时存在**, 两条都是活的; 之后网页那边一发请求, 服务端就把
+        猎人那条关掉(日志: 猎人 `连接被服务端关闭(已收 0/3 字节)`,
+        网页那边 seq 连续、毫发无损)。
+        ⇒ 现在 force=True 会**先 close() 掉别人那条**, 保证任一时刻
+        这个账号只有一条连接。
+        """
+        other = live_connection(self.conn_identity)
+        if other is not None and other is not self:
+            if not force:
+                raise AccountBusy(
+                    "同账号已有另一条活跃连接(游戏服只保留最新的一条): "
+                    "请先停掉正在占用这个账号的任务"
+                    "(占用者 pid=%s 标签=%s 身份=%s)"
+                    % (getattr(other, "owner_pid", "?"),
+                       getattr(other, "owner_tag", "") or "-",
+                       getattr(other, "conn_identity", "?")))
+            try:
+                other.close()
+            except Exception:  # noqa: BLE001
+                pass
         last = None
         for attempt in range(retries):
             try:
                 self.sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
                 self.sock.settimeout(self.timeout)
+                self.connected_at = time.time()
                 log("[*] 已连接 %s:%d" % (self.host, self.port))
+                claim_connection(self.conn_identity, self)
                 return self
             except Exception as e:  # noqa: BLE001
                 last = e
@@ -608,6 +849,18 @@ class CokClient(object):
         except Exception:
             pass
         self.sock = None
+        release_connection(self.conn_identity, self)
+
+    def conn_diag(self):
+        """连接诊断信息(被踢时告诉用户"活了多久 / 发了多少请求")。"""
+        age = 0.0
+        if self.connected_at:
+            age = max(0.0, time.time() - self.connected_at)
+        return {
+            "age": round(age, 1),
+            "requests": int(self.req_count),
+            "identity": self.conn_identity or "",
+        }
 
     def _send_frame(self, obj):
         payload = encode_object(obj)
@@ -864,9 +1117,14 @@ class CokClient(object):
             raise CokError("尚未登录")
         sock = self.sock
         previous_timeout = None
-        if timeout is not None and sock is not None:
+        self.req_count += 1
+        if sock is not None:
             previous_timeout = sock.gettimeout()
-            sock.settimeout(timeout)
+            # ⚠️ **必须保证 socket 有超时**: 以前只在显式传 timeout 时才设,
+            # 而一旦这条 socket 被设成阻塞模式(None), 服务端把连接踢掉后
+            # recv 就**永远不返回** —— 进程卡死在 select 里(2026-11-15 服务器实测:
+            # 扫描器卡了 5 分钟没动静, 页面看着像"点了没反应")。
+            sock.settimeout(timeout if timeout is not None else self.timeout)
         try:
             last = None
             for attempt in range(retries + 1):
@@ -888,9 +1146,10 @@ class CokClient(object):
                     raise
             raise CokError("命令 %s 失败: %s" % (cmd, last))
         finally:
-            if previous_timeout is not None and sock is not None:
+            if sock is not None:
                 try:
-                    sock.settimeout(previous_timeout)
+                    sock.settimeout(previous_timeout
+                                    if previous_timeout is not None else self.timeout)
                 except OSError:
                     pass
 

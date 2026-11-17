@@ -1,13 +1,26 @@
 /* 手机端行为层：只补桌面 UI 在窄屏上「看得见但用不了」的那几处。
    不复制页面逻辑，不改任何接口调用。 */
 (() => {
-  if (!window.matchMedia || !window.matchMedia("(max-width: 760px)").matches) return;
+  /* 这个文件由 build.gradle 原样追加到控制台页面里（</body> 前），
+     所以页面主脚本里的 window.switchTab 之类都已经就绪。 */
+
+  /* ⚠ 宽屏内嵌（平板 / 横屏，>760px）也**必须**继续跑这一段：
+     mobile-console.css 在**任何宽度**下都会藏掉 `.sbUser`（那条规则不在
+     @media 里），于是管理员在 WebView 里一个入口都点不到。顶栏那份
+     (`.admTopWrap`) 要靠 `.cok-embed` 这个 class 才能显示，而它只能在这里加。
+
+     早先这里是 `if (!窄屏) return;`，结果宽屏 embed 下 <html> 上没有
+     `cok-embed` ⇒ `.cok-embed .admTopWrap.admOn{display:flex}` 打不到 ⇒
+     宽屏平板/横屏进内嵌控制台 = 一个管理入口都没有。 */
+  const NARROW = !window.matchMedia
+    || window.matchMedia("(max-width: 760px)").matches;
+  const IS_EMBED = new URLSearchParams(location.search).get("embed") === "1";
+  if (!NARROW && !IS_EMBED) return;          // 宽屏独立打开 = 桌面布局，什么都不做
 
   const root = document.documentElement;
-  root.classList.add("android-mobile");
+  if (NARROW) root.classList.add("android-mobile");
+  if (IS_EMBED) root.classList.add("cok-embed");
 
-  const params = new URLSearchParams(location.search);
-  const embed = params.get("embed") === "1";
   const $ = (id) => document.getElementById(id);
   const PANES = { dash: "paneDash", ops: "paneOps" };
 
@@ -15,13 +28,14 @@
      原生底部导航只有「高级控制台」一个入口，而页面本身是「看板 / 功能」两套。
      这里在顶栏下补一条两段切换条（.embedSeg），切谁显示谁 —— **不做搬运**。
 
-     ⚠️ 早先是把看板的块搬进功能页再藏起看板，问题很大：
+     ⚠ 早先是把看板的块搬进功能页再藏起看板，问题很大：
         (1) 看板一显示就是空的（内容全在功能页里），来回切等于丢内容；
         (2) 搬移和切页的 display 互相打架，会出现「点了看板又跳回功能」。
-        现在两套各自待在原地，只切 display，天然可逆、可来回切。 */
+        现在两套各自待在原地，只切 display，天然可逆、可来回切。
+     ⚠ 宽屏内嵌也要这条切换条，所以提成独立函数，宽屏分支直接调。 */
 
-  if (embed) {
-    root.classList.add("cok-embed");
+  function buildEmbedSeg() {
+    if (document.querySelector(".embedSeg")) return;   // 幂等：只建一次
     const nav = document.querySelector(".nav");
     if (nav) nav.style.display = "none";
 
@@ -60,25 +74,30 @@
     });
     syncSeg();
     setInterval(syncSeg, 800);
+  }
 
-    /* 首屏：页面会记住上次的 Tab（localStorage），可能一进来就是「看板」。
-       只在前 2.5 秒里做一次「落在功能页」的修正，之后完全交给用户 ——
-       早先写成"每次轮询都拽回功能页"，结果用户切到看板后 600ms 就被覆盖。 */
-    let forceOps = true;
-    const apply = () => {
-      const ops = $("paneOps"), dash = $("paneDash");
-      if (!ops || !dash) return;
-      if (forceOps && (dash.style.display !== "none" || ops.style.display === "none")) {
-        if (typeof window.switchTab === "function") window.switchTab("ops");
-        else {
-          dash.style.display = "none";
-          ops.style.display = "";
+  if (IS_EMBED) {
+    buildEmbedSeg();
+    if (NARROW) {
+      /* 首屏：页面会记住上次的 Tab（localStorage），可能一进来就是「看板」。
+         只在前 2.5 秒里做一次「落在功能页」的修正，之后完全交给用户 ——
+         早先写成"每次轮询都拽回功能页"，结果用户切到看板后 600ms 就被覆盖。 */
+      let forceOps = true;
+      const apply = () => {
+        const ops = $("paneOps"), dash = $("paneDash");
+        if (!ops || !dash) return;
+        if (forceOps && (dash.style.display !== "none" || ops.style.display === "none")) {
+          if (typeof window.switchTab === "function") window.switchTab("ops");
+          else {
+            dash.style.display = "none";
+            ops.style.display = "";
+          }
         }
-      }
-    };
-    apply();
-    const iv = setInterval(apply, 800);
-    setTimeout(() => { clearInterval(iv); forceOps = false; }, 2500);
+      };
+      apply();
+      const iv = setInterval(apply, 800);
+      setTimeout(() => { clearInterval(iv); forceOps = false; }, 2500);
+    }
   } else {
     /* 独立打开（手机浏览器 / 桌面窄窗）：页面自己管导航，
        顺手把 aria 补全 —— 底部导航是图标 + 文字，读屏需要明确标签。 */

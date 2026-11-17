@@ -526,12 +526,13 @@
       <div class="res" id="chanRes" style="display:none"></div>
       <div id="chanListWrap" style="display:none">
         <div class="mlist" id="chanList"></div>
-        <div class="mfoot">
-          <button id="chanAdd">添加选中(0)</button>
-          <button id="chanSelAll" class="ghost">全选可添加</button>
-          <span class="mnote" id="chanListNote"></span>
-        </div>
       </div>
+    </div>
+    <!-- 页脚放在 .mbd 外面: 它是弹窗的直接子元素, 固定在弹窗底部, 不会滚出屏幕 -->
+    <div class="mfoot" id="chanFoot" style="display:none">
+      <button id="chanAdd">添加选中(0)</button>
+      <button id="chanSelAll" class="ghost">全选可添加</button>
+      <span class="mnote" id="chanListNote"></span>
     </div>
   </div>
 </div>

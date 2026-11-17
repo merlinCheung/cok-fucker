@@ -414,7 +414,10 @@ def main():
                                               "requests_total", "players",
                                               "mismatched", "dropped", "errors")),
                         json.dumps(st, ensure_ascii=False)[:160])
-            ok &= check("没扫描时 running=False", st.get("running") is False,
+            # ⚠ 用 `not st.get("running")` 而不是 `is False`: 库里那张 scan_index
+            #    现在也参与判断, 某些环境（真的扫过的库）会返回 None/0 这类假值,
+            #    而这里要验的是"没在跑"这个语义, 不是"字面上是 False"。
+            ok &= check("没扫描时 running=False", not st.get("running"),
                         str(st.get("running")))
             # 历史: 记录 / 同 id 更新不追加 / 倒序
             hist_file = os.path.join(tmp, "scan-history.json")
@@ -445,6 +448,99 @@ def main():
             ok &= check("测试没有碰真实索引文件",
                         orig_load is not None and "u1" in fake_store["players"],
                         str(list(fake_store["players"])))
+
+            # --- 9e) 平台模式: 账号 key 与锁 key 必须分开(2026-11-15 修) ---
+            # 平台模式下 _lock_key() = "owner/gameUid", 但账号库里存的是纯 gameUid。
+            # 之前把**锁 key** 当账号 key 传给扫描器 -> 扫描器去账号库找
+            # "u-xxx/351542128002216.json" 找不到 -> 扫描进程秒退 ->
+            # 页面"一键扫全图点了没反应"(后端还回了"扫描已启动")。
+            captured = {}
+            orig_spawn = cok_web.Engine._spawn_scanner
+            orig_data_root = cok_web.accounts.DATA_ROOT
+
+            def _capture_spawn(engine, params, bak):
+                captured["params"] = params
+                return {"ok": True, "pid": 4242}
+
+            eng_plat = cok_web.Engine(make_args())
+            eng_plat.daemon = FakeDaemon(make_args(), delay=0.0)
+            eng_plat._ensure_account = lambda: True
+            eng_plat.owner = "u-test-owner"
+            eng_plat.account_key = "351542128002216"
+            eng_plat.account_isolated = True
+            cok_web.cok_map.read_scan_pid = lambda *a, **k: None
+            fake_store["meta"]["scanning"] = False
+            try:
+                # 数据目录指到临时目录, 不在真实 data/ 里留垃圾
+                cok_web.accounts.DATA_ROOT = tmp
+                cok_web.Engine._spawn_scanner = _capture_spawn
+                r4 = eng_plat._scan_start({"step": 20})
+                p = captured.get("params") or {}
+                ok &= check("平台模式下扫描器拿到的账号 key 是纯 gameUid",
+                            p.get("account_key") == "351542128002216",
+                            str(p.get("account_key")))
+                ok &= check("平台模式下锁 key 带 owner 前缀(和网页控制台同一把)",
+                            p.get("lock_key") == "u-test-owner/351542128002216",
+                            str(p.get("lock_key")))
+                ok &= check("账号 key 里不能带 owner 前缀(账号库存的是纯 gameUid)",
+                            "/" not in str(p.get("account_key") or ""),
+                            str(p.get("account_key")))
+                ok &= check("扫描启动返回成功", r4.get("ok") is True, str(r4.get("error")))
+            finally:
+                cok_web.Engine._spawn_scanner = orig_spawn
+                cok_web.accounts.DATA_ROOT = orig_data_root
+
+            # --- 9f) 扫描器侧: 带 owner 前缀的账号 key 要能解析出纯 gameUid ---
+            import scan_world
+            orig_get = scan_world.accounts.get_account
+            try:
+                scan_world.accounts.get_account = (
+                    lambda k: ({"gameUid": "351542128002216"}
+                               if k == "351542128002216" else None))
+                a1, k1 = scan_world.resolve_account("u-test-owner/351542128002216")
+                ok &= check("带 owner 前缀的账号 key 能解析出账号和纯 gameUid",
+                            a1 is not None and k1 == "351542128002216",
+                            "%r %r" % (a1, k1))
+                a2, k2 = scan_world.resolve_account("351542128002216")
+                ok &= check("纯 gameUid 直接能解析出账号",
+                            a2 is not None and k2 == "351542128002216",
+                            "%r %r" % (a2, k2))
+                a3, _ = scan_world.resolve_account("u-test-owner/查无此号")
+                ok &= check("真查不到时返回 None(不硬凑)",
+                            a3 is None, "%r" % (a3,))
+            finally:
+                scan_world.accounts.get_account = orig_get
+
+            # --- 9g) 扫描前必须让出账号连接(2026-11-15 修) ---
+            # 同账号只允许**一条**连接: 网页这边还挂着常驻连接(自动开罩会
+            # 自动切常驻), 扫描器再连一次就是双连接 -> 服务端互踢 ->
+            # 扫描卡在第一个请求上, 页面看着像"点了没反应"。
+            closed = {"n": 0}
+
+            class _FakeCli(object):
+                def close(self):
+                    closed["n"] += 1
+
+            eng_plat.daemon.client = _FakeCli()
+            try:
+                eng_plat._release_account_connection()
+                ok &= check("扫描前把常驻连接关掉(把账号让给扫描器)",
+                            closed["n"] == 1 and eng_plat.daemon.client is None,
+                            "closed=%d client=%r" % (closed["n"], eng_plat.daemon.client))
+            finally:
+                eng_plat.daemon.client = None
+
+            # 锁的持有者写着 scan-world -> 判定"扫描正占着账号"
+            orig_holder = cok_client.account_holder
+            try:
+                cok_client.account_holder = lambda key=None: "381913 scan-world"
+                ok &= check("锁持有者是扫描器时判定为'扫描占着账号'",
+                            eng_plat._scan_holds_account() is True)
+                cok_client.account_holder = lambda key=None: ""
+                ok &= check("没有扫描时判定为'没占着账号'",
+                            eng_plat._scan_holds_account() is False)
+            finally:
+                cok_client.account_holder = orig_holder
         finally:
             (cok_web.cok_map.read_scan_pid, cok_web.cok_map.write_scan_pid,
              cok_web.cok_map.clear_scan_pid) = (orig_pid, orig_write_pid, orig_clear_pid)
@@ -478,6 +574,32 @@ def main():
         ok &= check("游戏服写操作仍互斥(等慢轮询结束)",
                     waited >= 1.0, "等待 %.3fs" % waited)
         slow.join(timeout=10)
+
+        # --- 11) 重启后状态从库回填(不等下一次轮询) ---
+        # 场景: 引擎刚起来, 账号一解析出来就把上次的 overview/buildQueue
+        # 从 client_state 灌回 self.states。没有这一步, 弱网首轮轮询前
+        # 页面上的卡片全是"未加载", 用户会以为功能坏了。
+        import cok_store as _S
+        _S.use_memory()
+        _S.client_state_set("u-1", "351542128002216", "overview",
+                            {"at": 1, "队列": [], "未开启": True})
+        _S.client_state_set("u-1", "351542128002216", "buildQueue",
+                            {"at": 1, "金币": 999})
+        eng4 = cok_web.Engine(make_args(), pinned_key="351542128002216",
+                              owner="u-1")
+        eng4.daemon = FakeDaemon(make_args(), delay=3.0)
+        eng4.app_online = lambda: False
+        # 账号库里没有这个号 -> _ensure_account 会返回 False(凭据不完整),
+        # 但 _apply_account_meta 之前不会跑; 所以这里显式喂一份账号,
+        # 走的仍然是真实的 _apply_account_meta 分支。
+        eng4._apply_account_meta(
+            {"gameUid": "351542128002216", "pfId": "x", "deviceId": "d",
+             "uuid": "u", "signCode": "s", "host": "h", "port": 1},
+            "测试")
+        ok &= check("重启后 states 从库回填(不等轮询)",
+                    eng4.states.get("buildQueue", {}).get("金币") == 999,
+                    json.dumps(sorted(eng4.states.keys())))
+        _S.use_memory()
 
         t.join(timeout=10)
     finally:

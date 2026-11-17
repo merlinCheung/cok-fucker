@@ -43,7 +43,9 @@ def main(argv):
         print("\n" + "=" * 60)
         print("RUN  %s" % name)
         print("=" * 60)
-        rc = subprocess.call([sys.executable, path])
+        # -X faulthandler: 子进程崩溃时把 Python 栈打出来,
+        # 否则只看到 returncode=-11 无从排查
+        rc = subprocess.call([sys.executable, "-X", "faulthandler", path])
         ran.append(name)
         if rc != 0:
             failed.append((name, rc))

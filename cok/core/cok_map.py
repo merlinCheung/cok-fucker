@@ -62,47 +62,128 @@ STEP = 12
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-#: 数据目录。多账号时每个账号一个子目录(坐标索引/扫描历史/pid 各存各的)。
-#: 由环境变量 COK_DATA_DIR 驱动, 子进程(scan_world.py)靠继承 env 自动对齐;
-#: 不设时就是脚本所在目录, 行为与多账号改造前完全一致。
+# ───────────────────── 账号数据目录(按账号隔离) ─────────────────────
+# 原来这里是一个模块级 `DATA_DIR`, 5 个引擎并行时**后写的把前面的覆盖掉** ——
+# 所有账号的坐标索引/扫描历史/pid 全落到最后一个账号的文件里。
+# 现在改成"作用域容器": 默认一份 + 每个账号一份, 互不干扰。
+#
+# 关键点: 值只有一份, 由 Scope 派生 —— 路径要么都在这, 要么都不在。
+try:
+    from cok_scope import Scope
+except ImportError:                       # 直接按脚本跑时的兜底
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from cok_scope import Scope
 
-DATA_DIR = os.environ.get("COK_DATA_DIR") or _data_dir()
+#: 索引/历史/pid 三个文件所在目录
+DATA_SCOPE = Scope(None, "cok_map.data_dir")
+DATA_SCOPE["DATA_DIR"] = os.environ.get("COK_DATA_DIR") or _data_dir()
 
-#: 默认索引文件
-DEFAULT_INDEX = os.path.join(DATA_DIR, "map-index.json")
-
-#: 扫描历史文件(每次扫描一行记录, 按 id 去重更新)
-HISTORY_FILE = os.path.join(DATA_DIR, "scan-history.json")
-
-#: 扫描进程 pid 文件(网页据此判断"扫描还在跑", 网页重启也不丢)
-PID_FILE = os.path.join(DATA_DIR, "scan.pid")
+#: 索引文件名(相对数据目录)
+INDEX_NAME = "map-index.json"
+#: 扫描历史文件名
+HISTORY_NAME = "scan-history.json"
+#: 扫描进程 pid 文件名(网页据此判断"扫描还在跑", 网页重启也不丢)
+PID_NAME = "scan.pid"
 
 
-def set_data_dir(path):
-    """把数据目录指到 path, 并同步更新三个派生路径与 COK_DATA_DIR 环境变量。
+def _derive(scope):
+    """从数据目录派生出三个文件路径(单一真相: 改目录只需改 DATA_SCOPE)。"""
+    d = scope.get("DATA_DIR")
+    return {"DATA_DIR": d,
+            "DEFAULT_INDEX": os.path.join(d, INDEX_NAME),
+            "HISTORY_FILE": os.path.join(d, HISTORY_NAME),
+            "PID_FILE": os.path.join(d, PID_NAME)}
 
-    环境变量也一并设置, 这样之后 Popen 出去的 scan_world.py 子进程会继承到
-    同一目录, 无需额外传参。path 为空则回退到脚本所在目录(单账号行为)。
+
+# 默认那份先填好(单账号 / 安卓端的行为和改造前一致)
+DATA_SCOPE.update(**_derive(DATA_SCOPE))
+
+
+def set_data_dir(path, uid=None):
+    """把数据目录指到 path(账号级)。
+
+    uid 为空 → 只改默认桶(单账号 / 老脚本, 行为不变);
+    给了 uid → 只改该账号的桶, **不影响别的账号**(服务端多租户靠这个)。
+
+    ⚠️ 语义变化(有意为之): 原来这里会**连带设 COK_DATA_DIR 环境变量**,
+    于是同进程里后面创建的引擎也全被拖到那个目录。现在环境变量只在
+    默认桶上设 —— 账号桶的目录是显式的, 由调用方传给子进程。
     """
-    global DATA_DIR, DEFAULT_INDEX, HISTORY_FILE, PID_FILE
-    DATA_DIR = path or _HERE
+    scope = DATA_SCOPE.child(uid) if uid not in (None, "") else DATA_SCOPE
+    scope["DATA_DIR"] = path or _HERE
+    scope.update(**_derive(scope))
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(scope["DATA_DIR"], exist_ok=True)
     except OSError:
         pass
-    DEFAULT_INDEX = os.path.join(DATA_DIR, "map-index.json")
-    HISTORY_FILE = os.path.join(DATA_DIR, "scan-history.json")
-    PID_FILE = os.path.join(DATA_DIR, "scan.pid")
-    if path:
-        os.environ["COK_DATA_DIR"] = DATA_DIR
-    else:
-        os.environ.pop("COK_DATA_DIR", None)
-    return DATA_DIR
+    if uid in (None, ""):
+        if path:
+            os.environ["COK_DATA_DIR"] = scope["DATA_DIR"]
+        else:
+            os.environ.pop("COK_DATA_DIR", None)
+    return scope["DATA_DIR"]
 
 
-def load_history(path=None):
+def _cur(uid=None):
+    """取 uid 对应的那份作用域(默认桶或账号桶)。"""
+    return DATA_SCOPE.child(uid) if uid not in (None, "") else DATA_SCOPE
+
+
+# ───────────────── 对外读取接口(按账号) ─────────────────
+def data_dir(uid=None):
+    """uid 账号的数据目录(默认桶 = 进程默认)。"""
+    return _cur(uid).get("DATA_DIR")
+
+
+def index_path(uid=None):
+    """uid 账号的坐标索引文件路径。"""
+    return _cur(uid).get("DEFAULT_INDEX")
+
+
+def history_path(uid=None):
+    """uid 账号的扫描历史文件路径。"""
+    return _cur(uid).get("HISTORY_FILE")
+
+
+def pid_path(uid=None):
+    """uid 账号的扫描进程 pid 文件路径。"""
+    return _cur(uid).get("PID_FILE")
+
+
+def snapshot_dirs():
+    """所有账号的数据目录(排查用: 谁的目录指到哪去了)。"""
+    out = {"": data_dir()}
+    for k in sorted(DATA_SCOPE.children()):
+        v = DATA_SCOPE.child(k).get("DATA_DIR")
+        if v and v != out.get(""):
+            out[k] = v
+    return out
+
+
+# ─────────────────── 兼容旧名字(模块属性, 不是副本) ───────────────────
+# 老代码 / 老脚本会读 `cok_map.DEFAULT_INDEX` / `cok_map.DATA_DIR` 等。
+# 用模块级 `__getattr__` 透到作用域: 读拿**当前默认桶**的值。
+# ⚠️ 不写成 `DEFAULT_INDEX = ...` 复制 —— 那样两处各存一份, 改了 A 读 B 看不到。
+_LEGACY_MAP = {
+    "DATA_DIR": "DATA_DIR",
+    "DEFAULT_INDEX": "DEFAULT_INDEX",
+    "HISTORY_FILE": "HISTORY_FILE",
+    "PID_FILE": "PID_FILE",
+}
+
+
+def __getattr__(name):
+    """模块级属性兜底: 旧名字 → 默认桶的值(账号桶请用 index_path(uid) 等)。"""
+    key = _LEGACY_MAP.get(name)
+    if key:
+        return DATA_SCOPE.get(key)
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+def load_history(path=None, uid=None):
     """读扫描历史。返回 {runs: [...]} —— 最近的在前。"""
-    p = path or HISTORY_FILE
+    p = path or history_path(uid)
     try:
         with open(p, encoding="utf-8") as f:
             doc = json.load(f)
@@ -115,9 +196,9 @@ def load_history(path=None):
     return {"runs": runs}
 
 
-def record_scan(entry, path=None):
+def record_scan(entry, path=None, uid=None):
     """写一条扫描历史。同 id 的记录**更新**而不是追加(一次扫描会多次写)。"""
-    p = path or HISTORY_FILE
+    p = path or history_path(uid)
     doc = load_history(p)
     runs = doc["runs"]
     rid = str(entry.get("id") or "")
@@ -130,6 +211,15 @@ def record_scan(entry, path=None):
     else:
         runs.insert(0, dict(entry))
     doc["runs"] = runs[:60]          # 只留最近 60 次
+    # 历史也进库（跨进程可查：管理页要列"这个号最近扫了什么"）
+    try:
+        import cok_store as _st
+        _st.account_state_set(str(entry.get("account_key") or ""),
+                              scan_history=doc.get("runs") or [])
+    except Exception as e:
+        # 历史入库失败: 文件那份已经写成功了, 页面读库会少这一条 —— 要能查
+        from cok_errorlog import quiet as _q
+        _q(e, "扫描历史上库")
     try:
         tmp = p + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -140,9 +230,9 @@ def record_scan(entry, path=None):
     return True
 
 
-def read_scan_pid(path=None):
+def read_scan_pid(path=None, uid=None):
     """读扫描进程 pid(没有就返回 None)。"""
-    p = path or PID_FILE
+    p = path or pid_path(uid)
     try:
         with open(p, encoding="utf-8") as f:
             return int((f.read() or "0").strip() or 0) or None
@@ -150,8 +240,8 @@ def read_scan_pid(path=None):
         return None
 
 
-def write_scan_pid(pid, path=None):
-    p = path or PID_FILE
+def write_scan_pid(pid, path=None, uid=None):
+    p = path or pid_path(uid)
     try:
         with open(p, "w", encoding="utf-8") as f:
             f.write(str(int(pid)))
@@ -160,8 +250,8 @@ def write_scan_pid(pid, path=None):
     return True
 
 
-def clear_scan_pid(path=None):
-    p = path or PID_FILE
+def clear_scan_pid(path=None, uid=None):
+    p = path or pid_path(uid)
     try:
         os.remove(p)
     except OSError:
@@ -216,6 +306,22 @@ def _parse_points(params):
         elif isinstance(got, dict):
             out.append(got)
     return out
+
+
+def _log(msg):
+    print(msg, flush=True)
+
+
+#: 这些文案说明连接已经废了(不是"服务端返回了业务错误")。
+#: 服务端把同账号的旧连接踢掉后, 后续请求只会一直超时 —— 必须重建连接。
+_CONN_DEAD_MARKS = ("连接被服务端关闭", "无响应", "响应超时", "Broken pipe",
+                    "Connection reset", "not connected", "Bad file descriptor")
+
+
+def _is_conn_dead(err):
+    """错误文案是不是"连接已死"(需要重建连接, 而不是继续用这条)。"""
+    e = str(err or "")
+    return any(m in e for m in _CONN_DEAD_MARKS)
 
 
 def fetch_area(client, x, y, server_id=2223, timestamp=None, attempts=4):
@@ -306,17 +412,17 @@ def fetch_area(client, x, y, server_id=2223, timestamp=None, attempts=4):
             "mismatched": mismatched}
 
 
-def load_index(path=None):
+def load_index(path=None, uid=None):
     """读本地索引。返回 {players: {uid: {...}}, meta: {...}}
 
     读出来时会把每个玩家的坐标**校正成众数观测点**(见 resolve_point),
     所以不管索引是刚写的还是老的, 消费方拿到的都是"最可信"的那个坐标。
 
-    path=None 时用**当前**的 DEFAULT_INDEX(set_data_dir 之后能生效) ——
-    不能把 DEFAULT_INDEX 写进默认参数, 那样会在定义时就绑死旧目录。
+    path 为空时用**当前账号**的索引(默认桶或 uid 的桶) ——
+    不能把路径写进默认参数, 那样会在定义时就绑死旧目录。
     """
     if path is None:
-        path = DEFAULT_INDEX
+        path = index_path(uid)
     try:
         with open(path, encoding="utf-8") as f:
             doc = json.load(f)
@@ -338,9 +444,9 @@ def load_index(path=None):
     return doc
 
 
-def save_index(doc, path=None):
+def save_index(doc, path=None, uid=None):
     if path is None:
-        path = DEFAULT_INDEX
+        path = index_path(uid)
     # ⚠️ 临时文件名要**带 pid**: 多个进程同时写同一个索引时, 共用
     # "<path>.tmp" 会互相抢文件 —— os.replace 报 FileNotFoundError,
     # 扫描器因此崩掉、而且旧索引会把新索引覆盖回去。
@@ -452,7 +558,7 @@ def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
               长时间卡在同一个中心; 定期重连能把影响限制在少量请求内。
     """
     if path is None:
-        path = DEFAULT_INDEX
+        path = index_path(uid)
     index = index if index is not None else load_index(path)
     stats = {"requests": 0, "tiles": 0, "players": 0, "new": 0,
              "errors": 0, "elapsed": 0.0}
@@ -491,6 +597,15 @@ def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
                     stats["mismatched"] = stats.get("mismatched", 0) + res["mismatched"]
                 if not res.get("ok"):
                     stats["errors"] += 1
+                    # ⚠️ 连接死了就**立刻重建**: 服务端把同账号的旧连接踢掉后,
+                    # 这条连接再发什么都只会超时。不重连的话, 后面每个中心点
+                    # 都白等一轮超时(实测卡几分钟没动静, 页面像"点了没反应")。
+                    if reconnect and _is_conn_dead(str(res.get("error") or "")):
+                        try:
+                            client = reconnect() or client
+                            _log("[*] 连接失效, 已重建: %s" % str(res.get("error"))[:80])
+                        except Exception:  # noqa: BLE001
+                            pass
                     continue
                 stats["tiles"] += len(res.get("tiles") or [])
                 stats["players"] += len(res.get("players") or [])
@@ -532,19 +647,37 @@ def scan_area(client, x0, y0, x1, y1, server_id=2223, step=STEP,
             meta["next_y"] = next_y
         index["meta"] = meta
         save_index(index, path)
+        # 入库：扫描进度要**跨进程可见** —— 页面问"扫到哪了"、管理页问
+        # "这个号有没有在扫"，都不该只靠文件（扫描器是另一个进程）。
+        # 只写 meta，不重写整份 players（那太重）。
+        try:
+            import cok_store as _st
+            own = ""
+            try:
+                acc = (index.get("meta") or {}).get("account_key") or ""
+                own = _st.scan_owner_of(acc)
+            except Exception:
+                own = ""
+            _st.scan_index_set(own, str((index.get("meta") or {}).get("account_key") or ""),
+                               meta=meta, progress=int(stats["requests"]),
+                               step=int(step),
+                               done=0)
+        except Exception:
+            # 入库失败不影响扫描本身：文件那份已经写好了
+            pass
     return stats
 
 
 def scan_world(client, server_id=2223, step=STEP, index=None,
                path=None, progress=None, max_requests=None,
-               size=WORLD_SIZE):
+               size=WORLD_SIZE, uid=None):
     """扫描整张世界地图(1201×1201)。"""
     if path is None:
-        path = DEFAULT_INDEX
+        path = index_path(uid)
     return scan_area(client, 0, 0, size - 1, size - 1,
                      server_id=server_id, step=step, index=index,
                      path=path, progress=progress,
-                     max_requests=max_requests)
+                     max_requests=max_requests, uid=uid)
 
 
 def find_players(index, keyword, limit=50):

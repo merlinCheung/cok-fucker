@@ -26,13 +26,17 @@ import cok_map  # noqa: E402
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index", default=cok_map.DEFAULT_INDEX)
+    # 默认用"当前账号"的索引; 老用法 `--index <path>` 照旧可用
+    ap.add_argument("--account", default="", help="账号 uid(默认用当前账号的索引)")
+    ap.add_argument("--index", default=None)
     ap.add_argument("--out", default=under_data("cok-players.xlsx"))
     ap.add_argument("--csv", action="store_true", help="同时导出一份 CSV")
     ap.add_argument("--top", type=int, default=0, help="打印最热闹的 N 个区域")
     ap.add_argument("--real-only", action="store_true",
                     help="只导真实玩家(排除 Empire…#2223 这类 NPC)")
     args = ap.parse_args()
+    if not args.index:
+        args.index = cok_map.index_path(args.account or None)
 
     idx = cok_map.load_index(args.index)
     players = idx.get("players") or {}

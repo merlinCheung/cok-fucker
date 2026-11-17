@@ -119,19 +119,6 @@ def _rand_iv():
     return "".join(random.choice(_IV_ALPHA) for _ in range(16)).encode("ascii")
 
 
-def encrypt(plain):
-    """明文(bytes/str) -> base64url(iv || AES-256-CBC 密文)。"""
-    if isinstance(plain, str):
-        plain = plain.encode("utf-8")
-    iv = _rand_iv()
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-    from cryptography.hazmat.primitives import padding as _pad
-    padder = _pad.PKCS7(128).padder()
-    data = padder.update(plain) + padder.finalize()
-    enc = Cipher(algorithms.AES(X7_AES_KEY), modes.CBC(iv)).encryptor()
-    return _b64u(iv + enc.update(data) + enc.finalize())
-
-
 def decrypt(text):
     """base64url(iv||密文) -> 明文 bytes; 失败返回 None。"""
     try:

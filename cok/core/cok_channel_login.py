@@ -52,6 +52,7 @@ import argparse
 import base64
 import hashlib
 import http.client
+import inspect
 import json
 import os as _os
 import re
@@ -1181,6 +1182,15 @@ def make_account(account, password, label=None, owner=None, save=False,
 #     list_identities(res, verbose=False)             -> [ {pfId, name, ...}, ... ]
 #     build_account(pf_id, platform_token="", gamesvc=None) -> (acc|None, gs)
 # 果盘的实现就在本文件里; 别的渠道各自一个模块, 由 cok_channels 懒加载。
+#
+# ⚠️ 同一个模块里**只能有一个** list_identities 定义。
+#    2026-11-16 事故: 这里曾多写了一个"精简版" list_identities(res, verbose=False),
+#    把上面那个带 with_role 的**完整版整个盖掉**了 ——
+#    而 channel_login_list_small() 一直在调 list_identities(..., with_role=...),
+#    于是网页端果盘渠道登录直接炸:
+#        失败·渠道登录请求失败: list_identities() got an unexpected keyword argument 'with_role'
+#    重复定义**不报错、import 时也看不出来**, 只在跑到那条路径才炸。
+#    (回归测试锁在 cok/tests/test_channel_shadow.py)
 
 
 def list_channels():
@@ -1192,34 +1202,41 @@ def list_channels():
         return []
 
 
-def list_identities(res, verbose=False):
-    """果盘: 列出该账号下的游戏小号(每个小号 = 一个游戏身份)。"""
-    items = []
-    env = res.get("authEnvelope")
-    uid = res.get("guopanUid")
-    if not env or not uid:
-        return items
-    try:
-        lr = list_small_accounts(uid, env, verbose=False)
-    except Exception:  # noqa: BLE001
-        return items
-    for s in lr.get("list") or []:
-        per = s.get("perGameId")
-        if not per:
-            continue
-        items.append({
-            "perGameId": per,
-            "pfId": "ewanqf:" + PFID_PREFIX + per,
-            "name": s.get("name") or per[:8],
-            "guopanGameUin": s.get("gameUin"),
-        })
-    return items
-
-
 def build_account(pf_id, platform_token="", gamesvc=None, channel=None):
     """pfId -> 账号库凭据(协议模块统一接口)。"""
     return build_account_from_pf_id(pf_id, platform_token=platform_token,
                                     gamesvc=gamesvc, channel=channel)
+
+
+#: 协议模块的 list_identities 是否支持 with_role(按模块名缓存探测结果)
+_PROTO_WITH_ROLE = {}
+
+
+def _proto_list_identities(proto, res, verbose=False, with_role=False):
+    """按多渠道约定调用协议模块的 list_identities。
+
+    约定签名是 list_identities(res, verbose=False), 但果盘多一个 with_role 开关
+    (要不要顺带去游戏服解析角色)。**硬传**会让没有这个参数的渠道直接
+    TypeError(unexpected keyword argument), 所以这里按签名探测一次再传。
+
+    探测结果缓存在模块上, 免得每次调用都去 introspect。
+    """
+    fn = getattr(proto, "list_identities", None)
+    if fn is None:
+        return []
+    key = getattr(fn, "__module__", "") + "." + getattr(fn, "__name__", "")
+    supports = _PROTO_WITH_ROLE.get(key)
+    if supports is None:
+        try:
+            params = inspect.signature(fn).parameters
+        except (TypeError, ValueError):  # 不可 introspect 的实现
+            params = {}
+        supports = "with_role" in params
+        _PROTO_WITH_ROLE[key] = supports
+    kwargs = {"verbose": verbose}
+    if supports:
+        kwargs["with_role"] = with_role
+    return fn(res, **kwargs)
 
 
 def login(account, password, channel="guopan", verbose=False):
@@ -1260,7 +1277,7 @@ def login(account, password, channel="guopan", verbose=False):
     # 身份列表
     if res.get("ok") and not res.get("identities"):
         try:
-            res["identities"] = proto.list_identities(res, verbose=False)
+            res["identities"] = _proto_list_identities(proto, res, verbose=False)
         except Exception:  # noqa: BLE001
             res["identities"] = []
     if not res.get("identities") and res.get("pfId"):

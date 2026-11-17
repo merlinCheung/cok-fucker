@@ -18,7 +18,9 @@ import argparse
 import json
 import os
 import random
+import secrets
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -332,6 +334,188 @@ def main():
             pass
 
     cok_web.Handler.manager = _SoloManager()
+
+    # 平台模式演示: 离线预览默认 `Handler.platform is None`, 于是 `/api/me`
+    # 回的是"匿名本地用户(role=admin)" ⇒ 管理面板按钮在预览里根本不出现,
+    # 改管理页时看不到效果。这里挂一个**假平台层**(只实现前端会用到的
+    # list_users), 并且 `_current_user` 固定返回 admin —— 预览不联网、不碰
+    # 真库, 所以随便"冒充"没有风险。
+    class _MockPlatform(object):
+        #: 预览里这些 uid 就是"有号的人"—— list_accounts 里没有 owner 的号
+        #: 归到 boss 名下, 好让管理面板有行可显示。
+        uid = "u-demo-boss"
+
+        def __init__(self):
+            self.lock = threading.Lock()
+            self.users = {}
+
+        def list_users(self, limit=200):
+            """`online` 要真实: 概览页按它统计在线人数, 不标就永远是 0。
+
+            两个号标成在线 —— 他们在假快照里有正在跑的引擎(见
+            `_preview_admin_accounts`), 标不在线会和下面那张表对不上。
+            """
+            return [
+                {"uid": "u-demo-boss", "username": "boss", "role": "admin",
+                 "banned": 0, "online": True, "created_at": 0,
+                 "last_login": time.time()},
+                {"uid": "u-demo-alice", "username": "alice", "role": "user",
+                 "banned": 0, "online": True, "created_at": 0,
+                 "last_login": time.time() - 600},
+                {"uid": "u-demo-bob", "username": "bob", "role": "user",
+                 "banned": 0, "online": False, "created_at": 0,
+                 "last_login": time.time() - 7200},
+            ]
+
+        def get(self, owner, touch=True):
+            return None
+
+        # ---- 邀请码: 管理页的「邀请码」面板全靠这个 -------------------
+        def invites_list(self, limit=100):
+            rows = list(getattr(self, "_invites", []) or [])
+            rows.extend([
+                {"code": "COK-DEMO0001", "created_by": "boss",
+                 "created_at": int(time.time()) - 86400,
+                 "used_by": "alice", "expires_at": 0, "note": "预览"},
+                {"code": "COK-DEMO0002", "created_by": "boss",
+                 "created_at": int(time.time()) - 3600,
+                 "used_by": "", "expires_at": 0, "note": ""}])
+            return rows
+
+        def invite_new(self, created_by="", expires_at=0, note=""):
+            # 用 secrets 而不是 random: random 是可预测的伪随机(这个文件同时
+            # 被真实部署脚本 import 过, 别把"生成邀请码"的做法留成范例)。
+            code = "COK-DEMO" + secrets.token_hex(2).upper()
+            self._invites = getattr(self, "_invites", [])
+            self._invites.insert(0, {
+                "code": code, "created_by": created_by or "",
+                "created_at": int(time.time()), "used_by": "",
+                "expires_at": int(expires_at or 0), "note": note or ""})
+            return code
+
+        def user_get(self, name):
+            for u in self.list_users():
+                if u.get("username") == str(name):
+                    return u
+            return None
+
+        def user_get_by_uid(self, uid):
+            for u in self.list_users():
+                if u.get("uid") == str(uid):
+                    return u
+            return None
+
+        def user_set_banned(self, name, banned):
+            return True
+
+        def user_set_role(self, name, role):
+            return True
+
+        def user_delete(self, name):
+            return True
+
+        # ---- 审计日志: `/api/audit` 直接调 `platform.recent_audit` -----
+        # 少这个方法会抛 AttributeError → 响应直接断连(ERR_EMPTY_RESPONSE),
+        # 页面上只显示"查询失败: Failed to fetch", 完全看不出是哪一层炸的。
+        def recent_audit(self, uid=None, limit=100):
+            base = int(time.time())
+            rows = [
+                {"ts": base - 30, "uid": "u-demo-boss", "action": "login",
+                 "target": "boss", "ok": 1, "detail": "登录成功"},
+                {"ts": base - 600, "uid": "u-demo-bob", "action": "account-add",
+                 "target": "44056610002223", "ok": 1, "detail": "添加账号"},
+                {"ts": base - 1800, "uid": "u-demo-alice",
+                 "action": "account-remove", "target": "1125641597002221",
+                 "ok": 1, "detail": "移除账号"},
+                {"ts": base - 7200, "uid": "u-demo-boss",
+                 "action": "invite-new", "target": "COK-DEMO0002",
+                 "ok": 1, "detail": "生成邀请码"},
+            ]
+            if uid:
+                rows = [r for r in rows if r.get("uid") == uid]
+            return rows[:int(limit or 100)]
+
+        def session_drop_user(self, uid):
+            return True
+
+    _mock_pm = _MockPlatform()
+    cok_web.Handler.platform = _mock_pm
+    # 路由里有些判断用的是**模块级** `platform`(不是 Handler 上的):
+    # `/api/admin/users`、`/api/admin/invites` 写的是 `if platform is None:
+    # return {"ok": True, "users": []}` —— 只挂 Handler 的话页面一切正常,
+    # 但用户表和邀请码永远是空数组。所以模块级也要指过去。
+    cok_web.platform = _mock_pm
+    cok_web.Handler._current_user = (
+        lambda self: {"uid": "u-demo-boss", "username": "boss",
+                      "role": "admin", "banned": False})
+
+    def _preview_admin_accounts(handler, with_errors=False):
+        """假的全平台账号状态: 用来把管理面板渲染出来, 不碰真账号库。
+
+        状态刻意做全: 报错 / 掉线 / 陈旧 / 打怪 / 有罩 / 无主 —— 每种分支都
+        要能在预览里看到, 否则改完样式只能等真机。
+        """
+        now = time.time()
+
+        def row(key, label, uid, uname, owner_name, status, **kw):
+            s = {"shield_ms": 0, "has_shield": False, "dock_rewardable": 0,
+                 "welfare_claimable": False, "hunting": False, "hunt_kills": 0,
+                 "error": "", "disconnected": False, "app_yield": False,
+                 "last_ok_poll": now - 30, "stale": False}
+            s.update(kw)
+            running = status != "none"
+            return {"key": key, "label": label, "role_name": label,
+                    "game_uid": key, "added": "2026-11-0%d" % (1 + len(key) % 8),
+                    "owner": uid, "username": uname, "user_banned": False,
+                    "orphan": not uid, "running": running, "parallel": running,
+                    "priority": 1 + len(key) % 3,
+                    # ⚠ 前端按后端的 `error` / `offline` / `stale` 判状态,
+                    #   假数据写成 "err"/"off" 会一条都匹配不上(筛"报错"永远 0)。
+                    "status": {"err": "error", "off": "offline"}.get(status, status),
+                    "summary": s if running else None, "owner_name": owner_name}
+
+        rows = [
+            row("136063574002223", "主号(元气少女李逵)", "u-demo-boss", "boss",
+                "boss", "ok", shield_ms=5 * 3600_000, has_shield=True,
+                dock_rewardable=2, welfare_claimable=True),
+            row("44056610002223", "乙", "u-demo-bob", "bob", "bob", "run",
+                hunting=True, hunt_kills=12, shield_ms=3 * 3600_000,
+                has_shield=True),
+            row("1125641597002221", "甲", "u-demo-alice", "alice", "alice",
+                "err", error="登录失败: 服务端返回 500192(账号被顶)"),
+            row("351542128002216", "66手游号", "", "无主", "无主", "none"),
+            row("136063574002224", "乙的小号(掉线)", "u-demo-bob", "bob", "bob",
+                "off", disconnected=True, last_ok_poll=now - 900),
+            row("136063574002225", "乙的小号(陈旧)", "u-demo-bob", "bob", "bob",
+                "idle", stale=True, last_ok_poll=now - 4000),
+        ]
+        return {"ok": True, "platform": True, "preview": True,
+                "users": _MockPlatform().list_users(), "accounts": rows,
+                "stats": {"users": 3, "users_online": 2, "accounts": 6,
+                          "shown": 6, "running": 2, "parallel": 2, "hunting": 1,
+                          "shielded": 2, "errors": 1, "offline": 1, "stale": 1,
+                          "orphan": 1},
+                "generated": int(now)}
+
+    # 管理面板要有行可显示: 离线预览里没有真账号库, 这里直接喂一份假快照
+    # (只影响 `/api/admin/accounts` 这一个路由, 其它接口照旧走假引擎)。
+    # 关掉缓存 —— 预览进程里状态是静态的, 缓存只会让改完代码看不到变化。
+    cok_web._ADMIN_STATE_TTL = 0.0
+    cok_web._admin_accounts_snapshot = _preview_admin_accounts
+    # 管理动作在预览里也是假的: 真实现会去账号库找 key, 而预览没有账号库,
+    # 会一律回"账号库里没有这个账号"。这里回一个成功, 让前端路径走通。
+    cok_web.admin_account_action = (
+        lambda handler, body: {
+            "ok": True, "on": bool((body or {}).get("on")),
+            "key": str((body or {}).get("key") or ""), "owner": "bob",
+            "preview": True,
+            "note": "已操作(预览模式, 没有真的动账号)"})
+
+    # ---- 独立管理后台 cok/admin.html ----------------------------------
+    # 概览**不再单独造假**: 真机上的实现就是 `_admin_accounts_snapshot` 的
+    # 加一层聚合(见 cok_web._admin_platform_overview), 口径必须和表一致。
+    # 这里同样让它跑真实现 —— 假快照已经是上面那份 6 行数据, 聚合出来的
+    # KPI 才是页面真正会看到的样子。各造一套的话, 预览里对得上、线上对不上。
 
     # 填一份样例状态(预览服务不跑轮询)
     eng.daemon.poll_once()

@@ -89,6 +89,7 @@ _ENGINE_SHARED_FORWARD = (
     'app_online_cached',
     'argparse',
     'channel',
+    'clear_app_online_cache',
     'cok_alliance',
     'cok_assist',
     'cok_channels',
@@ -124,6 +125,46 @@ _ENGINE_SHARED_FORWARD = (
     'traceback',
     'webbrowser',
 )
+
+#: id-names.json 是 ~7.5MB 的**只读静态表**(道具/建筑/奖励名)。过去每个
+#: Engine 在 __init__ 里各 load 一份 —— N 个账号就解析并常驻 N 份同样的大 JSON。
+#: 这张表全程只读(代码里只有 self.names.get(...)), 所以进程级共享一份即可。
+_NAMES_CACHE = None
+_NAMES_LOCK = threading.Lock()
+
+#: 读不到时的空骨架(每次返回同一个只读形状, 不建新 dict)
+_NAMES_EMPTY = {
+    "queue_types": {}, "overview_types": {}, "items": {}, "luaxml": {},
+    "tasks": {}, "story_tasks": {}, "story_chapters": {}, "rewards": {},
+}
+
+
+def _load_names_shared():
+    """进程级单例: 解析一次 id-names.json, 之后所有 Engine 共用同一份。"""
+    global _NAMES_CACHE
+    if _NAMES_CACHE is not None:
+        return _NAMES_CACHE
+    with _NAMES_LOCK:
+        if _NAMES_CACHE is not None:
+            return _NAMES_CACHE
+        try:
+            with open(_res("id-names.json"), encoding="utf-8") as f:
+                d = json.load(f)
+            _NAMES_CACHE = {
+                "queue_types": d.get("queue_types") or {},
+                "overview_types": d.get("overview_types") or {},
+                "items": d.get("item_names") or {},
+                "luaxml": d.get("luaxml_names") or {},
+                "tasks": d.get("task_names") or {},
+                "story_tasks": d.get("story_tasks") or {},
+                "story_chapters": d.get("story_chapters") or {},
+                "rewards": d.get("reward_names") or {},
+            }
+        except Exception:
+            # 读失败不缓存空表: 下次(比如资源补齐后)还能再试一次。
+            return _NAMES_EMPTY
+        return _NAMES_CACHE
+
 
 class Engine(object):
     """后台引擎: 轮询监控 + 收集 push + 执行写操作。"""
@@ -258,24 +299,12 @@ class Engine(object):
         self._thread = None
 
     def _load_names(self):
-        """id -> 中文名(道具/建筑/奖励/任务/队列类型/概览类型)。"""
-        try:
-            with open(_res("id-names.json"), encoding="utf-8") as f:
-                d = json.load(f)
-            return {
-                "queue_types": d.get("queue_types") or {},
-                "overview_types": d.get("overview_types") or {},
-                "items": d.get("item_names") or {},
-                "luaxml": d.get("luaxml_names") or {},
-                "tasks": d.get("task_names") or {},
-                "story_tasks": d.get("story_tasks") or {},
-                "story_chapters": d.get("story_chapters") or {},
-                "rewards": d.get("reward_names") or {},
-            }
-        except Exception:
-            return {"queue_types": {}, "overview_types": {}, "items": {},
-                    "luaxml": {}, "tasks": {}, "story_tasks": {},
-                    "story_chapters": {}, "rewards": {}}
+        """id -> 中文名(道具/建筑/奖励/任务/队列类型/概览类型)。
+
+        走进程级单例(`_load_names_shared`): 这张 ~7.5MB 的表是只读的,
+        所有账号引擎共用一份, 不再每个号各解析一遍。
+        """
+        return _load_names_shared()
 
     def _ensure_account(self):
         """确保有可用账号。
@@ -600,6 +629,14 @@ class Engine(object):
     DEFAULT_SETTINGS = {
         "autoSign": False, "autoShield": False, "cover": True,
         "autoPoll": True, "hookType": "generic", "hookURL": "",
+        # 用户主动断开后的**持久**离线意图(账号级, 跨重启有效)。
+        # 和一次性的内存闸门 self.disconnected 分工:
+        #   disconnected —— "此刻我要离线", 进程重启就没了;
+        #   offlineHold  —— "这个号我按住了, 别自动连", 落盘, 重启后循环照样停住。
+        # 为什么必须落盘: 服务器上没有 adb, `app_online()` 恒为 False, "手机在玩
+        # 就让路"那道安全网失效; 一旦重启/批量刷新把内存闸门清掉, 引擎就会无条件
+        # 连游戏服, 把手机顶下线。把断开意图持久化, 才真正"断得住"。
+        "offlineHold": False,
         "lvLow": 1, "lvHigh": 1,
         "perType": 50, "squads": 4, "huntMax": 0,
         # 福利中心(每日好礼/龙之馈赠)自动领取
@@ -619,7 +656,16 @@ class Engine(object):
         # 只有需要人处理的自动化异常才进入手机提醒。all = 每次失败，
         # failures = 达到连续失败阈值后提醒，off = 不提醒。
         "automationAlertLevel": "failures",
+        # 体力安全阈值(低于它就不派队/自动喝药)。猎人内部会再取
+        # max(阈值, 单次出征消耗 9 点) —— 比一次出征还低没有意义。
         "huntMinStamina": 18,
+        # 体力不足时自动喝体力药水（背包 200380/200381/200382）。2026-11-17 修：
+        # 这个键以前**既不在 DEFAULT_SETTINGS、也不在 hunter() 的落盘白名单里**，
+        # 于是 settings.get("huntAutoStamina") 恒为 None ⇒ auto_stamina 永远是 False
+        # —— 用户的原始反馈「开启自动使用体力药水，但是没有使用」就是这个原因。
+        "huntAutoStamina": False,
+        # 打怪兵种配比: 每队最多几种兵(1~4 的整数), 1 = 每队一种兵
+        "huntMix": 1,
         "skyMinPower": 0,
         "dockMinResourceReserve": 0,
     }
@@ -704,33 +750,40 @@ class Engine(object):
     def _save_settings_db(self):
         """把当前配置写进库。
 
-        **两个归属都写**：
-          * `owner:<uid>` —— 平台模式下的用户级配置（`_settings_file()` 同款路径）
-          * `acct:<gameUid>` —— 账号隔离时的账号级配置
-        只写一个的坏处：谁改了开关之后引擎重载走另一支，就"改了没生效"。
+        账号就是隔离边界, 所以**按归属二选一写**, 和 `_load_settings_db()`
+        的读取优先级严格对齐：
+          * 已入库账号 → 只写 `acct:<gameUid>`（账号级）。
+            过去这里**同时**覆写 `owner:<uid>`：A 号一存就把用户级写成 A 的配置,
+            B 号再存又写成 B 的 —— 用户级那份被反复串写, 成了"最后一个保存的号"
+            的影子配置, 一旦 DB 兜底/未入库账号去读它就读到别人的开关。
+          * 未入库账号 → 写 `owner:<uid>`（用户级, 平台模式）或全局（单用户）。
+        读那支按同样条件取, 所以"改了开关引擎重载走另一支"不会发生。
         """
         doc = dict(self.settings or {})
         owner = getattr(self, "owner", "")
-        try:
-            if owner or not getattr(self, "account_isolated", False):
-                _store.user_settings_put(owner, doc)
-        except Exception as e:
-            _quiet(e, "配置落库")
-        try:
-            if getattr(self, "account_isolated", False) and self.account_key:
+        if getattr(self, "account_isolated", False) and self.account_key:
+            try:
                 _store.account_settings_db_set(self.account_key, doc)
+            except Exception as e:
+                _quiet(e, "配置落库")
+            return
+        try:
+            _store.user_settings_put(owner, doc)
         except Exception as e:
             _quiet(e, "配置落库")
 
     def _settings_file(self):
-        # 平台模式下配置落在**该用户**的目录里, 而不是所有账号共用的 data/。
-        # 否则两个人把不同账号设成同名 gameUid(或都还没入库)时, 后写的会覆盖前者。
+        # 账号就是隔离边界: 已入库账号一律落到**自己**的数据目录, 和同一用户名下
+        # 的其它号互不干扰。gameUid 服务端唯一且注册表里一个 gameUid 只归一个
+        # owner, 所以账号级路径天然不会跨用户撞车。
+        if getattr(self, "account_isolated", False) and self.account_key:
+            return accounts.data_path(self.account_key, "automation-settings.json")
+        # 未入库账号(临时/设备带入)没有独立 gameUid 目录: 平台模式下按**用户**
+        # 兜底, 避免两个人的未入库号都落到全局 data/ 互相覆盖; 单用户模式回退全局。
         owner = getattr(self, "owner", "")
         if owner:
             return os.path.join(accounts.DATA_ROOT, "u", accounts.safe_key(owner),
                                 "web-settings.json")
-        if getattr(self, "account_isolated", False) and self.account_key:
-            return accounts.data_path(self.account_key, "automation-settings.json")
         return self.SETTINGS_FILE
 
     def _automation_history_path(self):
@@ -1153,6 +1206,13 @@ class Engine(object):
             # 去重: 已有一条即时同步线程在跑就不再起 —— 快速来回切账号时,
             # 多条线程会一起抢 op_lock, 反而让切换更慢更不连贯。
             if self._sync_inflight:
+                return
+            # 被用户显式按住离线的号: 切过去"看一眼"不等于要重连。这里**不**发起
+            # 同步(发起就会连游戏服, 把手机顶下线) —— 停在离线, 等用户点「重连」。
+            if self.offline_held():
+                self.disconnected = True
+                self.connected = False
+                self.phase = "已断开"
                 return
             self._sync_inflight = True
             self.disconnected = False
@@ -2269,7 +2329,18 @@ class Engine(object):
 
     def refresh_now(self):
         """立即刷新一次(不等轮询间隔)。"""
-        # 手动刷新 = 明确要连 -> 解除"主动断开"闸门
+        # ⚠️ 被用户显式按住离线的号: **一次都不连**。
+        #    哪怕只连一轮"看一眼", 那一下也会在游戏服开连接, 把手机顶下线
+        #    (同账号只允许一条连接)。而 refresh_now 是单一收口 ——「立即刷新」
+        #    和「全部刷新」(refresh-all 对每个号调 refresh-now)都走它, 所以在
+        #    这里挡住, 两条路径就一起安全了。真要恢复在线只有「重连」(清 offlineHold)。
+        if self.offline_held():
+            with self.lock:
+                self.disconnected = True
+                self.connected = False
+            return {"ok": False, "held": True,
+                    "note": "该账号已断开(手动), 点「重连」再恢复在线"}
+        # 手动刷新 = 明确要连 -> 解除一次性内存闸门, 跑一轮快照。
         self.disconnected = False
         ok, note = self._poll_once()
         if not self.persistent:
@@ -2287,12 +2358,20 @@ class Engine(object):
     def disconnect(self):
         """主动断开与游戏服的连接, 并停在离线态(不自动重连)。
 
-        做三件事:
+        做四件事:
           1. 若在自动打怪(常驻连接), 先停掉它并还回账号锁;
           2. 关掉后台轮询/操作用的连接;
           3. 置位 disconnected 闸门 —— 轮询循环看到它就停在离线,
              直到用户点「重连」/「立即刷新」。
+          4. **落盘** offlineHold=True —— 让"断开"成为跨重启有效的账号级意图。
         这样账号被彻底让出来(手机 App 可以上线), 不占连接也不占账号锁。
+
+        ⚠️ 为什么第 4 件事是关键(修手机被顶下线):
+        只置内存闸门 `disconnected` 挡不住几条"反向重连"路径 ——
+          · 服务器重启/重新部署后内存闸门归零, 而 autoPoll 默认持久为真,
+            加上服务器没 adb(app_online 恒 False)→ 引擎起来就无条件连游戏服;
+          · 一次「全部刷新」(refresh-all)会对每个托管号调 refresh-now, 把闸门清掉。
+        把断开意图落盘, 循环和 refresh-all 都据此跳过, 才真正"断得住"。
         """
         notes = []
         # 1) 打怪常驻连接
@@ -2314,9 +2393,30 @@ class Engine(object):
                 self.disconnected = True
                 self.connected = False
                 self.app_yield = False
+        # 3) 落盘持久离线意图: 跨重启有效, refresh-all 会据此跳过。
+        self._set_offline_hold(True)
         self.daemon.emit("disconnected", {"note": "用户主动断开连接"})
         tail = ("(" + " · ".join(notes) + ")") if notes else ""
         return {"ok": True, "note": "已断开连接, 账号已让出" + tail}
+
+    def _set_offline_hold(self, held):
+        """写入并落盘账号级"离线按住"意图(offlineHold)。
+
+        和 self.disconnected(一次性内存闸门)分工见 DEFAULT_SETTINGS 的注释。
+        落盘失败不致命: 内存闸门这一轮仍然挡得住, 只是重启后兜不住 ——
+        所以记一笔, 不静默吞掉。
+        """
+        held = bool(held)
+        with self.lock:
+            self.settings["offlineHold"] = held
+        try:
+            self._save_settings()
+        except Exception as e:  # noqa: BLE001
+            _quiet(e, "离线意图落盘")
+
+    def offline_held(self):
+        """当前账号是否被用户显式按住离线(持久意图)。"""
+        return bool(self.settings.get("offlineHold"))
 
     def _loop(self):
         while not self._stop.is_set():
@@ -2369,6 +2469,28 @@ class Engine(object):
                         self._ensure_account()
                     except Exception:  # noqa: BLE001
                         pass
+                # 持久离线意图(offlineHold): 必须在 _ensure_account() 重载**账号
+                # 专属**配置之后才读得准(__init__ 时 account_key 还空着, 读的是
+                # 全局配置)。它和 disconnected 行为相同(停在离线), 区别是它来自
+                # 落盘配置 —— **进程重启后照样生效**, 这正是"断开后手机不再被服务器
+                # 顶下线"的根。回填 disconnected, 让前端顶灯显示成"已断开"而非"空闲"。
+                if self.offline_held():
+                    if self.daemon.client is not None:
+                        with self.op_lock:
+                            try:
+                                if self.daemon.client:
+                                    self.daemon.client.close()
+                            except Exception:  # noqa: BLE001
+                                pass
+                            self.daemon.client = None
+                    with self.lock:
+                        self.connected = False
+                        self.disconnected = True
+                    for _ in range(3):
+                        if self._stop.is_set():
+                            break
+                        time.sleep(1.0)
+                    continue
                 if not self.settings.get("autoPoll", True):
                     # 用户关掉了自动轮询: 不连游戏服, 只等用户手动点「立即刷新」
                     with self.lock:
@@ -2512,6 +2634,9 @@ class Engine(object):
                 "phase": self.phase,
                 # 用户主动断开: 前端据此把顶灯显示成"已断开"而非"连接异常"
                 "disconnected": self.disconnected,
+                # 持久的"按住离线"意图(落盘): 重启后 disconnected 内存闸门归零,
+                # 但这个仍为真 —— 前端据此显示"已断开"并给出「重连」入口。
+                "offline_hold": bool(self.settings.get("offlineHold")),
                 # ondemand 模式轮完就断开, connected 永远是 False ——
                 # 顶栏灯要用"有没有拿到数据"来判断, 否则一直显示"空闲"
                 "has_data": bool(self.last_poll and not self.last_error),
@@ -3450,7 +3575,25 @@ class Engine(object):
         squads = int(body.get("squads") or 4)
         min_stamina = max(0, int(self.settings.get("huntMinStamina") or 0))
         known_stamina = (self.hunt or {}).get("stamina")
-        if known_stamina is not None and int(known_stamina) < min_stamina:
+        # ⚠️ 「体力不足自动喝药水」这个开关必须在**所有**用体力拦人的地方之前算好
+        # (2026-11-17): 以前顺序是反的 —— 体力低于阈值直接拒启, 于是"开着自动喝药水
+        # 也起不来", 用户看到的就是"开了自动喝药水却一直没喝"(猎人根本没启动)。
+        # 现在: 开关开 + 背包里有药水 ⇒ 放行(猎人自己会在体力见底时喝药, 见
+        # cok_hunt._use_stamina_if_needed); 背包里一瓶都没有时放行只是空转,
+        # 仍然拦住并给出能照做的提示。
+        auto_stamina = bool(body.get("autoStamina")
+                            if body.get("autoStamina") is not None
+                            else self.settings.get("huntAutoStamina"))
+        # 背包里到底有没有可用的体力药水(决定"体力不足时"该放行还是该拦)
+        auto_ok = bool(auto_stamina and cok_stamina.pick_stamina(
+            dict(cok_stamina.load_items(self.account_key)))[1])
+        if (known_stamina is not None and int(known_stamina) < min_stamina
+                and not auto_ok):
+            if auto_stamina:
+                return {"ok": False,
+                        "error": ("当前体力 %d 低于安全阈值 %d，背包里也没有可用的体力药水"
+                                  "（点「同步体力药水」拉一次背包，或先去游戏里领一瓶）"
+                                  % (int(known_stamina), min_stamina))}
             return {"ok": False, "error": "当前体力低于安全阈值 %d，暂不启动自动打怪" % min_stamina}
         # 每队兵种分配: [{troops: [{army_id, num}]}] 或旧的 [{army_id, num}]。
         # 不给就按可用兵种自动挑。
@@ -3489,15 +3632,34 @@ class Engine(object):
                 spec.append({"troops": [{"army_id": aid, "num": n}]})
             squad_spec = spec or None
         # 每队最多用几种兵(1=每队一种兵; 2+=一次出征带多个兵种=混编)
+        # ⚠️ body 里给了非法值(比如 "abc")时退回**当前设置**, 别一律当 1 ——
+        #    否则前端一次脏输入就把用户存的混编档位冲掉。
+        mix = body.get("mix")
+        if mix is None:
+            mix = self.settings.get("huntMix")
         try:
-            mix = max(1, min(4, int(body.get("mix")
-                                     or self.settings.get("huntMix") or 1)))
+            mix = max(1, min(4, int(mix)))
         except (TypeError, ValueError):
             mix = 1
-        # 体力不足时自动喝背包里的体力药水
-        auto_stamina = bool(body.get("autoStamina")
-                            if body.get("autoStamina") is not None
-                            else self.settings.get("huntAutoStamina"))
+        # 体力不足时自动喝背包里的体力药水(auto_stamina 已在上面算好)
+        # ⚠️ 这里必须**用 body 的值回写设置**(2026-11-17 修)。
+        # 以前 hunter() 只读不写, 于是"启动打怪时勾了自动喝药水"这件事
+        # 从来没进 settings —— 重启 / 下一次启动 / 安卓端读状态全都看不到它,
+        # 表现就是"开着开关但猎人 auto_stamina 恒为 False, 从不喝药"。
+        # mix 同理(兵种覆盖面板的值也要能存下来)。
+        _dirty = False
+        _hv = self.settings.get("huntMix")
+        if _hv != int(mix):
+            self.settings["huntMix"] = int(mix)
+            _dirty = True
+        if self.settings.get("huntAutoStamina") is not bool(auto_stamina):
+            self.settings["huntAutoStamina"] = bool(auto_stamina)
+            _dirty = True
+        if _dirty:
+            try:
+                self._save_settings()
+            except Exception as e:                              # noqa: BLE001
+                _quiet(e, "保存打怪开关")
         # 道具实例 uuid(不是模板 id): 优先用账号缓存, 再用账号配置里手填的
         stamina_items = dict(cok_stamina.load_items(self.account_key))
         acc_cfg = (accounts.get_account(self.account_key)
@@ -3520,10 +3682,45 @@ class Engine(object):
         self._set_hunter_starting(True)
         # 先把 App 停掉: 同账号只允许一个连接, 不停会被服务端互踢
         stopped = self.stop_app()
-        time.sleep(1.5)
+        # ⚠️ 这里**必须等 App 真的让出连接**(2026-11-17)。
+        # 以前是死等 1.5 秒: 手机上 stop_app 慢一点(或云端根本没有 adb, 压根停不掉),
+        # 1.5 秒后就去建猎人那条连接 —— 而 App 还活着 ⇒ 同账号两条连接并存,
+        # 服务端保留最新那条 ⇒ 猎人这条起来后立刻被踢, 表现为
+        # "开了打怪/开了自动喝药水, 但一两分钟就自己停了、药水也没喝上"。
+        # 现在: 开自动喝药水时等到 App 真的下线(最多 ~12 秒), 其它情况保持原节奏。
+        # 拿到连接后真正建连之前还会再复查一次(见下面"建连前最后一道复查"),
+        # 所以这里等超时也不代表必然互踢。
+        _wait = 12.0 if auto_ok else 1.5
+        _t0 = time.time()
+        while True:
+            try:
+                if not self.app_online():
+                    break
+            except Exception:                                  # noqa: BLE001
+                break
+            if time.time() - _t0 >= _wait:
+                break
+            time.sleep(0.5)
+        # 刚 force-stop 完, 缓存里多半还是旧的 True —— 丢掉, 让下一轮真的去探测。
+        if _wait > 1.5:
+            clear_app_online_cache()
         if not self._ensure_account():
             self._set_hunter_starting(False)
             return {"ok": False, "error": self.account_error}
+        # 建连前**最后一道复查**(2026-11-17): 只要游戏 App 还占着这个号,
+        # 猎人这条连接建上去也会被服务端踢(同账号只保留最新一条)。
+        # 特别是云端: 那里没有 adb, `stop_app()` 必然失败, 只能把原因说清楚,
+        # 而不是让它"起来两分钟又自己停"。
+        try:
+            app_still_online = bool(self.app_online())
+        except Exception:                                      # noqa: BLE001
+            app_still_online = False
+        if app_still_online and not auto_ok:
+            self._set_hunter_starting(False)
+            return {"ok": False,
+                    "error": ("游戏 App 还在线, 已停掉自动打怪 —— 同账号只允许一条连接"
+                              "(游戏服只保留最新那条)。请在手机上**完全退出**游戏 App"
+                              "再开打怪")}
         # 跨进程账号锁: 自动打怪是**长连接**, 必须整段持锁,
         # 否则别的进程(命令扫描/采集)一连就把这条常驻连接踢掉
         #
@@ -3531,14 +3728,24 @@ class Engine(object):
         # 那是**本进程**的短时占用, 退避等一下就能拿到; 直接失败的话用户
         # 会看到「账号正被占用」而实际上一秒后就空闲了。
         # 真的被自动打怪/全图扫描占着(长时独占)时, retry 会立刻失败并说明原因。
+        #
+        # ⚠️ 更进一步(2026-11-17): **开着「体力不足自动喝药水」时, 拿不到锁
+        # 也该让它启动** —— 否则体力见底 → 想靠药水回起来 → 被锁挡住起不来,
+        # 用户看到的就是"开了自动喝药水但一直没喝"。锁是"防并发烧号"的护栏,
+        # 不应该把唯一那条能自救的路堵死; 真被别的任务占着时猎人跑不起来,
+        # 也会自己退出(建连会被服务端踢), 有兜底。
+        lock_note = ""
         try:
             lock_ctx = cok_client.account_lock_retry(timeout=12.0,
                                                      purpose="auto-hunt",
                                                      key=self._lock_key())
             lock_ctx.__enter__()
         except cok_client.AccountBusy as e:
-            self._set_hunter_starting(False)
-            return {"ok": False, "error": str(e)}
+            if not auto_ok:
+                self._set_hunter_starting(False)
+                return {"ok": False, "error": str(e)}
+            lock_ctx = None
+            lock_note = "｜账号锁被占用, 已强制启动(可能会和别的任务互踢)"
         self._hunter_lock = lock_ctx
         # ⚠️ **先把网页自己的连接断掉**再连猎人的那条。
         # 同账号只允许一个连接, 两个并存时服务端会随机踢掉一个 ->
@@ -3645,6 +3852,8 @@ class Engine(object):
                 note += "｜体力不足自动喝药水(体力不够时会自动拉背包找药水)"
         if plan and plan.get("short"):
             note += "｜库存只够这么多, 每队人数已按库存摊薄(你填的 %d 是上限)" % num
+        if lock_note:
+            note += lock_note
         if not stopped:
             note += " [未能停止 App, 可能被互踢]"
         return {"ok": True, "note": note,
@@ -3732,6 +3941,7 @@ class Engine(object):
             disconnected = self.disconnected
             account_error = self.account_error
             app_yield = self.app_yield
+            offline_hold = bool(self.settings.get("offlineHold"))
         hunter = self._hunter_state()
         shield_left = max(0, shield_end - now_ms)
         dock_rewardable = len((dock.get("rewardable") or []))
@@ -3742,7 +3952,8 @@ class Engine(object):
         # ⚠️ `last_ok == 0`(从来没成功轮询过)**也是异常** —— 以前写成
         #    `bool(last_ok) and ...`, 于是"从没跑起来"被显示成"正常",
         #    后台开着但一次没轮询的账号在总览上跟健康号长得一模一样。
-        stale = (not last_ok) or (time.time() - last_ok) > 600
+        # 按住离线的号不该算"卡住": 它是用户有意停的, 不是故障。
+        stale = (not offline_hold) and ((not last_ok) or (time.time() - last_ok) > 600)
         return {
             "shield_ms": shield_left,
             "has_shield": shield_left > 0,
@@ -3750,8 +3961,11 @@ class Engine(object):
             "welfare_claimable": welfare_claimable,
             "hunting": bool(hunter.get("running")),
             "hunt_kills": int(hunter.get("kills") or 0),
-            "error": account_error or (last_error if not disconnected else ""),
-            "disconnected": bool(disconnected),
+            # 断开/按住离线时不显示错误(离线是有意的, 不是连接异常)
+            "error": account_error or (last_error
+                                       if not (disconnected or offline_hold) else ""),
+            "disconnected": bool(disconnected or offline_hold),
+            "offline_hold": offline_hold,
             "app_yield": bool(app_yield),
             "last_ok_poll": last_ok,
             "stale": stale,
@@ -4035,6 +4249,17 @@ class Engine(object):
         """
         body = body or {}
         idx = str(body.get("index") or self.settings.get("squadPreset") or "1")
+        # ⚠️ 「体力不足自动喝药水」这个开关**也要在这里落盘**(2026-11-17)。
+        # 页面点「用游戏编队开打」时并不走 _hunter_start, 以前这个值只存在
+        # 前端内存里; 一旦走下面的"没有周卡 → 降级成网页自己打"这条路,
+        # _hunter_start 收不到 body 里的 autoStamina, 只能读 settings ——
+        # 而 settings 里从来没存过 ⇒ 静默变成 False。
+        if body.get("autoStamina") is not None:
+            self.settings["huntAutoStamina"] = bool(body.get("autoStamina"))
+            try:
+                self._save_settings()
+            except Exception as e:                              # noqa: BLE001
+                _quiet(e, "保存打怪开关")
         cl = self.daemon.client
         try:
             self._ensure_client()
@@ -4067,10 +4292,12 @@ class Engine(object):
         """
         per = int(body.get("num") or self.settings.get("perType") or 5000)
         squads = max(1, min(8, int(body.get("squads") or self.settings.get("squads") or 4)))
-        # 每队最多几种兵(1=每队一种兵; 2+=一次出征带多个兵种=混编)
+        # ⚠️ 同 _hunter_start: body 里给了非法的 mix 就退回设置, 别当 1。
+        mix = body.get("mix")
+        if mix is None:
+            mix = self.settings.get("huntMix")
         try:
-            mix = max(1, min(4, int(body.get("mix")
-                                     or self.settings.get("huntMix") or 1)))
+            mix = max(1, min(4, int(mix)))
         except (TypeError, ValueError):
             mix = 1
         try:
@@ -4096,6 +4323,11 @@ class Engine(object):
                                 "maxKills": int(body.get("maxKills") or 0),
                                 "squads": squads,
                                 "mix": mix,
+                                # ⚠️ 把开关透传下去(2026-11-17): 以前这里不带
+                                # autoStamina, 降级路径上用户开的"自动喝药水"就丢了。
+                                "autoStamina": bool(body.get("autoStamina")
+                                                    if body.get("autoStamina") is not None
+                                                    else self.settings.get("huntAutoStamina")),
                                 "squadSpec": spec})
         if r.get("ok"):
             r["mode"] = "web"
@@ -4307,6 +4539,17 @@ class Engine(object):
                 val = max(0, int(val))
             except (TypeError, ValueError):
                 return {"ok": False, "error": "该策略需要有效的数字"}
+        if key == "huntAutoStamina":
+            # 开关必须落成真正的 bool —— 传字符串 "false"/数字 0 时若原样存,
+            # 读的一侧 `bool("false")` 会是 True, 正好反了。
+            val = str(val).strip().lower() in ("1", "true", "yes", "on")
+        elif key == "huntMix":
+            # 网页/安卓的兵种覆盖面板写的是**每队几种兵**(1~4 的整数),
+            # 不是 {"T4": n} 这种映射 —— 别乱猜, 按整数收。
+            try:
+                val = max(1, min(4, int(val)))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "兵种配比需要 1~4 的整数"}
         # 序号守卫: 前端连续输入会并发 POST, 迟到的旧值不能覆盖新值
         seq = body.get("seq")
         if isinstance(seq, int):
@@ -4407,6 +4650,9 @@ class Engine(object):
             # 首轮同步持有 op_lock 时，连接已经完成、只是可选状态仍在读取。
             # 不能让用户的“重新连接”排队等整轮同步，否则移动端会误报超时。
             self.disconnected = False
+            # 重连 = 明确要恢复后台在线 -> 清掉**持久**离线意图并落盘,
+            # 否则下一轮循环看到 offlineHold 又会把连接关掉, "重连"白点。
+            self._set_offline_hold(False)
             with self.lock:
                 self.connected = True
             return {"ok": True, "note": "已连接，正在同步游戏状态"}
@@ -4498,6 +4744,8 @@ class Engine(object):
         if act == "reconnect":
             # 重连 = 明确要连 -> 解除"主动断开"闸门, 否则循环会立刻又把它关掉
             self.disconnected = False
+            # 同时清掉**持久**离线意图并落盘 —— 这是唯一"恢复后台在线"的入口。
+            self._set_offline_hold(False)
             # 必须经由当前引擎的账号解析路径连接。渠道账号入库后不能绕开
             # _ensure_account，否则会错误回退到设备账号或启动时的默认账号。
             self._ensure_account()
@@ -6136,11 +6384,19 @@ class EngineManager(object):
         for t in threads:
             t.join(timeout=120)
         ok = sum(1 for r in results.values() if isinstance(r, dict) and r.get("ok"))
-        return {"ok": bool(results) and ok == len(results),
-                "total": len(results), "succeeded": ok,
+        # 被用户手动按住离线的号返回 held=True: 这是**有意跳过**, 不是失败。
+        # 否则一个断开的号会让「全部刷新」永远报"部分失败", 用户以为出故障了。
+        held = sum(1 for r in results.values()
+                   if isinstance(r, dict) and r.get("held"))
+        accountable = len(results) - held
+        note = ("%d 个账号已各刷新一次(成功 %d 个)" % (accountable, ok)
+                if accountable else "没有需要刷新的账号")
+        if held:
+            note += "; %d 个已手动断开, 已跳过" % held
+        return {"ok": bool(results) and ok == accountable,
+                "total": len(results), "succeeded": ok, "held": held,
                 "results": results,
-                "note": ("%d 个账号已各刷新一次(成功 %d 个)"
-                         % (len(results), ok)) if results else "没有正在托管的账号"}
+                "note": note if results else "没有正在托管的账号"}
 
     def _prune(self):
         """停掉不再需要的引擎(既不在并行集、也不是当前查看账号)。持 self.lock。"""

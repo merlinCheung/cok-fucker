@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>COK 管理后台</title>
+<style>
+  /* 只窄屏显示的元素(默认隐藏): 抽屉的 ☰ 按钮 */
+  .onlyNarrow{display:none}
+  /* 窄屏抽屉态的 ☰ */
+  @media (max-width:860px){ .onlyNarrow{display:inline-flex} }
+  :root{
+    --bg:#0a0e16; --surface:#131a27; --surface2:#1a2333; --surface3:#212c3e;
+    --line:#293449; --line2:#1e2635;
+    --fg:#e6ecf5; --fg2:#c3cedd; --dim:#8a97a8; --dim2:#6f7c8d;
+    --accent:#4d8dff; --accent2:#3f7bdc; --accentdim:rgba(77,141,255,.14);
+    --ok:#2fbf71; --warn:#e0a53a; --err:#f25f5c;
+    --r:12px; --r-sm:9px; --r-xs:7px;
+    --fs2xs:11px; --fs-xs:12px; --fs-sm:13px; --fs-base:14px;
+    --fs-md:15px; --fs-lg:17px; --fs-xl:20px; --fs2xl:26px;
+    --sb:216px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--fg);
+    font:var(--fs-base)/1.55 "PingFang SC","SF Pro Text",-apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    font-feature-settings:"tnum" 0;
+  }
+  b{font-variant-numeric:tabular-nums}
+  button{font:inherit;color:var(--fg);background:var(--surface2);
+    border:1px solid var(--line);border-radius:var(--r-sm);
+    padding:7px 13px;font-size:var(--fs-base);cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  button:hover:not(:disabled){background:var(--surface3);border-color:#384559}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:linear-gradient(180deg,#4a8bff,#2a6ad6);
+    border-color:#5b9bff;color:#fff;font-weight:600}
+  button.ghost{background:transparent;border-color:transparent;color:var(--dim)}
+  button.ghost:hover:not(:disabled){background:var(--surface2);color:var(--fg)}
+  select,input{background:#101724;color:var(--fg);border:1px solid var(--line);
+    border-radius:var(--r-sm);padding:7px 10px;font:inherit;font-size:var(--fs-sm);
+    max-width:100%}
+  select:focus,input:focus{outline:none;border-color:var(--accent)}
+  .num,.mono{font-variant-numeric:tabular-nums}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--fs-xs)}
+
+  /* ---------------- 骨架 ---------------- */
+  .shell{display:flex;min-height:100vh;align-items:stretch}
+  .side{width:var(--sb);flex:0 0 var(--sb);background:linear-gradient(180deg,#0e141f,#0a0e16);
+    border-right:1px solid var(--line2);position:sticky;top:0;height:100vh;
+    display:flex;flex-direction:column;z-index:20}
+  .sideHead{padding:14px 14px 10px;border-bottom:1px solid var(--line2)}
+  .brand{display:flex;align-items:center;gap:9px}
+  .brandMark{width:30px;height:30px;flex:0 0 30px;border-radius:9px;
+    background:linear-gradient(180deg,#4a8bff,#2a6ad6);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800}
+  .brandTxt b{display:block;font-size:var(--fs-md);letter-spacing:.2px}
+  .brandTxt span{display:block;font-size:var(--fs2xs);color:var(--dim)}
+  .sideNav{padding:10px 8px;display:flex;flex-direction:column;gap:2px}
+  .navItem{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+    background:transparent;border:1px solid transparent;border-radius:var(--r-sm);
+    padding:9px 11px;color:var(--fg2);font-size:var(--fs-sm);cursor:pointer}
+  .navItem:hover{background:var(--surface);color:var(--fg)}
+  .navItem.on{background:var(--accentdim);border-color:rgba(77,141,255,.45);color:#9ec8f5}
+  .navItem .ic{width:16px;text-align:center;flex:0 0 16px;opacity:.85}
+  .sideFoot{margin-top:auto;padding:11px 14px;border-top:1px solid var(--line2);
+    font-size:var(--fs2xs);color:var(--dim);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sideFoot b{color:var(--fg2);font-weight:600}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{position:sticky;top:0;z-index:12;display:flex;align-items:center;gap:10px;
+    padding:11px 20px;background:rgba(10,14,22,.9);
+    backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%);
+    border-bottom:1px solid var(--line2);flex-wrap:wrap}
+  .crumb{display:flex;flex-direction:column;line-height:1.3;min-width:0}
+  .crumb b{font-size:var(--fs-lg);font-weight:700}
+  .crumbSub{font-size:var(--fs-xs);color:var(--dim2);margin-top:1px}
+  .spacer{flex:1}
+  .topActs{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .stamp{font-size:var(--fs-xs);color:var(--dim)}
+  /* 拉取失败的接口列表: 用 err 色但不抢整页 —— 其它块数据仍然有效 */
+  .stamp.err{color:var(--err);max-width:52ch;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .content{padding:16px 20px 40px;display:flex;flex-direction:column;gap:14px}
+  .pane{display:none;flex-direction:column;gap:14px}
+  .pane.on{display:flex}
+
+  /* ---------------- 统计卡 ---------------- */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:10px}
+  .kpi{background:var(--surface);border:1px solid var(--line2);border-radius:var(--r);
+    padding:12px 14px;text-align:left}
+  .kpi .lb{font-size:var(--fs2xs);color:var(--dim);letter-spacing:.02em}
+  .kpi .vl{display:block;margin-top:4px;font-size:var(--fs2xl);font-weight:680;
+    line-height:1.15}
+  .kpi .sb{display:block;margin-top:3px;font-size:var(--fs2xs);color:var(--dim2)}
+  .kpi.ok .vl{color:#7fd8a4} .kpi.warn .vl{color:#f0d59a} .kpi.err .vl{color:#f7a5a3}
+  .kpi.acc .vl{color:#9ec8f5}
+
+  /* ---------------- 卡片 ---------------- */
+  .card{background:var(--surface);border:1px solid var(--line2);
+    border-radius:var(--r);padding:13px 15px}
+  .hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:11px}
+  .hd-t{min-width:0}
+  .hd-t h2{margin:0;font-size:var(--fs-md);font-weight:650}
+  .hd-t .sub{display:block;font-size:var(--fs2xs);color:var(--dim);margin-top:2px}
+  .hdTools{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .bar input[type=text]{background:#101724;border:1px solid var(--line2);
+    border-radius:var(--r-sm);padding:7px 10px;color:var(--fg);font:inherit;
+    font-size:var(--fs-sm);min-width:170px;flex:1 1 200px;max-width:320px}
+  .bar input[type=text]:focus{outline:none;border-color:#3a7bd5}
+  .bar select{background:#101724;border:1px solid var(--line2);
+    border-radius:var(--r-sm);padding:7px 9px;color:var(--fg);font:inherit;font-size:var(--fs-sm)}
+  .bar .cnt{margin-left:auto;font-size:var(--fs-xs);color:var(--dim);white-space:nowrap}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-xs);
+    color:var(--dim);cursor:pointer;user-select:none}
+  .chk input{margin:0;accent-color:var(--accent);width:16px;height:16px;cursor:pointer}
+
+  /* ---------------- 表格 ---------------- */
+  .wrap{overflow:auto;max-height:min(64vh,680px);border:1px solid var(--line2);
+    border-radius:var(--r-sm)}
+  table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+  th{position:sticky;top:0;z-index:1;text-align:left;font-weight:500;color:var(--dim);
+    background:var(--surface2);padding:9px 10px;white-space:nowrap;
+    border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+  th.nosort{cursor:default}
+  th .ar{opacity:.35;font-size:var(--fs2xs);margin-left:3px}
+  th.sorted{color:#9ec8f5} th.sorted .ar{opacity:1}
+  td{padding:9px 10px;border-bottom:1px solid rgba(36,47,66,.6);vertical-align:middle;
+    white-space:nowrap}
+  tbody tr:hover td{background:rgba(77,141,255,.06)}
+  .nm{font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;
+    display:inline-block;vertical-align:bottom}
+  .gd{font-size:var(--fs2xs);color:var(--dim)}
+  .who{color:var(--fg2)} .who.me{color:#9ec8f5}
+  td.num{font-variant-numeric:tabular-nums;color:var(--fg2)}
+  td.act{text-align:right}
+  td.act button{padding:4px 10px;font-size:var(--fs-xs);margin-left:5px}
+  .st{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;
+    font-size:var(--fs2xs);border:1px solid var(--line2);color:var(--dim);line-height:1.6}
+  .st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:0 0 6px}
+  .st.ok{color:#7fd8a4;border-color:rgba(47,191,113,.42);background:rgba(47,191,113,.10)}
+  .st.run{color:#9ec8f5;border-color:rgba(77,141,255,.45);background:rgba(77,141,255,.12)}
+  .st.warn{color:#f0d59a;border-color:rgba(224,165,58,.45);background:rgba(224,165,58,.10)}
+  .st.err{color:#f7a5a3;border-color:rgba(242,95,92,.45);background:rgba(242,95,92,.10)}
+  .st.off{color:var(--dim2)}
+  .empty{padding:20px 0;text-align:center;color:var(--dim);font-size:var(--fs-sm)}
+
+  /* ---------------- 运维区 ---------------- */
+  .opsGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;
+    border-bottom:1px solid var(--line2);font-size:var(--fs-sm)}
+  .kv:last-child{border-bottom:0}
+  .kv .k{color:var(--dim)} .kv .v{color:var(--fg2);text-align:right}
+  .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:var(--fs2xs);
+    border:1px solid var(--line2);color:var(--dim)}
+  .tag.ok{color:#7fd8a4;border-color:rgba(47,191,113,.4)}
+  .tag.err{color:#f7a5a3;border-color:rgba(242,95,92,.4)}
+  .tag.warn{color:#f0d59a;border-color:rgba(224,165,58,.4)}
+  .tag.acc{color:#9ec8f5;border-color:rgba(77,141,255,.4)}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
+  .row label{font-size:var(--fs-xs);color:var(--dim)}
+  .logbox{background:#0c111a;border:1px solid var(--line2);border-radius:var(--r-sm);
+    padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--fs2xs);
+    line-height:1.7;max-height:230px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  .logbox .t{color:var(--dim2)} .logbox .y{color:#7fd8a4} .logbox .n{color:#f7a5a3}
+  .hint{font-size:var(--fs-xs);color:var(--dim);line-height:1.65}
+  .warnbox{margin-top:10px;padding:9px 11px;border-radius:var(--r-sm);font-size:var(--fs-xs);
+    border:1px solid rgba(224,165,58,.32);border-left:3px solid var(--warn);
+    background:rgba(224,165,58,.09);color:#f0d59a;line-height:1.6}
+
+  /* ---------------- 提示条 ---------------- */
+  #toasts{position:fixed;right:16px;bottom:16px;z-index:120;display:flex;
+    flex-direction:column;gap:8px;max-width:min(380px,88vw)}
+  .toast{padding:10px 13px;border-radius:var(--r-sm);font-size:var(--fs-sm);
+    background:rgba(24,33,48,.98);border:1px solid var(--line);
+    box-shadow:0 10px 28px rgba(0,0,0,.45)}
+  .toast.ok{border-left:3px solid var(--ok)} .toast.err{border-left:3px solid var(--err)}
+  .toast.warn{border-left:3px solid var(--warn)}
+
+  /* ---------------- 响应式 ---------------- */
+  @media (max-width:1024px){ :root{--sb:190px} .content{padding:14px 14px 34px} }
+  @media (max-width:860px){
+    .side{position:fixed;left:0;top:0;bottom:0;transform:translateX(-102%);
+      transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:0 0 40px rgba(0,0,0,.5)}
+    .side.open{transform:none}
+    /* 抽屉态下侧栏要浮在遮罩上面(遮罩 z-index 15, 侧栏基础 20 ——
+       但 fixed 定位创建了新的层叠上下文, 这里再明确一次) */
+    .side{z-index:30}
+    /* 抽屉打开时的遮罩: 点它关闭。没有遮罩的话, 侧栏(216px)盖住左半边,
+       右边还能点 —— 管理员会以为"点了没反应", 因为点的是背后的表格。 */
+    .scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:15;
+      opacity:0;pointer-events:none;transition:opacity .2s}
+    .scrim.on{opacity:1;pointer-events:auto}
+    .topbar{padding:9px 12px;gap:8px}
+    .crumb b{font-size:var(--fs-base)}
+    .crumbSub{display:none}
+    .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .kpi{padding:10px 11px} .kpi .vl{font-size:var(--fs-xl)}
+    .opsGrid{grid-template-columns:1fr}
+    .wrap{max-height:none}
+    table{min-width:720px}
+    td.act button{min-height:34px;min-width:44px;padding:6px 11px;font-size:var(--fs-xs)}
+    .hdTools{width:100%;margin-left:0}
+  }
+  @media (max-width:520px){
+    .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .bar input[type=text]{flex:1 1 100%;max-width:none}
+    .bar .cnt{width:100%;margin-left:0}
+  }
+</style>
+</head>
+<body>
+<div class="scrim" id="scrim"></div>
+<div class="shell">
+  <aside class="side" id="side">
+    <div class="sideHead">
+      <div class="brand">
+        <div class="brandMark">C</div>
+        <div class="brandTxt"><b>COK 管理后台</b><span id="brandSub">平台运维</span></div>
+      </div>
+    </div>
+    <div class="sideNav">
+      <button class="navItem on" data-pane="mon" id="navMon"><span class="ic">▤</span>监控</button>
+      <button class="navItem" data-pane="users" id="navUsers"><span class="ic">◎</span>用户</button>
+      <button class="navItem" data-pane="invites" id="navInvites"><span class="ic">✉</span>邀请码</button>
+      <button class="navItem" data-pane="audit" id="navAudit"><span class="ic">≡</span>审计日志</button>
+      <button class="navItem" data-pane="sys" id="navSys"><span class="ic">⚙</span>系统与运维</button>
+    </div>
+    <div class="sideFoot">
+      <span>管理员 <b id="whoami">-</b></span>
+      <button class="ghost" id="btnConsole" style="margin-left:auto;padding:2px 8px;font-size:var(--fs2xs)">返回控制台</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <!-- ☰ 只在窄屏(抽屉态)显示 —— 宽屏侧栏常驻, 这个按钮没有作用。
+            ⚠ 这里原来写的是 `class="onlyDesk"`, 而当时 .onlyDesk 的规则
+           恰好是「窄屏 display:none」—— 等于把按钮反过来了: 桌面显示(多余)、
+           手机隐藏(最需要的时候没有), 手机上根本打不开侧栏。
+           现在用 .onlyNarrow(默认藏, 窄屏才显示), 语义和名字一致。 -->
+      <button id="btnNav" class="onlyNarrow" title="菜单" aria-label="菜单"
+        style="background:transparent;border:0;padding:4px 6px;cursor:pointer">☰</button>
+      <div class="crumb"><b id="crumbT">监控</b><span class="crumbSub" id="crumbS">全平台账号与运行状态</span></div>
+      <span class="spacer"></span>
+      <div class="topActs">
+        <span class="stamp" id="stamp">尚未拉取</span>
+        <!-- 单个接口失败时显示: 哪几个接口没拉到、为什么。
+             不给一个"整页失败"的红条 —— 其它几块数据仍然有效。 -->
+        <span class="stamp err" id="loadErr" style="display:none"></span>
+        <label class="chk"><input type="checkbox" id="autoChk" checked>自动刷新</label>
+        <button id="btnReload">立即刷新</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- ============ 监控 ============ -->
+      <section class="pane on" id="paneMon">
+        <div class="kpis" id="kpis"></div>
+
+        <div class="card">
+          <div class="hd">
+            <div class="hd-t"><h2>全平台账号</h2>
+              <span class="sub">只读视图 · 不改他人数据 · 不触发游戏服请求</span></div>
+            <div class="hdTools">
+              <span class="gd" id="admCnt"></span>
+            </div>
+          </div>
+          <div class="bar">
+            <input type="text" id="q" placeholder="搜索：账号名 / 用户 / 游戏号" autocomplete="off">
+            <select id="fUser"><option value="">全部用户</option></select>
+            <select id="fState">
+              <option value="">全部状态</option>
+              <option value="run">后台在跑</option>
+              <option value="hunt">打怪中</option>
+              <option value="idle">空闲(有引擎未托管)</option>
+              <option value="shield">有保护罩</option>
+              <option value="todo">有待领(港口/福利)</option>
+              <option value="err">报错</option>
+              <option value="offline">掉线</option>
+              <option value="stale">数据陈旧</option>
+              <option value="none">未托管</option>
+            </select>
+            <button class="ghost" id="btnClear" title="清空筛选">清空</button>
+          </div>
+          <div class="wrap">
+            <table id="tb">
+              <thead><tr>
+                <th data-sort="username">用户<span class="ar">↕</span></th>
+                <th data-sort="label">账号<span class="ar">↕</span></th>
+                <th data-sort="game_uid">游戏号<span class="ar">↕</span></th>
+                <th data-sort="status">状态<span class="ar">↕</span></th>
+                <th data-sort="shield_ms">保护罩<span class="ar">↕</span></th>
+                <th data-sort="hunt_kills">打怪<span class="ar">↕</span></th>
+                <th data-sort="last_ok_poll">最近同步<span class="ar">↕</span></th>
+                <th class="nosort">操作</th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+            <div class="empty" id="empty" style="display:none">没有符合条件的账号</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 用户 ============ -->
+      <section class="pane" id="paneUsers">
+        <div class="card">
+          <div class="hd"><div class="hd-t"><h2>用户管理</h2>
+            <span class="sub">封禁 / 角色 / 删除 · 立即生效</span></div>
+            <div class="hdTools"><span class="gd" id="userCnt"></span>
+              <button id="btnNewInvite">生成邀请码</button></div>
+          </div>
+          <div class="wrap" style="max-height:none">
+            <table>
+              <thead><tr>
+                <th class="nosort">用户</th><th class="nosort">UID</th>
+                <th class="nosort">角色</th><th class="nosort">状态</th>
+                <th class="nosort">注册</th><th class="nosort">最近登录</th>
+                <th class="nosort">账号数</th><th class="nosort">操作</th>
+              </tr></thead>
+              <tbody id="uRows"></tbody>
+            </table>
+            <div class="empty" id="uEmpty" style="display:none">还没有用户</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 邀请码 ============ -->
+      <section class="pane" id="paneInvites">
+        <div class="card">
+          <div class="hd"><div class="hd-t"><h2>邀请码</h2>
+            <span class="sub">新码默认未用 · 用过一次即失效</span></div>
+            <div class="hdTools"><span class="gd" id="invCnt"></span>
+              <button id="btnNewInvite2">生成邀请码</button></div>
+          </div>
+          <div class="wrap" style="max-height:none">
+            <table>
+              <thead><tr>
+                <th class="nosort">码</th><th class="nosort">创建人</th>
+                <th class="nosort">被谁用掉</th><th class="nosort">创建时间</th>
+                <th class="nosort">状态</th>
+              </tr></thead>
+              <tbody id="iRows"></tbody>
+            </table>
+            <div class="empty" id="iEmpty" style="display:none">还没有邀请码</div>
+          </div>
+          <div class="warnbox">邀请码给出去之前先确认对方是谁：注册后第一个用户会自动成为管理员。</div>
+        </div>
+      </section>
+
+      <!-- ============ 审计 ============ -->
+      <section class="pane" id="paneAudit">
+        <div class="card">
+          <div class="hd"><div class="hd-t"><h2>审计日志</h2>
+            <span class="sub">登录 / 注册 / 删号 / 管理操作留痕</span></div>
+            <div class="hdTools">
+              <input type="text" id="auUid" placeholder="按 uid 过滤(可空)" style="min-width:190px">
+              <select id="auLimit">
+                <option value="100">最近 100 条</option>
+                <option value="300">最近 300 条</option>
+                <option value="1000">最近 1000 条</option>
+              </select>
+              <button id="btnAuditLoad">查询</button>
+            </div>
+          </div>
+          <div class="logbox" id="auBox">尚未查询</div>
+        </div>
+      </section>
+
+      <!-- ============ 系统 ============ -->
+      <section class="pane" id="paneSys">
+        <div class="opsGrid">
+          <div class="card">
+            <div class="hd"><div class="hd-t"><h2>运行时</h2>
+              <span class="sub">服务端进程与数据目录</span></div></div>
+            <div class="kv"><span class="k">服务器时间</span><span class="v mono" id="sysTime">-</span></div>
+            <div class="kv"><span class="k">Python</span><span class="v mono" id="sysPy">-</span></div>
+            <div class="kv"><span class="k">数据目录</span><span class="v mono" id="sysRoot">-</span></div>
+            <div class="kv"><span class="k">引擎实例</span><span class="v" id="sysEng">-</span></div>
+            <div class="kv"><span class="k">在线用户</span><span class="v" id="sysUsers">-</span></div>
+            <div class="kv"><span class="k">保护罩覆盖</span><span class="v" id="sysShield">-</span></div>
+          </div>
+
+          <div class="card">
+            <div class="hd"><div class="hd-t"><h2>账号操作</h2>
+              <span class="sub">对单个账号做最小写操作</span></div></div>
+            <div class="row">
+              <input type="text" id="actKey" placeholder="账号 key(从监控表复制)" style="flex:1 1 100%">
+            </div>
+            <div class="row">
+              <label><input type="checkbox" id="actOn"> 后台运行(并行)</label>
+            </div>
+            <div class="row">
+              <button class="primary" id="btnAct">应用</button>
+              <span class="hint" id="actNote">只有「开/关后台运行」—— 删号、改设置会改写别人数据，这里不给。</span>
+            </div>
+            <div class="warnbox">开启后台 = 该账号会连上游戏服；如果手机上同一个号正开着，两边会互相踢下线。</div>
+          </div>
+
+          <div class="card">
+            <div class="hd"><div class="hd-t"><h2>数据入库</h2>
+              <span class="sub">业务状态（配置/运行态/扫描索引/历史）</span></div></div>
+            <div class="kv"><span class="k">数据库</span><span class="v mono" id="dbPath">-</span></div>
+            <div class="kv"><span class="k">配置 / 运行态</span><span class="v mono" id="dbCfg">-</span></div>
+            <div class="kv"><span class="k">扫描索引</span><span class="v mono" id="dbScan">-</span></div>
+            <div class="kv"><span class="k">任务 / 缓存</span><span class="v mono" id="dbTask">-</span></div>
+            <div class="kv"><span class="k">归档流水</span><span class="v mono" id="dbArch">-</span></div>
+            <div class="row">
+              <button class="primary" id="btnImport">从文件导入</button>
+              <button class="ghost" id="btnDbRefresh">刷新</button>
+              <span class="hint" id="dbNote">导入是幂等的：重复跑不会产生重复数据，也不会删原文件。</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="hd"><div class="hd-t"><h2>接口自检</h2>
+              <span class="sub">逐个探测管理接口</span></div></div>
+            <div class="row">
+              <button id="btnProbe">全部探测</button>
+              <span class="hint">GET 只读；不会改任何数据。</span>
+            </div>
+            <div class="logbox" id="probeBox">尚未探测</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+/* 宿主 App(安卓 WebView / 原生页)用 ?t=<token> 免登录进来: 控制台首页的
+   URL 就带这个参数, 管理页的链接是相对的所以参数不会自动跟过来 ——
+   这里自己接住, 之后每个接口请求都带上(见 api())。 */
+const TOK = (function(){
+  try{
+    const q=new URLSearchParams(location.search).get('t');
+    if(q){ localStorage.setItem('cokToken', q); return q; }
+    return localStorage.getItem('cokToken')||'';
+  }catch(e){ return ''; }
+})();
+function withTok(p){
+  if(!TOK) return p;
+  return p + (p.includes('?')?'&':'?') + 't=' + encodeURIComponent(TOK);
+}
+const ADM = {rows:[], users:[], stats:{}, ov:{}, filter:'', who:'', state:'',
+             sortKey:'', sortDir:1, timer:null, me:null, pane:'mon'};
+
+/* ---------------- 工具 ---------------- */
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function fmt(n){ if(n==null||n==='') return '-'; const v=Number(n);
+  if(!isFinite(v)) return String(n);
+  return Math.abs(v)>=1000 ? v.toLocaleString('zh-CN') : String(v); }
+function hms(ms){ if(!ms) return '-'; if(ms<1000) return Math.round(ms)+' 毫秒';
+  if(ms<60000) return Math.round(ms/1000)+' 秒';
+  const m=Math.floor(ms/60000); if(m<60) return m+' 分';
+  return Math.floor(m/60)+' 时 '+(m%60)+' 分'; }
+function ago(ts){ if(!ts) return '从未';
+  const d=Date.now()/1000-ts;
+  if(d<90) return Math.max(0,Math.round(d))+' 秒前';
+  if(d<3600) return Math.round(d/60)+' 分前';
+  if(d<86400) return Math.round(d/3600)+' 时前';
+  return Math.round(d/86400)+' 天前'; }
+function ts(s){ if(!s) return '-'; return new Date(s*1000).toLocaleString(); }
+function put(id,v){ const e=$(id); if(e) e.textContent=v; }
+function goAdmin(){
+  // 管理后台的入口链接(主控制台顶栏/侧栏)。宿主 App 里必须带 token,
+  // 否则 /admin 会因为"没登录"退回登录页 —— 而 App 里没有登录页可用。
+  location.href = TOK ? withTok('/admin') : '/admin';
+}
+function toast(msg, kind){
+  const box=$('toasts'); if(!box) return;
+  const el=document.createElement('div');
+  el.className='toast '+(kind||'');
+  el.textContent=String(msg==null?'':msg);
+  box.appendChild(el);
+  setTimeout(()=>{ try{ box.removeChild(el); }catch(e){} }, 3600);
+}
+async function api(path, body){
+  const opt = {credentials:'same-origin'};
+  if(body!==undefined){
+    opt.method='POST';
+    opt.headers={'Content-Type':'application/json'};
+    opt.body=JSON.stringify(body||{});
+  }
+  // 宿主 App(安卓)里没有登录页: 控制台 URL 带着 ?t=<token>, 后端认这个
+  // token 当「本机管理员」。fetch 不会自动把页面 URL 的 query 带到接口上,
+  // 所以这里手动补 —— 少了它, 管理页在手机上每个请求都是 403 → 跳 /login →
+  // 又 403, 表现是"打开管理后台一直转圈/白屏"。
+  const url=withTok(path);
+  const r = await fetch(url, opt);
+  let j=null;
+  try{ j = await r.json(); }catch(e){ j=null; }
+  if(r.status===401||r.status===403){
+    // 没有 token 可用(纯服务器部署、会话过期)才去登录页。有 token 还被拒
+    // 说明是权限问题, 跳登录页只会来回弹 —— 直接把原因显示出来。
+    if(!TOK){ location.href='/login'; }
+    throw new Error((j&&j.error)||('HTTP '+r.status));
+  }
+  return j||{ok:false,error:'HTTP '+r.status};
+}
+
+/* ---------------- 状态映射 ---------------- */
+function admClass(r){
+  const s=r.summary||{};
+  if(s.error) return 'err';
+  if(s.disconnected) return 'off';
+  if(!r.running) return 'off';
+  if(s.stale) return 'warn';
+  return 'ok';
+}
+function admText(r){
+  const s=r.summary||{};
+  if(r.orphan) return '无主';
+  if(r.user_banned) return '主人被封禁';
+  if(s.error) return '报错';
+  if(s.disconnected) return '掉线';
+  if(!r.running) return '未托管';
+  if(s.stale) return '数据陈旧';
+  if(s.hunting) return '打怪中';
+  return '运行中';
+}
+function admSortVal(r, k){
+  const s=r.summary||{};
+  if(k==='username') return r.username||'';
+  if(k==='label') return r.label||'';
+  if(k==='game_uid') return r.game_uid||'';
+  if(k==='status') return ({err:0,off:1,warn:2,ok:3})[admClass(r)];
+  if(k==='shield_ms') return s.shield_ms||0;
+  if(k==='hunt_kills') return s.hunt_kills||0;
+  if(k==='last_ok_poll') return s.last_ok_poll||0;
+  return '';
+}
+function admMatch(r){
+  if(ADM.who && (r.username||'')!==ADM.who) return false;
+  const s=r.summary||{};
+  const f=ADM.state;
+  // ⚠ 每个筛选都要和**表格那一列显示的东西**对齐, 否则会出现"筛出来的和
+  //   看到的不是同一批"。状态列用的是 admClass(r)(按后端 status 字段),
+  //   所以状态筛选也按 status 走; 打怪/待领这两个表格里没有独立列,
+  //   保留基于 summary 的判断。
+  if(f){
+    const st=r.status||'';
+    if(f==='run'     && !r.running) return false;
+    if(f==='hunt'    && !(r.running&&s.hunting)) return false;
+    if(f==='idle'    && st!=='idle') return false;
+    if(f==='shield'  && !(s.has_shield||Number(r.shield_ms||0)>0)) return false;
+    if(f==='todo'    && !(s.dock_rewardable||s.welfare_claimable)) return false;
+    if(f==='err'     && st!=='error') return false;
+    if(f==='offline' && st!=='offline') return false;
+    // "数据陈旧"是**附加属性**, 不是互斥状态: 一个号可能同时"掉线 + 陈旧"。
+    // 所以这里看 summary.stale, 不看 status(后端只在"在跑且陈旧"时才把
+    // status 置成 stale, 按 status 筛会漏掉掉线又陈旧的号)。
+    if(f==='stale'   && !s.stale) return false;
+    if(f==='none'    && st!=='none') return false;   // 未托管: 没引擎、没数据
+  }
+  const q=ADM.filter.trim().toLowerCase();
+  if(!q) return true;
+  // 状态文案也参与匹配: 搜「报错」「掉线」这种词, 用户不会去记字段名。
+  return [r.label,r.username,r.game_uid,r.key,admText(r),r.owner_name]
+    .some(x=>String(x||'').toLowerCase().includes(q));
+}
+
+/* ---------------- 渲染: 统计 ---------------- */
+function renderKpis(){
+  const st=ADM.stats||{}, ov=ADM.ov||{};
+  const items=[
+    ['账号总数', st.accounts!=null?st.accounts:(ov.accounts_total||ov.accounts||0),
+     '全平台账号库', ''],
+    ['用户', st.users!=null?st.users:(ov.users_total||0),
+     (st.users_online!=null?st.users_online:ov.users_online)+' 个在线', 'acc'],
+    ['后台在跑', st.running!=null?st.running:(ov.running||0), '并行 '+(st.parallel||0), 'acc'],
+    ['打怪中', st.hunting!=null?st.hunting:(ov.hunting||0), '自动打野怪', ''],
+    ['有保护罩', st.shielded!=null?st.shielded:(ov.shielded||0), '罩内不会被偷', 'ok'],
+    ['报错', st.errors!=null?st.errors:(ov.errors||0), '需要处理', (st.errors||ov.errors)?'err':''],
+    ['掉线', st.offline||0, '引擎断开', (st.offline)?'warn':''],
+    ['数据陈旧', st.stale!=null?st.stale:(ov.stale||0), '10 分钟没成功轮询', (st.stale)?'warn':''],
+  ];
+  const box=$('kpis');
+  if(box) box.innerHTML = items.map(([lb,vl,sb,cls])=>
+    '<div class="kpi '+cls+'"><span class="lb">'+esc(lb)+'</span>'
+    +'<b class="vl">'+esc(fmt(vl))+'</b>'
+    +'<span class="sb">'+esc(sb||'')+'</span></div>').join('');
+}
+
+/* ---------------- 渲染: 账号表 ---------------- */
+function renderRows(){
+  const tb=$('rows'); if(!tb) return;
+  let rows=ADM.rows.filter(admMatch);
+  const k=ADM.sortKey;
+  if(k){
+    rows.sort((a,b)=>{
+      const x=admSortVal(a,k), y=admSortVal(b,k);
+      if(typeof x==='number'&&typeof y==='number') return (x-y)*ADM.sortDir;
+      return String(x).localeCompare(String(y),'zh-CN')*ADM.sortDir;
+    });
+  }
+  // 用户下拉数据源
+  const sel=$('fUser');
+  if(sel){
+    const sig=ADM.rows.map(r=>r.username||'').join('|');
+    if(sel.dataset.sig!==sig){
+      sel.dataset.sig=sig;
+      const set=new Set(ADM.rows.map(r=>r.username||''));
+      sel.innerHTML='<option value="">全部用户</option>'
+        +[...set].filter(Boolean).sort().map(u=>'<option value="'+esc(u)+'">'+esc(u)+'</option>').join('');
+      sel.value=ADM.who;
+    }
+  }
+  put('admCnt', rows.length+' / '+ADM.rows.length+' 个账号');
+  const em=$('empty');
+  if(em) em.style.display = rows.length?'none':'';
+  const me=(ADM.me&&ADM.me.user)||'';
+  tb.innerHTML = rows.map(r=>{
+    const s=r.summary||{};
+    const cls=admClass(r);
+    const mine=(r.username===me)?' me':'';
+    const orph=r.orphan?' <span class="gd">(无主)</span>':'';
+    const ban=r.user_banned?' <span class="gd" style="color:var(--err)">已封禁</span>':'';
+    const badge=s.error?' <span class="gd" title="'+esc(s.error)+'" style="color:var(--err);cursor:help">!</span>':'';
+    const extra=[];
+    if(s.dock_rewardable) extra.push('港口 '+s.dock_rewardable);
+    if(s.welfare_claimable) extra.push('福利待领');
+    const bt=(act,label,tip)=>'<button class="ghost" data-adm="'+act
+      +'" data-key="'+esc(r.key)+'" data-uid="'+esc(r.owner||'')+'"'
+      +' title="'+esc(tip)+'">'+esc(label)+'</button>';
+    const acts=(r.running? bt('stop','停止','停掉后台运行') : bt('start','启动后台','连上游戏服'));
+    return '<tr>'
+      +'<td><span class="who'+mine+'">'+esc(r.username||'无主')+'</span>'+orph+ban+'</td>'
+      +'<td><span class="nm" title="'+esc(r.label||'')+'">'+esc(r.label||r.key)+'</span>'
+      +' <span class="gd">P'+esc(r.priority||2)+'</span>'
+      +(r.parallel?' <span class="gd">●</span>':'')+'</td>'
+      +'<td class="gd">'+esc(r.game_uid||'-')+'</td>'
+      +'<td><span class="st '+cls+'">'+esc(admText(r))+'</span>'+badge
+      +(extra.length?' <span class="gd">'+esc(extra.join(' · '))+'</span>':'')+'</td>'
+      +'<td class="num">'+esc(hms(s.shield_ms))+'</td>'
+      +'<td class="num">'+(s.hunting?esc(fmt(s.hunt_kills))+' 杀':'-')+'</td>'
+      +'<td class="num">'+esc(ago(s.last_ok_poll))+'</td>'
+      +'<td class="act">'+acts+'</td>'
+      +'</tr>';
+  }).join('');
+  document.querySelectorAll('th[data-sort]').forEach(th=>{
+    const on=th.dataset.sort===k;
+    th.classList.toggle('sorted',on);
+    const ar=th.querySelector('.ar');
+    if(ar) ar.textContent = on?(ADM.sortDir>0?'↑':'↓'):'↕';
+  });
+}
+
+/* ---------------- 渲染: 用户 ---------------- */
+function renderUsers(){
+  const tb=$('uRows'); if(!tb) return;
+  const rows=ADM.users||[];
+  put('userCnt', rows.length+' 个用户');
+  const em=$('uEmpty'); if(em) em.style.display=rows.length?'none':'';
+  // 每个用户有几个号(从账号表数)
+  const cnt={};
+  (ADM.rows||[]).forEach(r=>{ const u=r.username||''; cnt[u]=(cnt[u]||0)+1; });
+  const me=(ADM.me&&ADM.me.user)||'';
+  tb.innerHTML=rows.map(u=>{
+    const n=u.username||'';
+    const isMe=(n===me);
+    const role=(u.role||'user');
+    const banned=!!u.banned;
+    return '<tr>'
+      +'<td><b>'+esc(n)+'</b>'+(isMe?' <span class="gd">(我)</span>':'')+'</td>'
+      +'<td class="gd mono">'+esc(u.uid||'-')+'</td>'
+      +'<td><span class="tag '+(role==='admin'?'acc':'')+'">'+esc(role)+'</span></td>'
+      +'<td>'+(banned?'<span class="tag err">已封禁</span>':'<span class="tag ok">正常</span>')+'</td>'
+      +'<td class="gd">'+esc(ts(u.created_at))+'</td>'
+      +'<td class="gd">'+esc(ago(u.last_login))+'</td>'
+      +'<td class="num">'+esc(fmt(cnt[n]||0))+'</td>'
+      +'<td class="act">'
+      +(isMe?'<span class="gd">不能操作自己</span>'
+        :'<button class="ghost" data-u="'+esc(n)+'" data-act="ban" data-on="'+(banned?'0':'1')+'">'
+          +(banned?'解封':'封禁')+'</button>'
+         +'<button class="ghost" data-u="'+esc(n)+'" data-act="role" data-role="'+(role==='admin'?'user':'admin')+'">'
+          +(role==='admin'?'降为用户':'设为管理员')+'</button>'
+         +'<button class="ghost" data-u="'+esc(n)+'" data-act="del" style="color:var(--err)">删除</button>')
+      +'</td></tr>';
+  }).join('');
+}
+
+/* ---------------- 渲染: 邀请码 ---------------- */
+function renderInvites(){
+  const tb=$('iRows'); if(!tb) return;
+  const rows=ADM.invites||[];
+  put('invCnt', rows.length+' 个码');
+  const em=$('iEmpty'); if(em) em.style.display=rows.length?'none':'';
+  tb.innerHTML=rows.map(v=>{
+    const used=v.used_by||v.usedby||'';
+    const st=used?'已用':'未用';
+    return '<tr>'
+      +'<td class="mono"><b>'+esc(v.code||'-')+'</b></td>'
+      +'<td>'+esc(v.created_by||v.creator||'-')+'</td>'
+      +'<td>'+(used?esc(used):'<span class="gd">-</span>')+'</td>'
+      +'<td class="gd">'+esc(ts(v.created_at))+'</td>'
+      +'<td><span class="tag '+(used?'':'ok')+'">'+st+'</span></td>'
+      +'</tr>';
+  }).join('');
+}
+
+/* ---------------- 数据入库: 手动导入 ---------------- */
+async function doImport(){
+  const btn=$('btnImport'); const note=$('dbNote');
+  if(btn){ btn.disabled=true; btn.textContent='导入中…'; }
+  if(note) note.textContent='正在把文件里的数据合并进库（不删原文件）…';
+  try{
+    const r=await api('/api/admin/store-import',{method:'POST'});
+    const im=r.imported||{};
+    const parts=[];
+    Object.keys(im).sort().forEach(function(k){
+      const v=im[k];
+      if(typeof v==='number' && v>0) parts.push(k+'='+v);
+    });
+    if(note) note.textContent = parts.length
+      ? '已导入: '+parts.join(' / ')
+      : '没有需要导入的内容（文件已入库）';
+    if(r.status) renderStore(r.status);
+    toast('导入完成', 'ok');
+  }catch(e){
+    if(note) note.textContent='导入失败: '+(e&&e.message||e);
+    toast('导入失败', 'err');
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='从文件导入'; }
+  }
+}
+
+/* ---------------- 渲染: 系统 ---------------- */
+function renderSys(){
+  const ov=ADM.ov||{};
+  // 服务器时间: 后端给的是 epoch 秒(浮点), 直接显示是 "1794733446.763646"
+  // —— 人看不懂。转成本地时间。
+  const ets=Number(ov.server_time||0);
+  put('sysTime', ets>1e9 ? new Date(ets*1000).toLocaleString('zh-CN',{hour12:false})
+                       : '-');
+  put('sysPy', ov.python||'-');
+  put('sysRoot', ov.data_root||'-');
+  // `engines` 数的是**有号在跑的用户数**, 不是 EngineManager 实例数 ——
+  // 写成"实例"会让人以为后台起了 N 个管理器, 实际是每个有号的用户一个。
+  put('sysEng', (ov.engines||0)+' 个用户有号在跑 / 共 '+(ov.running||0)+' 个号');
+  const us=Array.isArray(ov.users)?ov.users:[];
+  const on=us.filter(function(u){return u&&u.online;}).length;
+  // ⚠ 原来直接拼 ov.users(数组) → 页面上是 "[object Object],[object Object]"。
+  put('sysUsers', on+' / '+(us.length||ov.users_total||0)+' 在线');
+  put('sysShield', fmt(ov.shielded||0)+' 个号');
+  renderStore(ov.store||null);
+}
+
+/* ---------------- 渲染: 数据入库 ---------------- */
+function renderStore(st){
+  if(!st){ return; }
+  const T=st.tables||{}, F=st.files||{};
+  put('dbPath', st.path||'-');
+  put('dbCfg', (T.kv==null?'-':T.kv)+' 条 / '+(T.account_state||0)+' 个号'
+      +' / '+(T.account_settings||0)+' 份配置');
+  put('dbScan', (T.scan_index||0)+' 个索引 / '+(T.scan_doc||0)+' 份正文');
+  put('dbTask', (T.task_run||0)+' 条 / '+(T.client_state||0)+' 份缓存');
+  put('dbArch', (T.archive||0)+' 条');
+  // 文件那边还剩多少没进来 —— 这才是"要不要再导一次"的依据
+  const left=[];
+  if((F['web-settings']||0)>0) left.push('设置文件 '+(F['web-settings'])+' 项');
+  if((F['task-stats']||0)>0) left.push('统计文件 '+(F['task-stats'])+' 项');
+  if((F['automation-history']||0)>0) left.push('历史文件 '+(F['automation-history'])+' 条');
+  const note=$('dbNote');
+  if(note){
+    note.textContent = left.length
+      ? '文件里还有: '+left.join(' · ')+'（可点导入合并）'
+      : '文件已全部合并入库';
+  }
+}
+
+/* ---------------- 拉取 ---------------- */
+async function loadAll(){
+  // ⚠ 少一个接口**不能**让整页不刷新: 早先这里是 Promise.all + 一个 try,
+  //   任何一个 500/断连都会跳到 catch, 五块面板一起停在旧数据上,
+  //   而页面顶部只显示一行"拉取失败" —— 看起来像整页挂了。
+  //   现在每个接口单独兜: 谁失败只让那一块留旧值 + 记一条错误。
+  const jobs=[
+    ['ov',  '/api/admin/overview',          '概览', v=>{ADM.ov=v;}],
+    ['acc', '/api/admin/accounts?limit=500','账号', v=>{ADM.rows=v.accounts||[];
+                                                        ADM.stats=v.stats||{};}],
+    ['usr', '/api/admin/users',             '用户', v=>{ADM.users=v.users||ADM.users;}],
+    ['inv', '/api/admin/invites',           '邀请码', v=>{ADM.invites=v.invites||[];}],
+  ];
+  const bad=[];
+  const rs=await Promise.all(jobs.map(([k,p])=>
+    api(p).then(v=>({k:k,v:v})).catch(e=>({k:k,v:null,e:e}))));
+  rs.forEach(function(it){
+    const k=it.k, v=it.v, e=it.e;
+    const job=jobs.find(function(x){return x[0]===k;});
+    const label=job?job[2]:k;
+    if(e){ bad.push(label+' '+((e&&e.message)||e)); return; }
+    if(v&&v.ok){ if(job) job[3](v); return; }
+    bad.push(label+' '+((v&&v.error)||'HTTP 失败'));
+  });
+  const now=new Date();
+  put('stamp','更新于 '+now.toLocaleTimeString('zh-CN',{hour12:false}));
+  if(bad.length){
+    put('loadErr', bad.join(' · '));
+    const e=$('loadErr'); if(e) e.style.display='';
+  }else{
+    const e=$('loadErr'); if(e) e.style.display='none';
+  }
+  renderKpis(); renderRows(); renderUsers(); renderInvites(); renderSys();
+}
+
+/* ---------------- 动作 ---------------- */
+async function act(key,on,uid){
+  if(on && !confirm('让这个账号在后台运行?\n\n它会连上游戏服 —— 如果手机上正开着同一个号, 两边会互相踢下线。')) return;
+  try{
+    const body={key:key,on:!!on};
+    if(uid) body.uid=uid;
+    const j=await api('/api/admin/account-action',body);
+    if(!j||!j.ok){ toast((j&&j.error)||'操作失败','err'); return; }
+    toast(j.note||'已操作','ok');
+    await loadAll();
+  }catch(e){ toast('操作失败: '+((e&&e.message)||e),'err'); }
+}
+async function userAct(name,act,extra){
+  const body=Object.assign({username:name}, extra||{});
+  try{
+    const j=await api('/api/admin/'+act, body);
+    if(!j||!j.ok){ toast((j&&j.error)||'操作失败','err'); return; }
+    toast('已处理: '+name,'ok');
+    await loadAll();
+  }catch(e){ toast('操作失败: '+((e&&e.message)||e),'err'); }
+}
+async function loadAudit(){
+  const uid=($('auUid')&&$('auUid').value||'').trim();
+  const limit=($('auLimit')&&$('auLimit').value)||'100';
+  const box=$('auBox');
+  if(box) box.textContent='查询中…';
+  try{
+    const q=uid?('/api/audit?limit='+encodeURIComponent(limit)+'&uid='+encodeURIComponent(uid))
+                :('/api/audit?limit='+encodeURIComponent(limit));
+    const j=await api(q);
+    if(!j||!j.ok){ if(box) box.textContent='查询失败: '+((j&&j.error)||'未知'); return; }
+    const rows=j.rows||[];
+    if(!rows.length){ if(box) box.textContent='还没有记录'; return; }
+    if(box){
+      box.innerHTML = rows.map(r=>{
+        const t=new Date((r.ts||0)*1000).toLocaleString('zh-CN',{hour12:false});
+        const ok=r.ok?'<span class="y">✓</span>':'<span class="n">✗</span>';
+        return '<span class="t">'+esc(t)+'</span> '+ok+' '
+          +esc(r.action||'-')+' → '+esc(r.target||'-')+' '
+          +'<span class="t">('+esc(r.uid||'-')+(r.ip?' · '+esc(r.ip):'')+')</span>';
+      }).join('\n');
+    }
+  }catch(e){ if(box) box.textContent='查询失败: '+((e&&e.message)||e); }
+}
+
+/* ---------------- 接口自检 ---------------- */
+async function probe(){
+  const box=$('probeBox'); const list=[
+    ['/api/me','登录用户'],
+    ['/api/admin/overview','平台概览'],
+    ['/api/admin/accounts','账号状态'],
+    ['/api/admin/users','用户列表'],
+    ['/api/admin/invites','邀请码'],
+    ['/api/audit?limit=5','审计日志'],
+  ];
+  if(box) box.textContent='探测中…';
+  const out=[];
+  for(const [p,label] of list){
+    try{
+      const t0=Date.now();
+      const j=await api(p);
+      const ms=Date.now()-t0;
+      out.push((j&&j.ok?'<span class="y">OK  </span>':'<span class="n">FAIL</span>')
+        +' '+label.padEnd(10,' ')+' '+p+'  ('+ms+'ms)'
+        +(j&&j.ok?'':' '+(j&&j.error||'')));
+    }catch(e){
+      out.push('<span class="n">ERR </span> '+label.padEnd(10,' ')+' '+p+'  '+((e&&e.message)||e));
+    }
+  }
+  if(box) box.innerHTML=out.join('\n');
+}
+
+/* ---------------- 视图切换 ---------------- */
+const PANE_META={
+  mon:{t:'监控', s:'全平台账号与运行状态'},
+  users:{t:'用户', s:'封禁 / 角色 / 删除'},
+  invites:{t:'邀请码', s:'创建与使用情况'},
+  audit:{t:'审计日志', s:'登录与管理操作留痕'},
+  sys:{t:'系统与运维', s:'运行时指标与接口自检'},
+};
+function go(name){
+  ADM.pane=name;
+  document.querySelectorAll('.pane').forEach(p=>{
+    p.classList.toggle('on', p.id==='pane'+(name.charAt(0).toUpperCase()+name.slice(1)));
+  });
+  document.querySelectorAll('.navItem').forEach(b=>{
+    b.classList.toggle('on', b.dataset.pane===name);
+  });
+  const m=PANE_META[name]||PANE_META.mon;
+  put('crumbT',m.t); put('crumbS',m.s);
+  try{ localStorage.setItem('cokAdminPane',name); }catch(e){}
+  closeNav();
+  if(name==='audit' && !$('auBox').dataset.loaded){ $('auBox').dataset.loaded='1'; loadAudit(); }
+}
+function closeNav(){
+  const s=$('side'); if(s) s.classList.remove('open');
+  const k=$('scrim'); if(k) k.classList.remove('on');
+}
+function openNav(){
+  const s=$('side'); if(s) s.classList.add('open');
+  const k=$('scrim'); if(k) k.classList.add('on');
+}
+
+/* ---------------- 绑定 ---------------- */
+function bind(){
+  document.querySelectorAll('.navItem').forEach(b=>{ b.onclick=()=>go(b.dataset.pane); });
+  const bn=$('btnNav'); if(bn) bn.onclick=()=>{
+    const s=$('side');
+    if(s && s.classList.contains('open')) closeNav(); else openNav();
+  };
+  const sk=$('scrim'); if(sk) sk.onclick=closeNav;
+  const br=$('btnReload'); if(br) br.onclick=()=>{ loadAll(); };
+  const ac=$('autoChk');
+  const bc=$('btnConsole'); if(bc) bc.onclick=()=>{
+    // 宿主 App 里 token 在 URL 上, 跳的时候必须带过去 —— 否则落地就是 403。
+    // 同一个 WebView 里跳 /admin 也一样(见 goAdmin)。
+    location.href = (ADM.me && ADM.me.platform && TOK) ? withTok('/') : '/';
+  };
+  $('q').oninput=()=>{ ADM.filter=$('q').value; renderRows(); };
+  $('fUser').onchange=()=>{ ADM.who=$('fUser').value; renderRows(); };
+  $('fState').onchange=()=>{ ADM.state=$('fState').value; renderRows(); };
+  const bcl=$('btnClear');
+  if(bcl) bcl.onclick=()=>{
+    ADM.filter=''; ADM.who=''; ADM.state='';
+    if($('q')) $('q').value='';
+    if($('fUser')) $('fUser').value='';
+    if($('fState')) $('fState').value='';
+    renderRows();
+  };
+  document.querySelectorAll('th[data-sort]').forEach(th=>{
+    th.onclick=()=>{
+      const k=th.dataset.sort;
+      if(ADM.sortKey===k) ADM.sortDir=-ADM.sortDir;
+      else { ADM.sortKey=k; ADM.sortDir=1; }
+      renderRows();
+    };
+  });
+  const tb=$('tb');
+  if(tb) tb.onclick=(e)=>{
+    const b=e.target.closest && e.target.closest('button[data-adm]');
+    if(!b) return;
+    act(b.dataset.key, b.dataset.adm==='start', b.dataset.uid||'');
+  };
+  const ur=$('uRows');
+  if(ur) ur.onclick=(e)=>{
+    const b=e.target.closest && e.target.closest('button[data-act]');
+    if(!b) return;
+    const n=b.dataset.u, a=b.dataset.act;
+    if(a==='ban') userAct(n,'ban',{banned:b.dataset.on==='1'});
+    else if(a==='role') userAct(n,'role',{role:b.dataset.role});
+    else if(a==='del'){
+      if(confirm('确定删除用户 '+n+' 吗?\n\n该用户的所有账号数据目录会被移除, 且不可恢复。')) userAct(n,'delete-user',{});
+    }
+  };
+  ['btnNewInvite','btnNewInvite2'].forEach(id=>{
+    const b=$(id); if(!b) return;
+    b.onclick=async()=>{
+      try{
+        const j=await api('/api/admin/invite-new',{username:ADM.me&&ADM.me.user||''});
+        if(!j||!j.ok){ toast((j&&j.error)||'生成失败','err'); return; }
+        if(j.code){ prompt('新邀请码(请复制):',j.code); }
+        await loadAll();
+      }catch(e){ toast('生成失败: '+((e&&e.message)||e),'err'); }
+    };
+  });
+  const bl=$('btnAuditLoad'); if(bl) bl.onclick=loadAudit;
+  const bp=$('btnProbe'); if(bp) bp.onclick=probe;
+  const bdr=$('btnDbRefresh'); if(bdr) bdr.onclick=function(){ loadAll(); };
+  const bi=$('btnImport'); if(bi) bi.onclick=doImport;
+  const ba=$('btnAct');
+  if(ba) ba.onclick=async()=>{
+    const key=($('actKey')&&$('actKey').value||'').trim();
+    if(!key){ toast('先填账号 key','warn'); return; }
+    await act(key, !!($('actOn')&&$('actOn').checked), '');
+  };
+  // 自动刷新: 10 秒一次, 切到后台标签页不拉
+  if(ADM.timer) clearInterval(ADM.timer);
+  ADM.timer=setInterval(()=>{
+    const a=$('autoChk');
+    if(a && !a.checked) return;
+    if(document.hidden) return;
+    loadAll();
+  },10000);
+}
+
+/* ---------------- 启动 ---------------- */
+(async function init(){
+  bind();
+  const me=await api('/api/me');
+  if(!me||!me.ok){
+    // 拿不到身份就别停在空白页: 说清是"没权限"还是"连不上"
+    put('whoami','未知');
+    const le=$('loadErr');
+    if(le) le.textContent='读取身份失败: '+((me&&me.error)||'接口无响应');
+    return;
+  }
+  ADM.me=me;
+  put('whoami', me.user||'-');
+  put('brandSub', (me.role==='admin'?'管理员 ':'')+(me.platform?'平台模式':'单用户'));
+  let pane='mon';
+  try{ pane=localStorage.getItem('cokAdminPane')||'mon'; }catch(e){}
+  go(PANE_META[pane]?pane:'mon');
+  await loadAll();
+  setTimeout(loadAll, 1200);
+})();
+</script>
+</body>
+</html>

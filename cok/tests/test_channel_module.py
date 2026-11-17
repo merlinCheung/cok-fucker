@@ -79,12 +79,17 @@ def test_all_modules_compile():
     for fn in sorted(os.listdir(HERE)):
         if not fn.endswith(".py"):
             continue
+        # macOS 打包会带出 `._xxx` 伴随文件（AppleDouble，二进制资源分支），
+        # 解包到 Linux 后混在 *.py 里 —— 那不是源码，读一次就 UnicodeDecodeError。
+        if fn.startswith("._"):
+            continue
         path = os.path.join(HERE, fn)
         try:
             with open(path, encoding="utf-8") as fh:
                 compile(fh.read(), path, "exec")
-        except SyntaxError as exc:
-            broken.append("%s:%s %s" % (fn, exc.lineno, exc.msg))
+        except (SyntaxError, UnicodeDecodeError) as exc:
+            broken.append("%s:%s %s" % (fn, getattr(exc, "lineno", "?"),
+                                        getattr(exc, "msg", str(exc)[:80])))
     assert not broken, "语法错误: " + "; ".join(broken)
     print("[PASS] protocol/ 下所有 .py 都能编译")
 

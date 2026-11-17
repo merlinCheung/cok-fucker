@@ -33,31 +33,50 @@ import time
 import cok_paths
 
 #: 数据库文件位置。环境变量可覆盖 —— 测试靠它指到临时目录, 不动真库。
-DB_PATH = os.environ.get("COK_PLATFORM_DB") or os.path.join(
+#:
+#: ⚠ 为什么这里要在**每次连接时**重算, 而不是只算一次:
+#:   `DB_PATH` 是模块级常量, 导入时求值。安卓端(Chaquopy)里宿主先
+#:   `os.environ["COK_PLATFORM_DB"]` 再 import 控制台, 顺序对的话没问题;
+#:   但一旦有别的路径先进了这个模块, 常量就永久钉在错的地方(手机上 =
+#:   只读的 assets 目录 → 建表/写审计静默失败)。所以 `db_path()` 优先看
+#:   环境变量, 常量只当兜底。
+_DEFAULT_DB_PATH = os.environ.get("COK_PLATFORM_DB") or os.path.join(
     cok_paths.data_dir(), "platform.db")
+
+#: 兼容旧引用(测试/迁移脚本会直接读它)
+DB_PATH = _DEFAULT_DB_PATH
+
+
+def db_path():
+    """当前该用的数据库文件路径(环境变量优先, 变了就跟着变)。"""
+    return os.environ.get("COK_PLATFORM_DB") or _DEFAULT_DB_PATH
 
 #: 审计日志保留条数(按 id 倒序裁剪, 防止无限增长)
 AUDIT_KEEP = 5000
 
 _LOCK = threading.RLock()
 _CONN = None
+#: 当前已打开连接指向的文件(`init()` 靠它判断要不要重开)
+_CONN_PATH = ""
 
 
 # ---------------------------------------------------------------- 连接
 def _connect():
     """打开(或复用)连接并保证表结构存在。"""
-    global _CONN
+    global _CONN, _CONN_PATH
     with _LOCK:
         if _CONN is not None:
             return _CONN
-        d = os.path.dirname(os.path.abspath(DB_PATH))
+        path = db_path()
+        d = os.path.dirname(os.path.abspath(path))
         if d:
             try:
                 os.makedirs(d, exist_ok=True)
             except OSError:
                 pass
-        conn = sqlite3.connect(DB_PATH, timeout=10.0,
+        conn = sqlite3.connect(path, timeout=10.0,
                                check_same_thread=False)
+        _CONN_PATH = path
         conn.row_factory = sqlite3.Row
         # WAL: 读不阻塞写(多个人同时开页面时最直观的收益)
         # synchronous=NORMAL: WAL 下断电最多丢最后一个事务, 换吞吐
@@ -380,7 +399,18 @@ def init():
     另外做**增量迁移**: 老库(改造初期建的)没有 `must_change_pwd` 列,
     CREATE TABLE IF NOT EXISTS 不会补列 —— 于是读写都会报 "no such column"。
     这里显式检查并 ALTER, 让新旧库都能跑。
+
+    ⚠ 环境变量指向的库变了就重开连接: 否则一直往旧文件写(安卓端会把库
+    建在只读的 assets 目录里, 表现为"审计/会话全静默失败")。
     """
+    global _CONN
+    with _LOCK:
+        if _CONN is not None and _CONN_PATH != db_path():
+            try:
+                _CONN.close()
+            except sqlite3.Error:
+                pass
+            _CONN = None
     c = _connect()
     try:
         cols = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
@@ -390,7 +420,7 @@ def init():
             c.commit()
     except Exception:  # noqa: BLE001
         pass
-    return DB_PATH
+    return db_path()
 
 
 def _q(sql, args=()):

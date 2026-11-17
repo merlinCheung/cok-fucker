@@ -89,6 +89,19 @@ class Client(object):
             return {"_raw": raw[:120].decode("utf-8", "replace")}
 
 
+def _get_raw(base, path):
+    """不解析 JSON、不跟随重定向: 返回 (status, body_bytes)。
+
+    端口是 `_run(base)` 才知道的, 所以 base 从调用方传进来 —— 早先写成读
+    模块级 PORT 会直接 NameError(而它是 main() 的局部变量)。
+    """
+    req = urllib.request.Request(base + path, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
 class FakeEngine(object):
     """不联网的假引擎: 只满足平台层需要的最小接口。"""
 
@@ -236,6 +249,27 @@ def _test_migrate():
                 platform.user_delete(name)
             except Exception:  # noqa: BLE001
                 pass
+
+
+class _NullLockForTest(object):
+    """给 _Mgr 用的空锁(支持 with)。"""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+
+class _FakeHandler(object):
+    """`_admin_accounts_snapshot()` 只要 `._query()` 和 `.platform`。"""
+
+    def __init__(self, plat, query=None):
+        self.platform = plat
+        self._q = query or {}
+
+    def _query(self):
+        return self._q
 
 
 # ---------------------------------------------------------------- 主流程
@@ -459,6 +493,266 @@ def _run(base):
                                                  "password": "bad-%d" % i})
         codes.append(st)
     check(429 in codes, "连续失败触发限流(429)", str(codes[-3:]))
+
+    # ---- O. 管理员看全平台账号状态 ----
+    # 这几个用例专门盯"跨用户可见"这件事: 之前管理员只能看自己的 EngineManager,
+    # 别人的号在不在跑、掉没掉线, 完全看不到。
+    # ⚠ 先把 N 段限流那一桶清掉 —— 它连续打了 25 次失败登录, 桶是**按 IP**
+    #   算的, 紧接着的正常登录/注册会被当成"尝试过于频繁"挡掉。
+    platform.rate_reset("auth:127.0.0.1")
+    adm = Client(base)
+    st, _jl = adm.req("/api/login", {"username": "alice",
+                                     "password": "pw-alice-1"})
+    check(st == 200 and bool(adm.cookie), "管理员重新登录拿到会话", str(st))
+    cok_web._ADMIN_STATE_CACHE.clear()      # 同上: 别拿旧快照断言
+    st, j = adm.req("/api/admin/accounts")
+    check(st == 200 and j.get("ok") and j.get("platform") is True,
+          "管理员可拉全平台账号状态", str(j)[:120])
+    rows = j.get("accounts") or []
+    keys = sorted(r["key"] for r in rows)
+    check(keys == ["900000000001", "900000000002"],
+          "一次看到**所有人**的账号(甲 + 乙)", str(keys))
+    owners = sorted(set((r.get("owner") or "") for r in rows))
+    check(owners == sorted([_uid("alice"), _uid("bob")]),
+          "每行带 owner uid(能对上用户)", str(owners))
+    names = sorted(set((r.get("username") or "") for r in rows))
+    check(names == ["alice", "bob"], "每行带用户名(前端不用二次查表)", str(names))
+    # 只读: 不该有任何凭据字段漏出来
+    leaked = [k for r in rows for k in r
+              if k.lower() in ("platformtoken", "signcode", "uuid", "deviceid",
+                               "pfid", "buildcode")]
+    check(not leaked, "账号状态不带任何凭据字段", str(leaked[:5]))
+    st_j = (j.get("stats") or {})
+    check(st_j.get("users") == 2 and st_j.get("accounts") == 2,
+          "统计里用户数/账号数对得上", str(st_j)[:120])
+    check("running" in st_j and "errors" in st_j and "offline" in st_j,
+          "统计含 running/errors/offline", str(sorted(st_j)))
+
+    # 只按某个用户过滤(?uid=)
+    st, j2 = adm.req("/api/admin/accounts?uid=" + _uid("bob"))
+    only_bob = sorted(r["key"] for r in (j2.get("accounts") or []))
+    check(st == 200 and only_bob == ["900000000002"],
+          "可按 uid 只看某个用户的账号", str(only_bob))
+    st, j3 = adm.req("/api/admin/accounts?uid=u-nobody-here")
+    check(st == 200 and (j3.get("accounts") or []) == [],
+          "不存在的 uid -> 空列表(不是全平台)", str(j3)[:100])
+
+    # 普通用户看不到(横向越权最要紧的一条)
+    st, j4 = c2.req("/api/admin/accounts")
+    check(st == 403, "普通用户拉全平台账号被拒", str(st))
+
+    # 管理侧动作: 开/关别人的后台运行
+    st, j5 = adm.req("/api/admin/account-action",
+                     {"key": "900000000002", "on": True})
+    check(st == 200 and j5.get("ok") and j5.get("on") is True,
+          "管理员能启动别人的账号后台", str(j5)[:120])
+    mb = cok_web.Handler.platform.get(_uid("bob"))
+    check("900000000002" in mb.parallel, "bob 的并行集里真的多了这个号",
+          str(sorted(mb.parallel)))
+    st, j6 = adm.req("/api/admin/account-action",
+                     {"key": "900000000002", "on": False})
+    check(st == 200 and j6.get("ok") and not j6.get("on"),
+          "管理员能停掉别人的账号后台", str(j6)[:120])
+    check("900000000002" not in mb.parallel, "bob 的并行集里真的少了这个号",
+          str(sorted(mb.parallel)))
+    st, j7 = adm.req("/api/admin/account-action", {"key": "nope-nope", "on": True})
+    check(st == 200 and not j7.get("ok"), "不存在的账号 key 被拒",
+          str(j7.get("error"))[:80])
+    st, j8 = adm.req("/api/admin/account-action", {"on": True})
+    check(st == 200 and not j8.get("ok"), "缺少 key 被拒", str(j8.get("error"))[:60])
+    st, j9 = c2.req("/api/admin/account-action",
+                    {"key": "900000000001", "on": True})
+    check(st == 403 and not j9.get("ok"),
+          "普通用户不能开关别人的账号",
+          "%s / %s" % (st, str(j9.get("error"))[:60]))
+    # ⚠ 不能断言"alice 的并行集是空的" —— K 段自己就往里加了 900000000001。
+    #   越权的正确判据是"这个号没被**新加进去**"。
+    ma2 = cok_web.Handler.platform.get(_uid("alice"))
+    check("900000000002" not in ma2.parallel
+          and sorted(ma2.parallel) == ["900000000001"],
+          "越权动作没生效(bob 的号没进 alice 的并行集)",
+          str(sorted(ma2.parallel)))
+
+    # 封禁用户的主人 -> 不许动他的号
+    platform.user_set_banned("bob", True)
+    st, ja = adm.req("/api/admin/account-action",
+                     {"key": "900000000002", "on": True})
+    check(st == 200 and not ja.get("ok") and "封禁" in str(ja.get("error")),
+          "主人被封禁的账号不允许启动", str(ja.get("error"))[:60])
+    platform.user_set_banned("bob", False)
+
+    # 只读预览: 从没登录过的用户也要能看到他有几个号(且不能建引擎)
+    uid_carol = ""
+    platform.rate_reset("auth:127.0.0.1")     # 上一段的登录失败还占着这个桶
+    code2 = platform.invite_new("alice", note="给 carol 看只读预览")
+    c3 = Client(base)
+    st, jc = c3.req("/api/register", {"username": "carol",
+                                      "password": "pw-carol-1",
+                                      "invite": code2})
+    check(st == 200 and jc.get("ok"), "carol 注册成功(用来验证未登录用户的预览)",
+          str(jc)[:100])
+    rowc = platform.user_get("carol")
+    uid_carol = rowc["uid"] if rowc else ""
+    full = {"pfId": "x", "platformToken": "x", "deviceId": "x", "uuid": "x",
+            "buildCode": "x", "signCode": "x"}
+    accounts.save_account(dict(full, gameUid="900000000003",
+                               roleName="丙的号"),
+                          label="丙的号", owner=uid_carol)
+    try:
+        st, jd = adm.req("/api/admin/accounts")
+        mine = [r for r in (jd.get("accounts") or [])
+                if r.get("username") == "carol"]
+        check(st == 200 and len(mine) == 1 and mine[0]["running"] is False,
+              "carol 从没登录也能看到他的号(只读预览, 不算运行)", str(mine)[:160])
+        check(uid_carol not in cok_web.Handler.platform.users,
+              "预览不把他塞进运行时表(不建引擎)", str(list(cok_web.Handler.platform.users)))
+    finally:
+        try:
+            accounts.remove_account("900000000003", owner=uid_carol)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            platform.user_delete("carol")
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 单用户模式(platform=None)不该炸
+    # ⚠ 先清缓存: 这个接口有 5 秒缓存, 而上面几段用例改过账号库/封禁状态。
+    #   不清的话拿到的是旧快照, 断言会"莫名其妙"地失败。
+    cok_web._ADMIN_STATE_CACHE.clear()
+    old_platform = cok_web.Handler.platform
+    try:
+        cok_web.Handler.platform = None
+        st, je = adm.req("/api/admin/accounts")
+        check(st == 200 and je.get("platform") is False,
+              "单用户模式下这个接口自洽返回(不是 500)", str(je)[:120])
+    finally:
+        cok_web.Handler.platform = old_platform
+
+    # ---- P. 没有运行时时的兜底(_NULL_MANAGER) ----
+    # 平台层存在但**这个用户没有引擎实例**(从没登录 / 已被空闲回收)时,
+    # `_manager()` 返回空壳而不是 None —— 之前返回 None, 下游
+    # `.view_engine().snapshot()` 一串 AttributeError, 表现为接口 500 +
+    # 页面转圈, 排查时很容易误判成前端 bug。
+    uid_carol2 = ""
+    platform.rate_reset("auth:127.0.0.1")
+    code3 = platform.invite_new("alice", note="验证空壳兜底")
+    c4 = Client(base)
+    st, jc4 = c4.req("/api/register", {"username": "carol2",
+                                       "password": "pw-carol-2",
+                                       "invite": code3})
+    check(st == 200 and jc4.get("ok"), "carol2 注册成功(验证空壳兜底)",
+          str(jc4)[:100])
+    rowc2 = platform.user_get("carol2")
+    uid_carol2 = rowc2["uid"] if rowc2 else ""
+    # ⚠ 必须先建一个**真会话**(登录过)才有 EngineManager 实例可以对照 ——
+    #   这里 carol2 只是"注册了但没登录", 所以她的号本来就该走空壳路径,
+    #   而账号库此刻也确实没有她的号(前一步 remove 掉了), 于是 rows 为空。
+    accounts.save_account({"pfId": "x", "platformToken": "x", "deviceId": "x",
+                           "uuid": "x", "buildCode": "x", "signCode": "x",
+                           "gameUid": "900000000004", "roleName": "丁的号"},
+                          label="丁的号", owner=uid_carol2)
+    check(len(accounts.list_accounts(owner=uid_carol2)) == 1,
+          "前置: 丁的号确实入库了(免得空列表被当成'兜住了')",
+          str(accounts.list_accounts(owner=uid_carol2))[:100])
+    try:
+        # 直接对"有平台层、但该用户没有实例"的情形走一遍快照 ——
+        # 这正是过去 500 的那条路径(_manager() 返回 None ⇒ .view_engine() 炸)。
+        cok_web._ADMIN_STATE_TTL = 0.0
+        rows = cok_web._admin_accounts_snapshot(
+            _FakeHandler(cok_web.Handler.platform))
+        mine2 = [r for r in rows.get("accounts") or []
+                 if r.get("owner") == uid_carol2]
+        check(len(mine2) == 1 and mine2[0]["running"] is False,
+              "没有引擎实例的用户也能出状态行(空壳兜底)",
+              str(mine2)[:160])
+        # ⚠ 期望值是 "none"(未托管), 不是 "idle"。
+        #   "idle" = 有引擎在看、但没在后台跑; "none" = 连引擎都没有,
+        #   从来没人看过它。混成一个会让管理页"空闲"筛选把一堆没跑过的号
+        #   也捞进来 —— 管理员看到 20 个"空闲", 实际一个都没跑过。
+        check(mine2 and mine2[0]["status"] == "none",
+              "没在跑的号状态是 none(未托管, 不是 idle)",
+              str(mine2[0].get("status")) if mine2 else "-")
+        # 有引擎但没在后台跑 = idle。这条不走账号库 —— 直接对一行构造好的
+        # 数据调 _account_row, 免得为了造"有引擎"去启真引擎。
+        class _Mgr(object):
+            lock = _NullLockForTest()
+            engines = {"k": object()}
+            parallel = ()
+            priorities = {}
+        row_idle = cok_web._account_row(
+            {"key": "k", "label": "空闲号", "owner": uid_carol2}, _Mgr(),
+            None, 0)
+        check(row_idle["status"] == "idle" and row_idle["running"] is True,
+              "有引擎没在跑的号状态是 idle",
+              "%s / running=%s" % (row_idle["status"], row_idle["running"]))
+        row_none = cok_web._account_row(
+            {"key": "k2", "label": "没跑过", "owner": uid_carol2}, None, None, 0)
+        check(row_none["status"] == "none",
+              "没引擎也没数据的号是 none(未托管)",
+              str(row_none["status"]))
+
+        # ---- /api/admin/overview: 独立管理页的 KPI 必须和表同一个口径 ----
+        # 为什么单独守这条: 概览曾经自己算一遍"在跑/打怪/有罩", 表格用
+        # _account_row 的状态 —— 两套算法迟早对不上("表里 6 行、卡片说 2 个在跑")。
+        # 现在概览是快照的薄聚合层, 这条测试把它钉住。
+        cok_web._ADMIN_STATE_TTL = 0.0
+        st_ov, j_ov = adm.req("/api/admin/overview")
+        check(st_ov == 200 and j_ov.get("ok"), "管理页概览接口 200",
+              str(j_ov)[:120])
+        accs = j_ov.get("accounts") or []
+        check(j_ov.get("accounts_total") == len(accs),
+              "概览的 accounts_total 就是表里的行数",
+              "%s vs %s" % (j_ov.get("accounts_total"), len(accs)))
+        check(j_ov.get("running") == len([r for r in accs if r.get("running")]),
+              "概览 running = 表里 running 为真的行数",
+              "%s vs %s" % (j_ov.get("running"),
+                            len([r for r in accs if r.get("running")])))
+        check(j_ov.get("errors") == len([r for r in accs
+                                         if r.get("status") == "error"]),
+              "概览 errors = 表里 status=error 的行数", str(j_ov.get("errors")))
+        check(isinstance(j_ov.get("users"), list) and j_ov.get("users"),
+              "概览带用户列表(系统与运维面板要用)", str(j_ov)[:120])
+        check(isinstance(j_ov.get("server_time"), float) and j_ov["server_time"] > 0
+              and isinstance(j_ov.get("python"), str) and j_ov["python"]
+              and isinstance(j_ov.get("data_root"), str),
+              "概览带运行时字段(时间/Python/数据目录)", str(j_ov)[:160])
+
+        # ---- 独立管理页 /admin 的路由与鉴权 ----
+        # 三个分支都要守: 未登录给登录页 / 非管理员 403 / 管理员拿到页面。
+        # 少了中间那条, 普通用户会打开一个空壳页面然后所有接口 403。
+        st_pg, body_pg = _get_raw(base, "/admin")
+        check(st_pg == 200 and b"COK" in body_pg,
+              "/admin 未登录时给登录页(不是 500 / 404)", str(st_pg))
+        st_a, j_a = adm.req("/api/admin/overview")
+        check(st_a == 200, "管理员能拉管理页概览", str(st_a))
+        # 普通用户: 直接换一个非管理员会话打这两个入口
+        platform.rate_reset("auth:127.0.0.1")
+        code5 = platform.invite_new("alice", note="验证非管理员被拦")
+        c5 = Client(base)
+        st5, _j5 = c5.req("/api/register", {"username": "dave5",
+                                            "password": "pw-dave-5",
+                                            "invite": code5})
+        check(st5 == 200, "dave5 注册成功(验证非管理员被拦)", str(st5)[:100])
+        st_ov2, j_ov2 = c5.req("/api/admin/overview")
+        check(st_ov2 == 403, "非管理员拉概览被 403", str(st_ov2))
+        st_acc2, _j = c5.req("/api/admin/accounts")
+        check(st_acc2 == 403, "非管理员拉全平台账号被 403", str(st_acc2))
+        # 空壳本身的可迭代性: 遍历 / with lock / view_engine 都不能炸
+        null = cok_web._NULL_MANAGER
+        with null.lock:
+            pass
+        check(list(null.accounts) == [] and null.view_engine() is not None,
+              "空壳管理器可遍历/可加锁/有 view_engine", type(null).__name__)
+    finally:
+        try:
+            accounts.remove_account("900000000004", owner=uid_carol2)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            platform.user_delete("carol2")
+        except Exception:  # noqa: BLE001
+            pass
 
 
 if __name__ == "__main__":

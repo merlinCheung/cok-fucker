@@ -191,6 +191,24 @@
   .embedSeg .navItem.active{color:var(--accent);background:var(--accent-dim);
     border-color:rgba(77,141,255,.5);}
 
+  /* 全平台账号状态面板（管理员）: 桌面尺寸的手机版 —— 表格横滚保留,
+     但行内动作按钮要够大(默认 24px, 手指点不准), 统计条字号也要能读。 */
+  .adm{margin:10px 0 0;padding:11px 11px;}
+  .adm .hd-t h2{font-size:15px;}
+  .adm-st .lb{font-size:10px;}
+  .adm-st .vl{font-size:17px;}
+  .adm-bar{gap:7px;}
+  .adm-bar select,.adm-bar input[type=text]{min-height:42px;font-size:14px;}
+  .adm-bar .pill.chk{min-height:36px;font-size:12px;}
+  #admReload{min-height:38px;font-size:13px;padding:6px 12px;}
+  .adm-tb{font-size:13px;}
+  .adm-tb th,.adm-tb td{padding:9px 9px;}
+  .adm-tb td.act button{min-height:34px;min-width:44px;padding:6px 11px;font-size:12.5px;
+    border-radius:var(--r-xs);border:1px solid var(--line-2);background:var(--surface-2);}
+  .adm-tb td.act button:hover{background:var(--surface-3);}
+  .adm-tb .st{padding:3px 10px;font-size:11px;}
+  #admHide{width:34px;height:34px;min-height:34px;font-size:15px;}
+
   /* 连接状态从侧栏挪到顶栏右边（fixed 定位，不占布局） */
   #connBadge{
     position:fixed;
@@ -260,7 +278,6 @@
     gap:4px;
     white-space:nowrap;
   }
-  .topActs .fill{flex:1 1 100%;display:none;}
   /* 三个动作按钮平分第二行 —— flex-basis:0 让 flex-grow 真正均分宽度
      (用 calc(33% - 4px) 会因 gap 累计溢出，flex-basis:0 才是真等宽) */
   #btnRefresh{order:3;flex:1 1 0;min-width:0;min-height:34px;justify-content:center;padding:5px 4px;
@@ -277,6 +294,49 @@
     #sMode{flex:1 1 100%;}
     #btnRefresh,#btnReconnect,#btnDisconnect{flex:1 1 0;min-width:44px;}
   }
+
+  /* 管理员入口（账号状态 / 审计 / 用户管理）—— 只在手机/内嵌 WebView 出现
+     （桌面用侧栏 .sbUser 里那份，见 cok_webui.html 的 .admOnly 规则）。
+
+     ⚠ 为什么单独包一层: `.topActs` 是 flex-wrap。三个按钮直接平铺时,
+       flex-wrap 判断换行看的是每个 item 的 **max-content**(文字全宽), 调
+       flex-basis 没有用; 而 `.fill` 断点的 order 默认 0, 跟按钮相同 →
+       按 DOM 顺序排在按钮**后面**, 第一个按钮照样被甩到第二行。
+       外层 .admTopWrap 自己 basis:100% 独占一行(order:7 排到最后),
+       内层三等分 —— 宽度完全可预测, 换行不再有歧义。
+
+     ⚠ 手机上必须让整条侧栏「消失」: 桌面侧栏在 ≤760px 是 `transform:
+       translateX(-102%)` 的抽屉, 在安卓 WebView 里它**仍然占着布局**
+       (fixed 但 width 216px), 点开汉堡菜单会浮在上面。这里直接 display:none
+       —— 手机端所有导航都走底部/顶栏, 抽屉里那点东西没有独有功能。 */
+  .sidebar{display:none;}
+  /* ⚠ 这里**不能**写 `display:flex` —— 会和 cok_webui.html 里
+     `.admTopWrap{display:none}`(以及 `.admOn` 才显示的那条)打架:
+     本文件被原样追加到桌面样式表**末尾**, 同特异性时后者胜出, 于是
+     「不是管理员」也会显示这一行。显隐一律交给 cok_webui.html 的
+     `.admTopWrap.admOn` / `.cok-embed .admTopWrap.admOn`, 这里只管布局。 */
+  .admTopWrap{
+    order:7;
+    flex:1 0 100%;
+    flex-wrap:nowrap;
+    gap:6px;
+    margin-top:2px;
+    padding-top:7px;
+    border-top:1px solid var(--line-2);
+  }
+  .admTopWrap button{
+    flex:1 1 0;
+    min-width:0;
+    min-height:44px;
+    justify-content:center;
+    padding:6px 4px;
+    font-size:13px;
+    border-radius:var(--r-sm);
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    box-shadow:none;
+  }
+  .admTopWrap button:active{transform:translateY(1px);}
 
   .banner{
     margin:10px 0 0;
@@ -464,10 +524,42 @@
   .toast{right:12px;bottom:calc(126px + env(safe-area-inset-bottom));left:12px;max-width:none;border-radius:var(--r-sm);}
   .kbar{display:none!important;}
   .ovl{align-items:flex-end;padding:0;}
-  .ovl .modal,.ovl .modal.wide{width:100%;max-height:88vh;border-radius:16px 16px 0 0;}
+  /* 桌面基线里给 .ovl .modal 加了 margin:auto(弹窗比视口高时不裁顶) ——
+     但那是给"居中弹窗"用的, 这里的底栏弹窗必须**贴底**。
+     margin:auto auto 0 auto = 左右 auto(水平居中) + 上边距 auto(垂直贴底)。 */
+  .ovl .modal,.ovl .modal.wide{width:100%;max-height:88vh;border-radius:16px 16px 0 0;margin:auto auto 0 auto;}
 }
 
 /* 横屏手机上侧栏照常，但主区不该被挤成一条 */
 @media (max-width:900px) and (orientation:landscape){
   .sidebar{width:200px;}
+}
+
+/* 内嵌 WebView 的**宽屏**(平板/横屏, >760px): 上面的规则都在
+   `@media (max-width:760px)` 里, 此时侧栏是常驻的、而 `.sbUser` 被
+   `android-app` 的覆盖层藏了 —— 不补这段, 宽屏内嵌下管理员连入口都没有。
+   `.cok-embed` 只有 mobile-console.js 在 embed=1 时才会加到 <html> 上,
+   所以桌面端完全不受影响。 */
+@media (min-width:761px){
+  .cok-embed .admTopWrap{
+    order:7;
+    flex:1 0 100%;
+    flex-wrap:nowrap;
+    gap:6px;
+    margin-top:2px;
+    padding-top:7px;
+    border-top:1px solid var(--line-2);
+  }
+  .cok-embed .admTopWrap button{
+    flex:1 1 0;
+    min-width:0;
+    min-height:40px;
+    justify-content:center;
+    padding:6px 10px;
+    font-size:13px;
+    border-radius:var(--r-sm);
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    box-shadow:none;
+  }
 }

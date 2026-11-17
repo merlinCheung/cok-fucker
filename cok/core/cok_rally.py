@@ -72,6 +72,7 @@ if _os.path.isdir(_CORE) and _CORE not in _sys.path:
 
 import json
 import os
+import sys
 import time
 
 from cok_sfs import TypedInt, SFS_INT
@@ -128,32 +129,22 @@ SCAN_STRIDE = 50
 #: 用**累积**而不是"只留本轮": 首领怪会动态刷新(被打掉后换位置),
 #: 注册表让页面随着扫描慢慢补全目标列表。
 #:
-#: ⚠️ **按账号隔离**: 这是**进程内共享**的可变状态, 五个引擎并行跑时如果共用一份,
-#:    A 号扫到的怪会混进 B 号的目标列表, 落盘也会写到同一个文件
-#:   (表现为"我点 A 号的扫描, B 号的狮鹫列表也变了")。
-#:   所以按 uid 分桶: `_known_for(uid)` 返回该账号的桶, 所有读写都走它。
-_KNOWN_BY_UID = {}
+#: ⚠️ **按账号隔离**: 五个引擎并行跑时共用一份会串号(A 号扫到的怪混进 B 号的目标
+#:   列表, 落盘也写到同一个文件)。现在改成 cok_scope —— 默认一份 + 每账号一份。
+try:
+    from cok_scope import Scope
+except ImportError:                       # 直接按脚本跑时的兜底
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from cok_scope import Scope
+
+RALLY_SCOPE = Scope(None, "cok_rally")
+
 #: 多久没再见到就认为这只已经消失(被打掉 / 刷新到别处)
 _KNOWN_TTL = 6 * 3600.0
 
-#: 轮转扫描游标(**按账号**, 同上): 下一次从网格里的第几个中心开始
-_CURSOR_BY_UID = {}
-
-#: 注册表落盘目录(**按账号**, 同上)
-_DIR_BY_UID = {}
-
-#: 兼容: 无 uid 调用点(单账号 / 老脚本)用的"默认桶"
-#: ⚠️ 这两个名字必须继续存在: 老代码 / 老测试直接用 `cok_rally._KNOWN` 读写。
-#: 默认桶就是"没传 uid 的那一份", 语义与改造前一致。
+#: 兼容: 无 uid 调用点(单账号 / 老脚本)用的"默认桶"名
 _DEFAULT_UID = ""
-#: 默认桶的注册表(就是改造前的那个模块级 `_KNOWN`, 名字保留给老代码/老测试)。
-#: ⚠️ `_known_for("")` / `_cursor_for("")` **故意**映射到这两个对象: 老测试
-#: 直接 `cok_rally._KNOWN.clear()` / `cok_rally._CURSOR = 0` 仍然生效,
-#: 不需要改测试写法。非空 uid 才走按账号分桶。
-_KNOWN = {}
-_CURSOR = 0
-_KNOWN_BY_UID[_DEFAULT_UID] = _KNOWN
-_CURSOR_BY_UID[_DEFAULT_UID] = _CURSOR
 
 #: 注册表落盘文件(按账号隔离: 多账号时 COK_DATA_DIR 各不相同)
 #:
@@ -162,10 +153,75 @@ _CURSOR_BY_UID[_DEFAULT_UID] = _CURSOR
 #:    所以默认回退到 `accounts.DATA_ROOT`(安卓端 = files/cok/data)。
 try:
     import cok_accounts as _accounts
-    DATA_DIR = os.environ.get("COK_DATA_DIR") or _accounts.DATA_ROOT
+    _DEFAULT_DIR = os.environ.get("COK_DATA_DIR") or _accounts.DATA_ROOT
 except Exception:  # noqa: BLE001
-    DATA_DIR = os.environ.get("COK_DATA_DIR") or HERE
-REGISTRY_FILE = os.path.join(DATA_DIR, "boss-registry.json")
+    _DEFAULT_DIR = os.environ.get("COK_DATA_DIR") or HERE
+
+#: 默认桶初值。
+#: ⚠️ 这四个**必须**直接写进默认桶的 `__dict__`(不是 `set()`):
+#:   老代码/老测试直接 `cok_rally._KNOWN.clear()` / `_KNOWN[...] = v` /
+#:   `cok_rally._CURSOR = 0`, 然后 `_known_for("")` 要能看到 ——
+#:   所以 `_known_for("")` 必须返回**同一个 dict 对象**, 不能是副本。
+RALLY_SCOPE["DIR"] = _DEFAULT_DIR
+RALLY_SCOPE["REGISTRY_FILE"] = os.path.join(_DEFAULT_DIR, "boss-registry.json")
+RALLY_SCOPE._values["KNOWN"] = {}
+RALLY_SCOPE._values["CURSOR"] = 0
+
+# ─────────────────── 兼容旧名字(模块属性, 不是副本) ───────────────────
+# 老代码 / 老测试会直接 `cok_rally._KNOWN.clear()` / `cok_rally._CURSOR = 0`。
+# 用模块级 __getattr__ 把它们**透到作用域**上: 读拿当前值, 写改作用域。
+# ⚠️ 不要用 `_KNOWN = {}` 这种复制 —— 那样两处会各存一份, 改了 A 读 B 看不到。
+_LEGACY_MAP = {
+    "_KNOWN": ("KNOWN", None),
+    "_CURSOR": ("CURSOR", int),
+    "DATA_DIR": ("DIR", None),
+    "REGISTRY_FILE": ("REGISTRY_FILE", None),
+}
+
+
+def __getattr__(name):
+    """模块级属性兜底: 旧名字 → 作用域的值。"""
+    if name in _LEGACY_MAP:
+        key, cast = _LEGACY_MAP[name]
+        v = RALLY_SCOPE.get(key)
+        return cast(v) if (cast and v is not None) else v
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+def _legacy_module():
+    """把**本模块对象自己**换成 `_RallyModule` 实例(内容、身份都不变)。
+
+    ⚠️ 为什么非要这么绕: 老代码 / 老测试写的是
+        `import cok_rally; cok_rally._CURSOR = 7`
+    这是**属性赋值** —— 它会往模块的 `__dict__` 里塞一个 `_CURSOR` 键。
+    之后模块级 `__getattr__`(只在属性**找不到**时才触发)就再也不会被调用了,
+    于是 `_CURSOR = 7` 变成"什么都没发生"(读还是旧值), 静默失效。
+
+    解法: 换成自定义 ModuleType 子类, 拦截 `__setattr__` —— 赋值也走作用域。
+    模块身份(`sys.modules['cok_rally']`)保持不变, 老代码的 import 照旧。
+
+    子类**不能**定义在 cok_scope 里: 那里拿不到 RALLY_SCOPE(会循环导入),
+    所以放在本模块, 只在真正需要时建一次。
+    """
+    import types
+
+    class _RallyModule(types.ModuleType):
+        def __setattr__(self, name, value):
+            pair = _LEGACY_MAP.get(name)
+            if pair:
+                key, cast = pair
+                RALLY_SCOPE[key] = cast(value) if cast else value
+                return
+            types.ModuleType.__setattr__(self, name, value)
+
+    self = sys.modules[__name__]
+    if not isinstance(self, _RallyModule):
+        # 原地改 __class__: 不新建模块对象, 否则别人的引用还指着旧对象
+        self.__class__ = _RallyModule
+    return self
+
+
+_legacy_module()
 
 #: 集结时长档位缓存(服务端配置基本不变, 缓存久一点省一次 dataconfig)
 #: ⚠️ **按区服分桶**: 不同账号可能在不同区服, 各区的集结时长档位不同;
@@ -333,24 +389,39 @@ def _uid_key(uid):
     return str(uid or _DEFAULT_UID)
 
 
+def _scope_for(uid=None):
+    """该账号的作用域(默认桶 / uid 桶)。
+
+    ⚠️ 空 uid 必须返回**根**(RALLY_SCOPE) 而不是 child(""): 老代码直接
+    写 `cok_rally._KNOWN[...]`, 而 `_known_for()` 返回根里的同一个 dict ——
+    两边指向同一块内存, 才不会出现"写了却读不到"。
+    """
+    k = _uid_key(uid)
+    return RALLY_SCOPE if not k else RALLY_SCOPE.child(k)
+
+
 def _known_for(uid=None):
-    """该账号的注册表桶(进程内、按 uid 隔离)。"""
-    return _KNOWN_BY_UID.setdefault(_uid_key(uid), {})
+    """该账号的注册表桶(进程内、按 uid 隔离)。
+
+    ⚠️ 默认桶返回的是 `RALLY_SCOPE["KNOWN"]` 那个**同一个 dict 对象**,
+    老代码 / 老测试直接 `cok_rally._KNOWN.clear()` 仍然生效。
+    """
+    return _scope_for(uid).setdefault("KNOWN", {})
 
 
 def _cursor_for(uid=None):
-    return _CURSOR_BY_UID.setdefault(_uid_key(uid), 0)
+    return _scope_for(uid).setdefault("CURSOR", 0)
 
 
 def set_cursor(uid, value):
     """设置该账号的扫描游标(测试 / 手工跳转用)。"""
-    _CURSOR_BY_UID[_uid_key(uid)] = int(value or 0)
-    return _CURSOR_BY_UID[_uid_key(uid)]
+    _scope_for(uid)["CURSOR"] = int(value or 0)
+    return _scope_for(uid)["CURSOR"]
 
 
 def _dir_for(uid=None):
     """该账号的注册表目录。没显式设过 ⇒ 默认数据根目录。"""
-    return _DIR_BY_UID.get(_uid_key(uid)) or DATA_DIR
+    return _scope_for(uid).setdefault("DIR", RALLY_SCOPE["DIR"])
 
 
 def _registry_file(uid=None):
@@ -407,19 +478,21 @@ def set_data_dir(path, uid=None):
     (单账号 / 老脚本)。**绝不能**再改模块级全局 REGISTRY_FILE —— 五个引擎并行时,
     后解析的账号会把前面的目录覆盖掉, 于是所有号的注册表都写到最后一个账号的文件里。
     """
-    global DATA_DIR
     try:
         import cok_accounts as _accounts
         default = _accounts.DATA_ROOT
     except Exception:  # noqa: BLE001
         default = HERE
-    DATA_DIR = path or default
-    _DIR_BY_UID[_uid_key(uid)] = DATA_DIR
+    sc = _scope_for(uid)
+    sc["DIR"] = path or default
+    # ⚠️ REGISTRY_FILE 从 DIR 派生 —— 改目录就自动跟着改,
+    #    不可能出现"目录改了但文件路径还是旧的"这种半截状态。
+    sc["REGISTRY_FILE"] = os.path.join(sc["DIR"], "boss-registry.json")
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
+        os.makedirs(sc["DIR"], exist_ok=True)
     except Exception:  # noqa: BLE001
         pass
-    return DATA_DIR
+    return sc["DIR"]
 
 
 def load_registry(uid=None):
@@ -489,7 +562,7 @@ def scan_bosses(client, server_id=2223, levels=None, full=False, slice_size=8,
     cursor = _cursor_for(uid)
     n = SCAN_BATCH if full else max(1, min(slice_size, len(centers)))
     todo = [centers[(cursor + i) % len(centers)] for i in range(n)]
-    _CURSOR_BY_UID[_uid_key(uid)] = (cursor + n) % len(centers)
+    _scope_for(uid)["CURSOR"] = (cursor + n) % len(centers)
 
     now = time.time()
     cl = client
