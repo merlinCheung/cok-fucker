@@ -229,7 +229,7 @@ def _is_dock_disabled(code):
 GAME_SERVER_ACTIONS = frozenset((
     "sign", "claim", "reconnect", "autoshield", "shield", "speedup",
     "queues", "shieldslots", "hunt", "refresh-now", "dock", "sky", "locate", "welfare",
-    "score", "assist-onekey", "alliance",
+    "score", "assist-onekey", "alliance", "bag-refresh",
 ))
 
 #: 账号级操作: 由 EngineManager 处理(影响全局注册表 / 运行集), 不路由到单个引擎。

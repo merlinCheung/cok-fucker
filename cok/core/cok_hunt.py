@@ -320,6 +320,18 @@ def read_game_lv(client):
     return lo, hi
 
 
+def cok_hunt_bag_ttl():
+    """拉背包的冷却秒数: 同一猎人实例内, 距上次成功拉取超过这么久才会再拉。
+
+    默认 30 分钟 —— login.init 要 40~50 秒且响应 95 万字节, 不能频繁拉;
+    但药水用光/领到新的之后必须有机会刷新, 所以也不能"一辈子只拉一次"。
+    """
+    try:
+        return max(60, int(os.environ.get("COK_BAG_TTL") or 1800))
+    except (TypeError, ValueError):
+        return 1800
+
+
 def read_stamina(client):
     """当前体力。
 
@@ -952,6 +964,11 @@ class AutoHunter(object):
         self.uid = uid
         # 是否已经试过拉背包(拉一次要 40~50 秒, 别反复拉)
         self._stamina_bag_tried = False
+        # 上次拉背包的时间戳(秒): 距上次尝试拉取超过 BAG_REFRESH_TTL 秒时,
+        # 会再拉一次(药水用掉/领到新的都要刷新 uuid 和数量)。
+        # ⚠️ 尝试(哪怕失败)也会刷新 —— 否则网络抖动失败后每次轮询都会
+        # 触发一次 40~50 秒的 login.init。
+        self._stamina_bag_at = 0.0
         self.stop_flag = False
         self.state = {
             "running": False, "kills": 0, "fails": 0, "level": int(level),
@@ -1115,13 +1132,22 @@ class AutoHunter(object):
         iid, uuid = cok_stamina.pick_stamina(self.stamina_items)
         if not uuid:
             # 还没有药水的道具实例 uuid —— 去拉一次背包(`login.init`)。
-            # ⚠️ 拉背包的响应有 95 万字节, 要 40~50 秒, 所以只拉一次:
-            #    拉完还是没药水(背包里确实没有)就别再拉了。
-            if self._stamina_bag_tried:
+            # 已经拉过且拿到了药水、但 uuid 又丢了(E100166/数量用完)的情况:
+            # 冷却(TTL)过后允许再拉一次, 而不是永远放弃。
+            # 没拿到过药水(_stamina_bag_at==0)的失败重试也走同一个冷却:
+            # 网络抖动失败一次不该 30 分钟内再不尝试。
+            now = time.time()
+            if (self._stamina_bag_tried
+                    and now - self._stamina_bag_at < cok_hunt_bag_ttl()):
+                # 冷却内的第二次: 直接给结论, 不再发请求
+                # (拉一次 login.init 要 40~50 秒)。
                 self.state["note"] = ("体力不足, 但背包里没有体力药水"
                                       "(先在游戏里领/攒一瓶再开这个开关)")
                 return False
+            # 走到这里 = 首次拉取, 或距上次尝试已超过冷却:
+            # 冷却过后允许再拉一次(药水可能已用完/领到新的, 或上次网络失败)。
             self._stamina_bag_tried = True
+            self._stamina_bag_at = now     # 尝试就记时间, 失败的也计冷却
             self.state["note"] = "体力不足, 正在拉背包找体力药水…"
             self._emit("tick", dict(self.state))
             try:
@@ -1155,14 +1181,28 @@ class AutoHunter(object):
             self.state["note"] = "喝体力药水失败: %s" % (
                 info.get("error") or code or "未知错误")
             return False
+        # 服务端权威数量: `item.use` 响应里的 count 就是**用后剩余数量**
+        # (2026-11-17 服务器实测: 200381 用 1 瓶后 count=59)。之前只减本地
+        # 缓存, 前端显示的库存越喝越不准; 拿不到响应 count 才退回本地减一。
+        p = (info or {}).get("params") or {}
+        left = p.get("count")
         gain = int(cok_stamina.STAMINA_ITEMS.get(iid, 0))
-        # 缓存里的数量减一; 减到 0 说明这一实例用完了, 丢掉 uuid
         ent = self.stamina_items.get(iid)
-        if isinstance(ent, dict):
-            if isinstance(ent.get("count"), int):
+        ent_was_dict = isinstance(ent, dict)
+        if ent_was_dict:
+            if isinstance(left, int):
+                ent["count"] = left
+            elif isinstance(ent.get("count"), int):
                 ent["count"] = ent["count"] - 1
-                if ent["count"] <= 0:
-                    ent.pop("uuid", None)
+            if ent.get("count", 1) <= 0:
+                ent.pop("uuid", None)
+        # 落盘: 不落盘的话网页/安卓端「同步体力药水」显示的数量永远对不上,
+        # 重启后猎人又拿着用光的 uuid 去喝(必得 E100166)。
+        if self.uid and ent_was_dict:
+            try:
+                cok_stamina.save_items(self.uid, self.stamina_items)
+            except Exception:  # noqa: BLE001
+                pass
         self.state["stamina_potions"] = int(self.state.get("stamina_potions") or 0) + 1
         self.state["stamina_potion_item"] = iid
         cur = self.state.get("stamina")

@@ -362,10 +362,50 @@ def _ensure_tables():
     """
     c = _connect()
     try:
-        for stmt in _SCHEMA_STMT:
-            c.execute(stmt)
+        with _LOCK:
+            for stmt in _SCHEMA_STMT:
+                c.execute(stmt)
     except sqlite3.OperationalError:
         pass
+
+
+def _write(sql, args=()):
+    """写库: **execute 和 commit 必须在同一把锁里**。
+
+    ⚠ 为什么必须加锁: 连接是**模块级共享**的(`check_same_thread=False`),
+    而 sqlite3 的**事务状态是连接级的** —— 线程 A 的 INSERT 隐式开了事务,
+    线程 B 的 commit 顺手把它提掉, A 再 commit 就抛
+    `sqlite3.OperationalError: cannot commit - no transaction is active`。
+
+    表现: 异常被 quiet() 吞成一条栈, 控制台一切正常, 但**流水静默丢**
+    (automation-history 一条没落库)。2026-11-16 线上首次出现, 两天八次。
+
+    ⇒ 写 + 提交当成一个整体临界区。和 cok_platform._q() 同一个套路。
+    """
+    c = _connect()
+    with _LOCK:
+        cur = c.execute(sql, args)
+        c.commit()
+        return cur
+
+
+def _q_one(sql, args=()):
+    """查一行(sqlite3.Row 或 None)。
+
+    ⚠ execute 和 fetch 必须在同一把锁里: 游标**没取完**时别的线程 commit
+    会报 `cannot commit transaction - SQL statements in progress`。
+    和 cok_platform._one() 同一个套路。
+    """
+    c = _connect()
+    with _LOCK:
+        return c.execute(sql, args).fetchone()
+
+
+def _q_all(sql, args=()):
+    """查多行(list of sqlite3.Row)。同样是锁内取完游标。"""
+    c = _connect()
+    with _LOCK:
+        return c.execute(sql, args).fetchall()
 
 
 # ---------------------------------------------------------------- kv（每用户杂项）
@@ -373,24 +413,20 @@ def _ensure_tables():
 def kv_get(owner, k, default=""):
     _ensure_tables()
     c = _connect()
-    r = _row(c.execute("SELECT v FROM kv WHERE uid=? AND k=?",
-                       (str(owner or ""), str(k))))
+    r = _q_one("SELECT v FROM kv WHERE uid=? AND k=?",
+                       (str(owner or ""), str(k)))
     return r["v"] if r else default
 
 
 def kv_set(owner, k, v):
     _ensure_tables()
-    c = _connect()
-    c.execute("INSERT INTO kv (uid, k, v) VALUES (?,?,?)"
-              " ON CONFLICT(uid, k) DO UPDATE SET v=excluded.v",
-              (str(owner or ""), str(k), "" if v is None else str(v)))
-    c.commit()
+    _write("INSERT INTO kv (uid, k, v) VALUES (?,?,?)"
+           " ON CONFLICT(uid, k) DO UPDATE SET v=excluded.v",
+           (str(owner or ""), str(k), "" if v is None else str(v)))
 
 
 def kv_del(owner, k):
-    c = _connect()
-    c.execute("DELETE FROM kv WHERE uid=? AND k=?", (str(owner or ""), str(k)))
-    c.commit()
+    _write("DELETE FROM kv WHERE uid=? AND k=?", (str(owner or ""), str(k)))
 
 
 def kv_json(owner, k, default=None):
@@ -407,8 +443,8 @@ def kv_set_json(owner, k, obj):
 def account_settings_get(key, default=None):
     _ensure_tables()
     c = _connect()
-    r = _row(c.execute("SELECT value FROM account_settings WHERE key=?",
-                       (str(key or ""),)))
+    r = _q_one("SELECT value FROM account_settings WHERE key=?",
+                       (str(key or ""),))
     if not r:
         return default if default is not None else {}
     return _uj(r["value"], {} if default is None else default)
@@ -416,18 +452,16 @@ def account_settings_get(key, default=None):
 
 def account_settings_set(key, obj):
     _ensure_tables()
-    c = _connect()
-    c.execute("INSERT INTO account_settings (key, value, updated_at)"
-              " VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET"
-              " value=excluded.value, updated_at=excluded.updated_at",
-              (str(key or ""), _j(obj), now()))
-    c.commit()
+    _write("INSERT INTO account_settings (key, value, updated_at)"
+           " VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET"
+           " value=excluded.value, updated_at=excluded.updated_at",
+           (str(key or ""), _j(obj), now()))
 
 
 def account_settings_keys():
     _ensure_tables()
     c = _connect()
-    return [r["key"] for r in c.execute(
+    return [r["key"] for r in _q_all(
         "SELECT key FROM account_settings ORDER BY key")]
 
 
@@ -437,8 +471,8 @@ def account_state_get(key, default=None):
     """取一份账号运行态；没有就返回 default（默认空结构）。"""
     _ensure_tables()
     c = _connect()
-    r = _row(c.execute("SELECT * FROM account_state WHERE key=?",
-                       (str(key or ""),)))
+    r = _q_one("SELECT * FROM account_state WHERE key=?",
+                       (str(key or ""),))
     if not r:
         return default if default is not None else {
             "scan_history": [], "task_stats": {}, "parallel": False}
@@ -458,25 +492,27 @@ def account_state_set(key, scan_history=None, task_stats=None, parallel=None):
     k = str(key or "").strip()
     if not k:
         return False
-    c = _connect()
-    cur = _row(c.execute("SELECT scan_history, task_stats, parallel"
-                         " FROM account_state WHERE key=?", (k,)))
-    sh = cur["scan_history"] if cur else "[]"
-    ts = cur["task_stats"] if cur else "{}"
-    par = int(cur["parallel"]) if cur else 0
-    if scan_history is not None:
-        sh = _j(scan_history)
-    if task_stats is not None:
-        ts = _j(task_stats)
-    if parallel is not None:
-        par = 1 if parallel else 0
-    c.execute("INSERT INTO account_state (key, scan_history, task_stats,"
-              " parallel, updated_at) VALUES (?,?,?,?,?)"
-              " ON CONFLICT(key) DO UPDATE SET scan_history=excluded.scan_history,"
-              " task_stats=excluded.task_stats, parallel=excluded.parallel,"
-              " updated_at=excluded.updated_at",
-              (k, sh, ts, par, now()))
-    c.commit()
+    # 读改写: 读和写必须同锁, 否则两个线程算出同一个旧值互相覆盖
+    with _LOCK:
+        c = _connect()
+        cur = _q_one("SELECT scan_history, task_stats, parallel"
+                             " FROM account_state WHERE key=?", (k,))
+        sh = cur["scan_history"] if cur else "[]"
+        ts = cur["task_stats"] if cur else "{}"
+        par = int(cur["parallel"]) if cur else 0
+        if scan_history is not None:
+            sh = _j(scan_history)
+        if task_stats is not None:
+            ts = _j(task_stats)
+        if parallel is not None:
+            par = 1 if parallel else 0
+        c.execute("INSERT INTO account_state (key, scan_history, task_stats,"
+                  " parallel, updated_at) VALUES (?,?,?,?,?)"
+                  " ON CONFLICT(key) DO UPDATE SET scan_history=excluded.scan_history,"
+                  " task_stats=excluded.task_stats, parallel=excluded.parallel,"
+                  " updated_at=excluded.updated_at",
+                  (k, sh, ts, par, now()))
+        c.commit()
     return True
 
 
@@ -484,7 +520,7 @@ def account_state_all():
     _ensure_tables()
     c = _connect()
     out = {}
-    for r in c.execute("SELECT * FROM account_state"):
+    for r in _q_all("SELECT * FROM account_state"):
         out[r["key"]] = {
             "scan_history": _uj(r["scan_history"], []),
             "task_stats": _uj(r["task_stats"], {}),
@@ -513,9 +549,9 @@ def scan_index_get(owner, key, default=None):
     _ensure_tables()
     c = _connect()
     o, k = str(owner or ""), str(key or "")
-    r = _row(c.execute("SELECT * FROM scan_index WHERE owner=? AND key=?", (o, k)))
-    d = _row(c.execute("SELECT doc, updated_at FROM scan_doc"
-                       " WHERE owner=? AND key=?", (o, k)))
+    r = _q_one("SELECT * FROM scan_index WHERE owner=? AND key=?", (o, k))
+    d = _q_one("SELECT doc, updated_at FROM scan_doc"
+                       " WHERE owner=? AND key=?", (o, k))
     if not r and not d:
         return default
     return {"doc": _uj(d["doc"], {}) if d else {},
@@ -539,51 +575,52 @@ def scan_index_set(owner, key, doc=None, progress=None, scanned=None,
     if not k:
         # 没账号就没索引可写（"全局索引"这个概念不存在：索引永远属于某个号）
         return False
-    c = _connect()
-    o = str(owner or "")
-    if doc is not None or meta is not None:
-        cur = _row(c.execute("SELECT doc, updated_at FROM scan_doc"
-                             " WHERE owner=? AND key=?", (o, k)))
-        d = cur["doc"] if cur else "{}"
-        if meta is not None:
-            try:
-                cur_doc = json.loads(d) if d else {}
-            except (TypeError, ValueError):
-                cur_doc = {}
-            if not isinstance(cur_doc, dict):
-                cur_doc = {}
-            m = dict(cur_doc.get("meta") or {})
-            m.update(meta)
-            cur_doc["meta"] = m
-            d = _j(cur_doc)
-        if doc is not None:
-            d = _j(doc)
-        c.execute("INSERT INTO scan_doc (owner, key, doc, updated_at)"
-                  " VALUES (?,?,?,?) ON CONFLICT(owner, key) DO UPDATE SET"
-                  " doc=excluded.doc, updated_at=excluded.updated_at",
-                  (o, k, d, now()))
-    cur = _row(c.execute("SELECT progress, scanned, step, done"
-                         " FROM scan_index WHERE owner=? AND key=?", (o, k)))
-    pr = int(cur["progress"]) if cur else 0
-    sc = int(cur["scanned"]) if cur else 0
-    st = int(cur["step"]) if cur else 0
-    dn = int(cur["done"]) if cur else 0
-    if progress is not None:
-        pr = int(progress)
-    if scanned is not None:
-        sc = int(scanned)
-    if step is not None:
-        st = int(step)
-    if done is not None:
-        dn = 1 if done else 0
-    c.execute("INSERT INTO scan_index (owner, key, progress, scanned, step,"
-              " done, updated_at) VALUES (?,?,?,?,?,?,?)"
-              " ON CONFLICT(owner, key) DO UPDATE SET"
-              " progress=excluded.progress, scanned=excluded.scanned,"
-              " step=excluded.step, done=excluded.done,"
-              " updated_at=excluded.updated_at",
-              (o, k, pr, sc, st, dn, now()))
-    c.commit()
+    with _LOCK:
+        c = _connect()
+        o = str(owner or "")
+        if doc is not None or meta is not None:
+            cur = _q_one("SELECT doc, updated_at FROM scan_doc"
+                                 " WHERE owner=? AND key=?", (o, k))
+            d = cur["doc"] if cur else "{}"
+            if meta is not None:
+                try:
+                    cur_doc = json.loads(d) if d else {}
+                except (TypeError, ValueError):
+                    cur_doc = {}
+                if not isinstance(cur_doc, dict):
+                    cur_doc = {}
+                m = dict(cur_doc.get("meta") or {})
+                m.update(meta)
+                cur_doc["meta"] = m
+                d = _j(cur_doc)
+            if doc is not None:
+                d = _j(doc)
+            c.execute("INSERT INTO scan_doc (owner, key, doc, updated_at)"
+                      " VALUES (?,?,?,?) ON CONFLICT(owner, key) DO UPDATE SET"
+                      " doc=excluded.doc, updated_at=excluded.updated_at",
+                      (o, k, d, now()))
+        cur = _q_one("SELECT progress, scanned, step, done"
+                             " FROM scan_index WHERE owner=? AND key=?", (o, k))
+        pr = int(cur["progress"]) if cur else 0
+        sc = int(cur["scanned"]) if cur else 0
+        st = int(cur["step"]) if cur else 0
+        dn = int(cur["done"]) if cur else 0
+        if progress is not None:
+            pr = int(progress)
+        if scanned is not None:
+            sc = int(scanned)
+        if step is not None:
+            st = int(step)
+        if done is not None:
+            dn = 1 if done else 0
+        c.execute("INSERT INTO scan_index (owner, key, progress, scanned, step,"
+                  " done, updated_at) VALUES (?,?,?,?,?,?,?)"
+                  " ON CONFLICT(owner, key) DO UPDATE SET"
+                  " progress=excluded.progress, scanned=excluded.scanned,"
+                  " step=excluded.step, done=excluded.done,"
+                  " updated_at=excluded.updated_at",
+                  (o, k, pr, sc, st, dn, now()))
+        c.commit()
 
 
 def scan_index_mark_done(owner, key):
@@ -596,7 +633,7 @@ def scan_index_list():
     return [{"owner": r["owner"], "key": r["key"], "progress": int(r["progress"]),
              "scanned": int(r["scanned"]), "step": int(r["step"]),
              "done": bool(r["done"]), "updated_at": r["updated_at"]}
-            for r in c.execute("SELECT * FROM scan_index ORDER BY updated_at DESC")]
+            for r in _q_all("SELECT * FROM scan_index ORDER BY updated_at DESC")]
 
 
 # ---------------------------------------------------------------- 账号运行态（跨进程）
@@ -604,8 +641,8 @@ def scan_index_list():
 def account_run_get(key):
     _ensure_tables()
     c = _connect()
-    r = _row(c.execute("SELECT * FROM account_run WHERE key=?",
-                       (str(key or ""),)))
+    r = _q_one("SELECT * FROM account_run WHERE key=?",
+                       (str(key or ""),))
     if not r:
         return {"key": str(key or ""), "owner": "", "running": False,
                 "since": 0.0, "reason": "", "pid": 0, "updated_at": 0.0}
@@ -616,37 +653,38 @@ def account_run_get(key):
 
 def account_run_set(key, running=None, owner=None, reason=None, pid=None):
     _ensure_tables()
-    c = _connect()
     k = str(key or "")
-    cur = _row(c.execute("SELECT owner, running, since, reason, pid"
-                         " FROM account_run WHERE key=?", (k,)))
-    ow = cur["owner"] if cur else ""
-    rn = int(cur["running"]) if cur else 0
-    si = float(cur["since"]) if cur else 0.0
-    rs = cur["reason"] if cur else ""
-    pd = int(cur["pid"]) if cur else 0
-    if owner is not None:
-        ow = str(owner)
-    if pid is not None:
-        pd = int(pid)
-    if running is not None:
-        rn = 1 if running else 0
-        # 从"停"转"跑"时重置起点；从"跑"转"停"时保留起点（方便算跑了多久）
-        if running and not cur:
-            si = now()
-        elif running and cur and not int(cur["running"]):
-            si = now()
-        if not running and reason is not None:
+    with _LOCK:
+        c = _connect()
+        cur = _q_one("SELECT owner, running, since, reason, pid"
+                             " FROM account_run WHERE key=?", (k,))
+        ow = cur["owner"] if cur else ""
+        rn = int(cur["running"]) if cur else 0
+        si = float(cur["since"]) if cur else 0.0
+        rs = cur["reason"] if cur else ""
+        pd = int(cur["pid"]) if cur else 0
+        if owner is not None:
+            ow = str(owner)
+        if pid is not None:
+            pd = int(pid)
+        if running is not None:
+            rn = 1 if running else 0
+            # 从"停"转"跑"时重置起点；从"跑"转"停"时保留起点（方便算跑了多久）
+            if running and not cur:
+                si = now()
+            elif running and cur and not int(cur["running"]):
+                si = now()
+            if not running and reason is not None:
+                rs = str(reason)
+        elif reason is not None:
             rs = str(reason)
-    elif reason is not None:
-        rs = str(reason)
-    c.execute("INSERT INTO account_run (key, owner, running, since, reason, pid,"
-              " updated_at) VALUES (?,?,?,?,?,?,?)"
-              " ON CONFLICT(key) DO UPDATE SET owner=excluded.owner,"
-              " running=excluded.running, since=excluded.since, reason=excluded.reason,"
-              " pid=excluded.pid, updated_at=excluded.updated_at",
-              (k, ow, rn, si, rs, pd, now()))
-    c.commit()
+        c.execute("INSERT INTO account_run (key, owner, running, since, reason, pid,"
+                  " updated_at) VALUES (?,?,?,?,?,?,?)"
+                  " ON CONFLICT(key) DO UPDATE SET owner=excluded.owner,"
+                  " running=excluded.running, since=excluded.since, reason=excluded.reason,"
+                  " pid=excluded.pid, updated_at=excluded.updated_at",
+                  (k, ow, rn, si, rs, pd, now()))
+        c.commit()
 
 
 def account_run_list(owner=None):
@@ -659,7 +697,7 @@ def account_run_list(owner=None):
         args = (str(owner),)
     sql += " ORDER BY updated_at DESC"
     out = []
-    for r in c.execute(sql, args):
+    for r in _q_all(sql, args):
         out.append({"key": r["key"], "owner": r["owner"],
                     "running": bool(r["running"]), "since": r["since"],
                     "reason": r["reason"], "pid": int(r["pid"]),
@@ -672,45 +710,46 @@ def account_run_list(owner=None):
 def task_upsert(task_id, **kw):
     """写/更新一条任务运行态（只更新传进来的字段）。"""
     _ensure_tables()
-    c = _connect()
     tid = str(task_id or "")
-    cols = ("key", "owner", "kind", "label", "params", "progress", "done",
-            "message", "started_at", "updated_at")
-    cur = _row(c.execute(
-        "SELECT %s FROM task_run WHERE task_id=?" % ", ".join(cols), (tid,)))
-    vals = {}
-    for col in cols:
-        vals[col] = cur[col] if cur else None
-    if not cur:
-        vals.update({"key": "", "owner": "", "kind": "", "label": "",
-                     "params": "{}", "progress": "{}", "done": 0,
-                     "message": "", "started_at": now()})
-    for k, v in kw.items():
-        if k in ("params", "progress") and v is not None and not isinstance(v, str):
-            v = _j(v)
-        if k in vals or k in ("params", "progress"):
-            vals[k] = v
-    vals["updated_at"] = now()
-    c.execute("INSERT INTO task_run (task_id, key, owner, kind, label, params,"
-              " progress, done, message, started_at, updated_at)"
-              " VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-              " ON CONFLICT(task_id) DO UPDATE SET key=excluded.key,"
-              " owner=excluded.owner, kind=excluded.kind, label=excluded.label,"
-              " params=excluded.params, progress=excluded.progress,"
-              " done=excluded.done, message=excluded.message,"
-              " updated_at=excluded.updated_at",
-              (tid, vals["key"], vals["owner"], vals["kind"], vals["label"],
-               vals["params"] or "{}", vals["progress"] or "{}", 
-               1 if vals["done"] else 0, vals["message"] or "",
-               vals["started_at"] or now(), now()))
-    c.commit()
+    with _LOCK:
+        c = _connect()
+        cols = ("key", "owner", "kind", "label", "params", "progress", "done",
+                "message", "started_at", "updated_at")
+        cur = _q_one(
+            "SELECT %s FROM task_run WHERE task_id=?" % ", ".join(cols), (tid,))
+        vals = {}
+        for col in cols:
+            vals[col] = cur[col] if cur else None
+        if not cur:
+            vals.update({"key": "", "owner": "", "kind": "", "label": "",
+                         "params": "{}", "progress": "{}", "done": 0,
+                         "message": "", "started_at": now()})
+        for k, v in kw.items():
+            if k in ("params", "progress") and v is not None and not isinstance(v, str):
+                v = _j(v)
+            if k in vals or k in ("params", "progress"):
+                vals[k] = v
+        vals["updated_at"] = now()
+        c.execute("INSERT INTO task_run (task_id, key, owner, kind, label, params,"
+                  " progress, done, message, started_at, updated_at)"
+                  " VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+                  " ON CONFLICT(task_id) DO UPDATE SET key=excluded.key,"
+                  " owner=excluded.owner, kind=excluded.kind, label=excluded.label,"
+                  " params=excluded.params, progress=excluded.progress,"
+                  " done=excluded.done, message=excluded.message,"
+                  " started_at=excluded.started_at, updated_at=excluded.updated_at",
+                  (tid, vals["key"], vals["owner"], vals["kind"], vals["label"],
+                   vals["params"] or "{}", vals["progress"] or "{}",
+                   1 if vals["done"] else 0, vals["message"] or "",
+                   vals["started_at"] or now(), now()))
+        c.commit()
 
 
 def task_get(task_id):
     _ensure_tables()
     c = _connect()
-    r = _row(c.execute("SELECT * FROM task_run WHERE task_id=?",
-                       (str(task_id or ""),)))
+    r = _q_one("SELECT * FROM task_run WHERE task_id=?",
+                       (str(task_id or ""),))
     if not r:
         return None
     return {"task_id": r["task_id"], "key": r["key"], "owner": r["owner"],
@@ -733,7 +772,7 @@ def task_list(key=None, owner=None, running_only=False):
         args.append(str(owner))
     sql += " ORDER BY updated_at DESC LIMIT 200"
     out = []
-    for r in c.execute(sql, tuple(args)):
+    for r in _q_all(sql, tuple(args)):
         if running_only and r["done"]:
             continue
         out.append({"task_id": r["task_id"], "key": r["key"], "owner": r["owner"],
@@ -756,13 +795,11 @@ def task_running_keys(owner=None):
 
 def task_cleanup(days=7, keep_running=True):
     """清理过期任务记录（默认 7 天）。"""
-    c = _connect()
     cut = now() - max(1, int(days)) * 86400
     if keep_running:
-        c.execute("DELETE FROM task_run WHERE updated_at < ? AND done=1", (cut,))
+        _write("DELETE FROM task_run WHERE updated_at < ? AND done=1", (cut,))
     else:
-        c.execute("DELETE FROM task_run WHERE updated_at < ?", (cut,))
-    c.commit()
+        _write("DELETE FROM task_run WHERE updated_at < ?", (cut,))
 
 
 # ---------------------------------------------------------------- 模块显示缓存
@@ -770,8 +807,8 @@ def task_cleanup(days=7, keep_running=True):
 def client_state_get(owner, key, kind, default=None):
     _ensure_tables()
     c = _connect()
-    r = _row(c.execute("SELECT doc FROM client_state WHERE owner=? AND key=? AND kind=?",
-                       (str(owner or ""), str(key or ""), str(kind or ""))))
+    r = _q_one("SELECT doc FROM client_state WHERE owner=? AND key=? AND kind=?",
+                       (str(owner or ""), str(key or ""), str(kind or "")))
     if not r:
         return default
     return _uj(r["doc"], {} if default is None else default)
@@ -779,19 +816,17 @@ def client_state_get(owner, key, kind, default=None):
 
 def client_state_set(owner, key, kind, doc):
     _ensure_tables()
-    c = _connect()
-    c.execute("INSERT INTO client_state (owner, key, kind, doc, updated_at)"
-              " VALUES (?,?,?,?,?) ON CONFLICT(owner, key, kind) DO UPDATE SET"
-              " doc=excluded.doc, updated_at=excluded.updated_at",
-              (str(owner or ""), str(key or ""), str(kind or ""), _j(doc), now()))
-    c.commit()
+    _write("INSERT INTO client_state (owner, key, kind, doc, updated_at)"
+           " VALUES (?,?,?,?,?) ON CONFLICT(owner, key, kind) DO UPDATE SET"
+           " doc=excluded.doc, updated_at=excluded.updated_at",
+           (str(owner or ""), str(key or ""), str(kind or ""), _j(doc), now()))
 
 
 def client_state_list(owner, key):
     _ensure_tables()
     c = _connect()
     out = {}
-    for r in c.execute("SELECT kind, doc, updated_at FROM client_state"
+    for r in _q_all("SELECT kind, doc, updated_at FROM client_state"
                        " WHERE owner=? AND key=?",
                        (str(owner or ""), str(key or ""))):
         out[r["kind"]] = _uj(r["doc"], {})
@@ -799,14 +834,12 @@ def client_state_list(owner, key):
 
 
 def client_state_drop(owner, key, kind=None):
-    c = _connect()
     if kind:
-        c.execute("DELETE FROM client_state WHERE owner=? AND key=? AND kind=?",
-                  (str(owner or ""), str(key or ""), str(kind)))
+        _write("DELETE FROM client_state WHERE owner=? AND key=? AND kind=?",
+               (str(owner or ""), str(key or ""), str(kind)))
     else:
-        c.execute("DELETE FROM client_state WHERE owner=? AND key=?",
-                  (str(owner or ""), str(key or "")))
-    c.commit()
+        _write("DELETE FROM client_state WHERE owner=? AND key=?",
+               (str(owner or ""), str(key or "")))
 
 
 # ---------------------------------------------------------------- 业务审计
@@ -966,20 +999,21 @@ def import_files(data_root=None, accounts_dir=None, log=None):
     #      它永远没人读，还会让统计数字看着比实际多。
     dropped = 0
     try:
-        c = _connect()
-        dropped += c.execute("DELETE FROM scan_index WHERE key=''").rowcount
-        dropped += c.execute("DELETE FROM scan_doc WHERE key=''").rowcount
-        dropped += c.execute("DELETE FROM account_state WHERE key=''").rowcount
-        dropped += c.execute("DELETE FROM client_state WHERE key=''").rowcount
-        # 老版本把 `.parallel` 按逗号硬拆，拆出来的 key 长得像
-        # `["136063574002223"` —— 这行永远没人读，纯属垃圾。
-        # 用 char(34) 表示双引号，省得在 SQL 字符串里转义引号。
-        dropped += c.execute(
-            "DELETE FROM account_state WHERE key LIKE '[%'"
-            " OR key LIKE '%' || char(34) || '%'"
-            " OR key LIKE '%]'").rowcount
-        if dropped:
-            c.commit()
+        with _LOCK:
+            c = _connect()
+            dropped += c.execute("DELETE FROM scan_index WHERE key=''").rowcount
+            dropped += c.execute("DELETE FROM scan_doc WHERE key=''").rowcount
+            dropped += c.execute("DELETE FROM account_state WHERE key=''").rowcount
+            dropped += c.execute("DELETE FROM client_state WHERE key=''").rowcount
+            # 老版本把 `.parallel` 按逗号硬拆，拆出来的 key 长得像
+            # `["136063574002223"` —— 这行永远没人读，纯属垃圾。
+            # 用 char(34) 表示双引号，省得在 SQL 字符串里转义引号。
+            dropped += c.execute(
+                "DELETE FROM account_state WHERE key LIKE '[%'"
+                " OR key LIKE '%' || char(34) || '%'"
+                " OR key LIKE '%]'").rowcount
+            if dropped:
+                c.commit()
     except Exception:
         pass
 
@@ -1109,8 +1143,8 @@ def status():
     for t in ("kv", "account_state", "account_settings", "scan_index",
               "scan_doc", "account_run", "task_run", "client_state", "archive"):
         try:
-            out["tables"][t] = int(_row(c.execute(
-                "SELECT COUNT(*) n FROM %s" % t))["n"])
+            out["tables"][t] = int(_q_one(
+                "SELECT COUNT(*) n FROM %s" % t)["n"])
         except sqlite3.Error:
             out["tables"][t] = -1
     # 文件那侧（存在但还没进库的，才是"待迁移"）
@@ -1160,7 +1194,7 @@ def stats():
     for t in ("kv", "account_state", "account_settings", "scan_index",
               "account_run", "task_run", "client_state"):
         try:
-            out[t] = int(_row(c.execute("SELECT COUNT(*) n FROM %s" % t))["n"])
+            out[t] = int(_q_one("SELECT COUNT(*) n FROM %s" % t)["n"])
         except sqlite3.Error:
             out[t] = -1
     return out
@@ -1182,12 +1216,10 @@ def archive_add(kind, key, owner, doc, size=0):
     if not str(key or "").strip():
         # 没有账号归属的流水没有价值（谁也不会去查它）
         return None
-    c = _connect()
-    cur = c.execute("INSERT INTO archive (kind, owner, key, doc, size, created_at)"
-                    " VALUES (?,?,?,?,?,?)",
-                    (str(kind or ""), str(owner or ""), str(key or ""),
-                     _j(doc), int(size or 0), now()))
-    c.commit()
+    cur = _write("INSERT INTO archive (kind, owner, key, doc, size, created_at)"
+                  " VALUES (?,?,?,?,?,?)",
+                  (str(kind or ""), str(owner or ""), str(key or ""),
+                   _j(doc), int(size or 0), now()))
     return cur.lastrowid
 
 
@@ -1208,7 +1240,7 @@ def archive_list(kind=None, key=None, owner=None, limit=200):
     sql += " ORDER BY created_at DESC LIMIT ?"
     args.append(max(1, int(limit)))
     out = []
-    for r in c.execute(sql, tuple(args)):
+    for r in _q_all(sql, tuple(args)):
         out.append({"id": r["id"], "kind": r["kind"], "owner": r["owner"],
                     "key": r["key"], "doc": _uj(r["doc"], {}),
                     "size": int(r["size"]), "created_at": r["created_at"]})
@@ -1218,21 +1250,19 @@ def archive_list(kind=None, key=None, owner=None, limit=200):
 def archive_count(kind=None):
     c = _connect()
     if kind:
-        r = _row(c.execute("SELECT COUNT(*) n FROM archive WHERE kind=?",
-                           (str(kind),)))
+        r = _q_one("SELECT COUNT(*) n FROM archive WHERE kind=?",
+                           (str(kind),))
     else:
-        r = _row(c.execute("SELECT COUNT(*) n FROM archive"))
+        r = _q_one("SELECT COUNT(*) n FROM archive")
     return int(r["n"])
 
 
 def archive_cleanup(keep=5000):
     """只保留最近 keep 条（历史不能无限涨）。"""
-    c = _connect()
     n = archive_count()
     if n <= keep:
         return 0
     cut = n - keep
-    c.execute("DELETE FROM archive WHERE id IN"
-              " (SELECT id FROM archive ORDER BY created_at ASC LIMIT ?)", (cut,))
-    c.commit()
+    _write("DELETE FROM archive WHERE id IN"
+           " (SELECT id FROM archive ORDER BY created_at ASC LIMIT ?)", (cut,))
     return cut

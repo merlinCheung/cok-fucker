@@ -125,6 +125,17 @@ def _is_uuid(v):
     return isinstance(v, str) and bool(UUID_RE.match(v))
 
 
+def _cached_uuid(v):
+    """从缓存值里取出 uuid。
+
+    缓存里存的是 `{"uuid":..,"at":..}`(dict), 但也可能有老代码/测试直接塞裸
+    字符串 —— 两种都要认, 否则比较时永远不相等。
+    """
+    if isinstance(v, dict):
+        return v.get("uuid")
+    return v
+
+
 def learn_items(payload, into=None):
     """从一个响应/推送里学出 {itemId: uuid} 配对。
 
@@ -172,21 +183,35 @@ def learn_items(payload, into=None):
         into = {}
     added = False
     for iid, u in found.items():
-        if into.get(iid) != u:
+        # ⚠ 缓存值是 {"uuid":..,"at":..}(dict), 而 u 是裸 uuid 字符串 ——
+        # 直接比**永远不相等**, 于是每次都判成"新增": 同一瓶药水被反复 learn,
+        # 缓存文件被反复重写, 前端每次都收到一条重复的"新道具"通知。
+        # (实测一个号 12 分钟把同一个 uuid learn 了 66 次)
+        # ⇒ 先把缓存值归一成 uuid 再比。
+        if _cached_uuid(into.get(iid)) != u:
             into[iid] = u
             added = True
     return found, added
 
 
 def merge_learned(uid, payload):
-    """学习 + 落盘。返回新学到的 {itemId: uuid}。"""
+    """学习 + 落盘。返回**新学到**的 {itemId: uuid}(没有新东西就返回空)。"""
     items = load_items(uid)
+    before = dict(items)
     found, added = learn_items(payload, items)
-    if added:
-        for iid in found:
-            items[iid] = {"uuid": found[iid], "at": int(time.time())}
+    if not added:
+        return {}
+    # learn_items 已把"变了"的项改写成裸字符串, 这里只把**真的变了**的项
+    # 恢复成 {"uuid":..,"at":..} 的形状 —— 免得把没变的项的 at 也刷新掉。
+    changed = {}
+    for iid, u in found.items():
+        if _cached_uuid(before.get(iid)) != u:
+            changed[iid] = u
+    for iid, u in changed.items():
+        items[iid] = {"uuid": u, "at": int(time.time())}
+    if changed:
         save_items(uid, items)
-    return found if added else {}
+    return changed
 
 
 def pick_stamina(items):

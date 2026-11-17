@@ -193,6 +193,9 @@ class Engine(object):
         # 这个是"此刻我要离线", 一次性闸门。
         self.disconnected = False
         self.last_error = None
+        # 被服务端踢下线后的退避截止时间戳(秒)。backoff 策略置位, 循环到点前
+        # 不重连 —— 给手机一个稳定在线窗口, 不再互踢。0 = 不在退避中。
+        self._kick_backoff_until = 0.0
         self.autoshield_enabled = args.autoshield
         self.persistent = bool(getattr(args, "persistent", False))
         self.last_poll = 0.0
@@ -235,6 +238,10 @@ class Engine(object):
         # 在这段时间新开连接并被服务端互踢。
         self._hunter_starting = False
         self.shield_state = {}
+        # 背包快照(login.init 实时拉取): {"at": 秒, "items": [原始条目]}
+        # None = 本进程还没拉过。保护罩下拉/药水数量都从这里来,
+        # 不再依赖 frida 时代的 bag-items.json(服务器上根本采不到)。
+        self.bag_snapshot = None
         self.persistent_arg = self.persistent
         # ⚠⚠ 自动开罩靠的是**服务端推送**(push.world.injured), 而推送是在
         # "等命令响应"时从 socket 读出来的 —— **短连接根本收不到**
@@ -637,6 +644,15 @@ class Engine(object):
         # 就让路"那道安全网失效; 一旦重启/批量刷新把内存闸门清掉, 引擎就会无条件
         # 连游戏服, 把手机顶下线。把断开意图持久化, 才真正"断得住"。
         "offlineHold": False,
+        # 被手机/其它端挤下线(服务端互踢, "连接被服务端关闭")后的处理策略。
+        # 服务器上没 adb, web 轮询连上去就会把手机顶掉, 手机再登又把 web 顶掉 ——
+        # 不加策略就是无休止互踢。三选一:
+        #   backoff   —— 退避 kickReconnectMinutes 分钟再重试(默认, 给手机一个稳定窗口)
+        #   stop      —— 停在离线, 直到用户手动「重连」(等价于被踢即 offlineHold)
+        #   immediate —— 老行为: 下一轮立刻重连(会继续和手机互踢)
+        "kickReconnectPolicy": "backoff",
+        # backoff 策略的退避分钟数(1~720)。
+        "kickReconnectMinutes": 10,
         "lvLow": 1, "lvHigh": 1,
         "perType": 50, "squads": 4, "huntMax": 0,
         # 福利中心(每日好礼/龙之馈赠)自动领取
@@ -1279,7 +1295,36 @@ class Engine(object):
                 with self.lock:
                     self.connected = False
                     self.last_error = str(e)[:200]
+                # 被服务端踢下线(手机/其它端登录, 同账号互踢)单独处理:
+                # 按用户配置的策略退避/停止/立即重连, 而不是无脑下一轮又连回去。
+                if "连接被服务端关闭" in str(e):
+                    return False, self._handle_kick()
                 return False, "刷新失败: %s" % str(self.last_error)[:120]
+
+    def _handle_kick(self):
+        """被服务端踢下线后按策略处理, 返回给 _loop 的 note。
+
+        三种策略(账号级设置 kickReconnectPolicy):
+          immediate —— 老行为, 什么都不做, 下一轮循环照常重连(会继续互踢);
+          stop      —— 落盘 offlineHold, 停在离线, 等用户手动「重连」;
+          backoff   —— 置退避截止时间, 循环到点前不重连(默认, 给手机稳定窗口)。
+        """
+        policy = str(self.settings.get("kickReconnectPolicy") or "backoff")
+        if policy == "immediate":
+            return "被服务端踢下线(同账号互踢), 将在下一轮重连"
+        if policy == "stop":
+            self._set_offline_hold(True)
+            with self.lock:
+                self.disconnected = True
+            return "被服务端踢下线, 已停在离线(点「重连」恢复)"
+        # backoff(默认)
+        try:
+            minutes = max(1, min(720, int(self.settings.get("kickReconnectMinutes") or 10)))
+        except (TypeError, ValueError):
+            minutes = 10
+        with self.lock:
+            self._kick_backoff_until = time.time() + minutes * 60
+        return "被服务端踢下线, 退避 %d 分钟后再重试" % minutes
 
     def _connect_game_server(self):
         """连接游戏服，并在服务端指出角色迁服时修复已保存的区服信息。
@@ -2500,6 +2545,16 @@ class Engine(object):
                             break
                         time.sleep(1.0)
                     continue
+                # 被服务端踢下线后的退避窗口(backoff 策略): 到点前不重连,
+                # 让手机稳定在线, 不再互踢。到点自动清零, 循环恢复正常轮询。
+                if time.time() < getattr(self, "_kick_backoff_until", 0):
+                    with self.lock:
+                        self.connected = False
+                    for _ in range(3):
+                        if self._stop.is_set():
+                            break
+                        time.sleep(1.0)
+                    continue
                 ok, note = self._poll_once()
                 if not ok and "让出账号" in note:
                     for _ in range(int(max(1, self.args.interval) / 1.0)):
@@ -2637,6 +2692,8 @@ class Engine(object):
                 # 持久的"按住离线"意图(落盘): 重启后 disconnected 内存闸门归零,
                 # 但这个仍为真 —— 前端据此显示"已断开"并给出「重连」入口。
                 "offline_hold": bool(self.settings.get("offlineHold")),
+                # 被踢后的退避截止(秒); 0 = 不在退避中。前端据此显示倒计时。
+                "kick_backoff_until": float(getattr(self, "_kick_backoff_until", 0) or 0),
                 # ondemand 模式轮完就断开, connected 永远是 False ——
                 # 顶栏灯要用"有没有拿到数据"来判断, 否则一直显示"空闲"
                 "has_data": bool(self.last_poll and not self.last_error),
@@ -2654,6 +2711,8 @@ class Engine(object):
                 "hunter": self._hunter_state(),
                 # 体力药水实例(纯本地读缓存, 不占号)
                 "stamina_items": cok_stamina.status(self.account_key),
+                # 背包快照拉取时间(秒): 前端据此显示"数据是刚拉的/还没拉"
+                "bag_at": (self.bag_snapshot or {}).get("at") or 0,
                 # 编队预设(11 个, 对齐游戏) + 当前选中的
                 "squad_presets": self._squad_preset_list(),
                 "squad_preset": self.settings.get("squadPreset") or "",
@@ -2665,6 +2724,8 @@ class Engine(object):
                     "slots": (self.shield_state or {}).get("slots") or [],
                     "specs": (self.shield_state or {}).get("specs") or [],
                     "backpack_items": (self.shield_state or {}).get("backpack_items") or [],
+                    # 背包快照状态: at=0 表示还没拉过(login.init 才能拿到真实背包)
+                    "bag_at": (self.bag_snapshot or {}).get("at") or 0,
                     "persistent": self.persistent,
                     # 自动开罩的推送监听心跳(证明它确实在跑)
                     "watch_ticks": self.shield_watch_ticks,
@@ -3199,45 +3260,59 @@ class Engine(object):
     def _shield_backpack_items(self):
         """读取背包中实际持有的保护罩道具(批量条目)。
 
-        优先读实时背包 `bag-items.json`, 其次读 `speedup-owned.json` 快照,
-        或按账号 uuid 缓存读。返回按数量降序的条目列表, 每条包含:
+        数据来源(按优先级):
+          1. **实时背包快照**(login.init 拉取, 见 `_refresh_bag_snapshot`)——
+             服务器部署唯一可靠来源;
+          2. 账号缓存(items.json, 由药水/道具学习落盘);
+          3. frida 时代的 bag-items.json 静态快照(桌面端遗留, 基本是旧数据)。
+        返回按数量降序的条目列表, 每条包含:
         {itemId, name, duration, seconds, count, uuid}。
+        count<=0 的条目直接过滤 —— 槽位里配了但背包没有的道具,
+        开罩会静默失败(服务端不报错也不生效)。
         """
         specs = self._shield_specs()
         raw = []
-        # 1) frida 实时背包(bag-items.json, 全账号共享文件)
-        try:
-            with open(_res("bag-items.json"), encoding="utf-8") as f:
-                doc = json.load(f)
-            for it in (doc.get("items") or []):
-                iid = str(it.get("itemId") or "")
-                cnt = int(it.get("count") or 0)
-                if iid in specs and cnt > 0:
-                    raw.append({"itemId": iid, "count": cnt, "uuid": it.get("uuid", "")})
-        except Exception:
-            pass
-        # 2) 旧静态快照(speedup-owned.json)
-        if not raw:
+        # 1) 实时背包快照(login.init, 最权威)
+        snap = self.bag_snapshot or {}
+        for it in (snap.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            iid = str(it.get("itemId") or "")
             try:
-                with open(_res("speedup-owned.json"), encoding="utf-8") as f:
-                    own = (json.load(f) or {}).get("items") or {}
-                for iid, ent in own.items():
-                    cnt = int(ent.get("count") or 0)
-                    if str(iid) in specs and cnt > 0:
-                        raw.append({"itemId": str(iid), "count": cnt,
-                                    "uuid": ent.get("uuid", "")})
-            except Exception:
-                pass
-        # 3) 账号级缓存(items.json)
+                cnt = int(it.get("count") or 0)
+            except (TypeError, ValueError):
+                cnt = 0
+            if iid in specs and cnt > 0:
+                raw.append({"itemId": iid, "count": cnt,
+                            "uuid": it.get("uuid", "")})
+        # 2) 账号级缓存(items.json, learn/fetch_bag 落盘)
         if not raw:
             try:
                 uid = getattr(self, "account_key", None) or getattr(self.daemon.args, "account", "")
                 cache = cok_stamina.load_items(uid)
                 for iid, ent in cache.items():
-                    cnt = int(ent.get("count") or 0)
+                    if isinstance(ent, dict):
+                        cnt = int(ent.get("count") or 0)
+                        uuid = ent.get("uuid", "")
+                    else:
+                        cnt = 0
+                        uuid = ""
                     if str(iid) in specs and cnt > 0:
                         raw.append({"itemId": str(iid), "count": cnt,
-                                    "uuid": ent.get("uuid", "")})
+                                    "uuid": uuid})
+            except Exception:
+                pass
+        # 3) 旧静态快照(桌端 frida 遗留, 聊胜于无)
+        if not raw:
+            try:
+                with open(_res("bag-items.json"), encoding="utf-8") as f:
+                    doc = json.load(f)
+                for it in (doc.get("items") or []):
+                    iid = str(it.get("itemId") or "")
+                    cnt = int(it.get("count") or 0)
+                    if iid in specs and cnt > 0:
+                        raw.append({"itemId": iid, "count": cnt,
+                                    "uuid": it.get("uuid", "")})
             except Exception:
                 pass
         # 合并同名条目(取最大 count, 保留首个非空 uuid)
@@ -3267,6 +3342,9 @@ class Engine(object):
         * **当前罩到期时间来自 `show.status.item`**(statusItems 里 type2=1 的
           endTime) —— `onekeybuff.get` 只回槽位, **不回** shieldEndTime,
           所以重启后想显示"还剩多久"必须查 show.status.item。
+        * **槽位内道具的库存数量也来自 onekeybuff.get 的 statusList[].num**
+          (2026-11-17 实测: save 写 "200411" 后, num=背包实际数量) ——
+          槽位配了但背包为 0 的道具, 开罩会静默失败, 页面必须能看出来。
         """
         out = {"slots": [], "shield_end_ms": 0, "specs": []}
         specs = self._shield_specs()
@@ -3301,12 +3379,18 @@ class Engine(object):
                     continue
                 iid = str(d.get("itemId"))
                 sp = specs.get(iid) or {}
+                try:
+                    num = int(d.get("num") or 0)
+                except (TypeError, ValueError):
+                    num = 0
                 items.append({
                     "id": iid,
                     "name": sp.get("name") or self._tr_item(iid) or ("道具 " + iid),
                     "duration": sp.get("duration"),
                     "seconds": sp.get("seconds"),
                     "num": d.get("num"),
+                    # 槽位里的道具背包没库存 -> 开罩静默失败, 标出来
+                    "no_stock": num <= 0,
                 })
             out["slots"].append({
                 "type": b.get("type"),
@@ -3335,6 +3419,49 @@ class Engine(object):
                        if isinstance(d, dict) and d.get("itemId")]
         return {"ok": str(spec_id) in got, "slot": slot, "itemIds": got,
                 "errorCode": p.get("errorCode")}
+
+    def _refresh_bag_snapshot(self, timeout=25.0):
+        """拉一次实时背包(login.init), 存进内存快照。返回 (ok, info)。
+
+        ⚠️ login.init 的响应是 ~95 万字节, 真机实测要 **40~50 秒** ——
+        调用方必须放后台线程并给用户"拉取中"提示, 不要在请求线程里同步跑。
+        服务端丢弃新连接首条业务请求, 所以 retries=1。
+
+        info: {"total": 背包条目数, "shield": N 种保护罩道具, "at": ts}
+        """
+        cli = self.daemon.client
+        if cli is None:
+            return False, {"error": "还没有连接游戏服"}
+        try:
+            r = cli.call("login.init", {}, retries=1, timeout=timeout)
+        except Exception as e:  # noqa: BLE001
+            return False, {"error": "拉背包失败: %s" % str(e)[:120]}
+        p = r.get("__params__") or {}
+        items = p.get("items")
+        if not isinstance(items, list):
+            return False, {"error": "login.init 没有返回 items 字段(服务端版本不同?)"}
+        with self.lock:
+            self.bag_snapshot = {"at": int(time.time()), "items": items}
+        # 药水实例 uuid/数量顺手落盘(猎人喝药要用)
+        try:
+            potions = cok_stamina.scan_potions(items)
+            if potions and self.account_key:
+                cache = cok_stamina.load_items(self.account_key)
+                for iid, ent in potions.items():
+                    ent = dict(ent)
+                    ent["at"] = int(time.time())
+                    cache[iid] = ent
+                if cache:
+                    cok_stamina.save_items(self.account_key, cache)
+        except Exception:  # noqa: BLE001
+            pass
+        specs = self._shield_specs()
+        n_shield = len([it for it in items
+                        if isinstance(it, dict)
+                        and str(it.get("itemId") or "") in specs
+                        and int(it.get("count") or 0) > 0])
+        return True, {"total": len(items), "shield": n_shield,
+                      "at": int(time.time())}
 
     @property
     def _app_cached(self):
@@ -3590,11 +3717,19 @@ class Engine(object):
         if (known_stamina is not None and int(known_stamina) < min_stamina
                 and not auto_ok):
             if auto_stamina:
+                # ⚠️ 2026-11-17 服务器实测: 缓存是空的≠背包里没有 —— 之前只信
+                # 本地缓存, 于是"包里明明有药水、开着开关也起不来, 猎人根本没启动"。
+                # 现在: 本地缓存没药水时**放行**, 让猎人启动后自己拉一次背包
+                # (见 cok_hunt._use_stamina_if_needed 的 fetch_bag)找药水喝。
                 return {"ok": False,
-                        "error": ("当前体力 %d 低于安全阈值 %d，背包里也没有可用的体力药水"
-                                  "（点「同步体力药水」拉一次背包，或先去游戏里领一瓶）"
+                        "error": ("当前体力 %d 低于安全阈值 %d，且本地没有缓存到体力药水"
+                                  "（启动后猎人会自动拉一次背包找药水；"
+                                  "如果背包里确实没有，请先在游戏里领/攒一瓶）"
                                   % (int(known_stamina), min_stamina))}
             return {"ok": False, "error": "当前体力低于安全阈值 %d，暂不启动自动打怪" % min_stamina}
+        # 开关开 + 本地也没缓存时也要放行: 猎人启动后自己拉背包
+        # (上面那个分支只在"已知体力低于阈值"时才走, 体力充足时本来就不拦;
+        # 走到这里说明没被拦, 无需额外处理)。
         # 每队兵种分配: [{troops: [{army_id, num}]}] 或旧的 [{army_id, num}]。
         # 不给就按可用兵种自动挑。
         squad_spec = body.get("squadSpec") or None
@@ -3983,10 +4118,33 @@ class Engine(object):
         if op == "stamina-sync":
             # 拉一次背包(`login.init`), 直接拿到体力药水的**道具实例 uuid**
             # (含数量)。不消耗玩家任何奖励。
-            # 拉不到再退一步: 领一份含药水的奖励, 借服务端下发道具实例。
+            # ⚠️ 同步到**本引擎的内存快照**(bag_snapshot), 不只是落盘缓存 ——
+            # 保护罩下拉列表读的也是这份快照, 两个功能一次拉取都刷新。
             if cl is None:
                 return {"ok": False, "error": "还没连上游戏服"}
             ok, info = cok_stamina.fetch_bag(cl, self.account_key)
+            if ok:
+                try:
+                    with self.lock:
+                        self.bag_snapshot = {"at": int(time.time()),
+                                             "items": []}
+                        # fetch_bag 的响应没有保留 items 原文, 这里用缓存里的
+                        # 药水 + 保护罩道具重建一个轻量快照(数量取缓存值)
+                        specs = self._shield_specs()
+                        cache = cok_stamina.load_items(self.account_key)
+                        items = []
+                        for iid, ent in cache.items():
+                            if not isinstance(ent, dict):
+                                continue
+                            cnt = int(ent.get("count") or 0)
+                            if cnt > 0 and (iid in specs
+                                            or iid in cok_stamina.STAMINA_ITEMS):
+                                items.append({"itemId": str(iid),
+                                              "count": cnt,
+                                              "uuid": ent.get("uuid", "")})
+                        self.bag_snapshot["items"] = items
+                except Exception:  # noqa: BLE001
+                    pass
             if ok and info.get("potions"):
                 st = cok_stamina.status(self.account_key)
                 names = ", ".join("%s x%s" % (k, v.get("count"))
@@ -4529,6 +4687,15 @@ class Engine(object):
             val = str(val or "failures")
             if val not in ("all", "failures", "off"):
                 return {"ok": False, "error": "提醒级别仅支持 all、failures 或 off"}
+        if key == "kickReconnectPolicy":
+            val = str(val or "backoff")
+            if val not in ("backoff", "stop", "immediate"):
+                return {"ok": False, "error": "被踢策略仅支持 backoff、stop 或 immediate"}
+        if key == "kickReconnectMinutes":
+            try:
+                val = max(1, min(720, int(val)))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "退避分钟数需要 1~720 的整数"}
         if key in ("automationMaxFailures", "automationBackoffMinutes"):
             try:
                 val = max(1, min(120, int(val)))
@@ -4625,6 +4792,62 @@ class Engine(object):
         # 否则里面的 _ensure_client 会立刻把连接又建回来。
         if act == "disconnect":
             return self.disconnect()
+        # 拉背包(login.init, ~45 秒): 先建连(快), 再在后台线程里拉 ——
+        # 账号锁必须全程持有, 否则拉一半被手机 App 顶掉(同账号一条连接)。
+        if act == "bag-refresh":
+            if self._hunter_active():
+                return {"ok": False,
+                        "error": "自动打怪正在占用连接, 先停止打怪再拉背包"}
+            lk = self._lock_key()
+            holder = cok_client.account_holder(lk)
+            if holder and ("scan-world" in holder or "auto-hunt" in holder
+                           or "hunter" in holder):
+                return {"ok": False,
+                        "error": "账号正被任务占用(%s), 等它结束后再拉背包"
+                                 % holder.split()[-1][:40]}
+            try:
+                with self.op_lock:
+                    self._ensure_account()
+                    with cok_client.account_lock_retry(
+                            timeout=12.0, purpose="bag-refresh", key=lk):
+                        self._ensure_client()
+                        if self.daemon.client is None:
+                            return {"ok": False, "error": "连不上游戏服"}
+            except cok_client.AccountBusy as e:
+                return {"ok": False, "error": str(e)[:120]}
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False,
+                        "error": "连不上游戏服: %s" % str(e)[:120]}
+            # op_lock 已释放: login.init 的 40~50 秒不能占着它
+            # (会把页面轮询/别的操作全堵死)。账号锁继续持有, 防互踢;
+            # 放后台线程跑, 请求线程立即返回。
+            def run():
+                try:
+                    with cok_client.account_lock_retry(
+                            timeout=12.0, purpose="bag-refresh", key=lk):
+                        ok, info = self._refresh_bag_snapshot()
+                        self.daemon.emit("bag_refreshed", dict(info, ok=ok))
+                except cok_client.AccountBusy:
+                    self.daemon.emit("bag_refreshed",
+                                     {"ok": False, "error": "拉背包期间账号被占用"})
+                except Exception as e:  # noqa: BLE001
+                    self.daemon.emit("bag_refreshed",
+                                     {"ok": False, "error": str(e)[:120]})
+                finally:
+                    # 按需模式: 拉完把连接还给 App(和 action() 的 finally 同规矩)
+                    if not self.persistent:
+                        try:
+                            if self.daemon.client:
+                                self.daemon.client.close()
+                        except Exception:
+                            pass
+                        self.daemon.client = None
+                        with self.lock:
+                            self.connected = False
+            threading.Thread(target=run, name="cok-bag-refresh",
+                             daemon=True).start()
+            return {"ok": True, "note": "正在拉背包(login.init 约需 45 秒), "
+                                        "完成后自动刷新保护罩/药水列表"}
         # 多账号管理: 也都是本地动作(只读写账号库文件 / 清内存态), 不连游戏服。
         if act == "account-switch":
             return self._account_switch(body)
@@ -4653,6 +4876,9 @@ class Engine(object):
             # 重连 = 明确要恢复后台在线 -> 清掉**持久**离线意图并落盘,
             # 否则下一轮循环看到 offlineHold 又会把连接关掉, "重连"白点。
             self._set_offline_hold(False)
+            # 手动重连 = 立刻就要连 -> 清掉被踢退避窗口, 不必等退避到点。
+            with self.lock:
+                self._kick_backoff_until = 0.0
             with self.lock:
                 self.connected = True
             return {"ok": True, "note": "已连接，正在同步游戏状态"}
@@ -4746,6 +4972,9 @@ class Engine(object):
             self.disconnected = False
             # 同时清掉**持久**离线意图并落盘 —— 这是唯一"恢复后台在线"的入口。
             self._set_offline_hold(False)
+            # 手动重连 = 立刻就要连 -> 清掉被踢退避窗口, 不必等退避到点。
+            with self.lock:
+                self._kick_backoff_until = 0.0
             # 必须经由当前引擎的账号解析路径连接。渠道账号入库后不能绕开
             # _ensure_account，否则会错误回退到设备账号或启动时的默认账号。
             self._ensure_account()

@@ -159,7 +159,16 @@ class TestAutoHunterStamina(unittest.TestCase):
         self.assertEqual(h.state["stamina"], 5 + 50)
         self.assertEqual(h.state["stamina_potions"], 1)
         self.assertEqual(h.state["stamina_potion_item"], "200381")
-        # 缓存里的数量应该减一
+        # 数量以服务端响应里的 count 为准(item.use 的权威值 = 用后剩余);
+        # 响应没给 count 时才退回本地减一(2026-11-17 服务器实测)。
+        self.assertEqual(h.stamina_items["200381"]["count"], 1)
+
+    def test_success_without_server_count_decrements_local(self):
+        # 老服务端/假响应不带 count -> 本地减一
+        h, cl = self._hunter({"item.use": {}})
+        h.state["stamina"] = 5
+        ok = h._use_stamina_if_needed()
+        self.assertTrue(ok)
         self.assertEqual(h.stamina_items["200381"]["count"], 2)
 
     def test_failure_does_not_count_as_fails(self):

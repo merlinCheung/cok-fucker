@@ -96,6 +96,14 @@
     <div class="topActs">
       <span class="pill" id="sMode" title="按需模式：每轮短暂连接后立即断开，不影响 App 在线">-</span>
       <label class="pill chk" title="关闭后网页不再自动连接游戏服，完全不占用账号"><input type="checkbox" id="chkAuto" checked> 自动轮询</label>
+      <label class="pill" title="被手机/其它端挤下线后怎么办：退避=等几分钟再连(不和手机来回互踢)；停止=停在离线等手动「重连」；立即=老行为，下一轮就连回去">被踢
+        <select id="selKickPolicy" style="width:88px">
+          <option value="backoff">退避重试</option>
+          <option value="stop">停止重连</option>
+          <option value="immediate">立即重连</option>
+        </select>
+      </label>
+      <label class="pill" id="kickMinWrap" title="退避多少分钟后再自动重试">退避 <input type="number" id="inpKickMin" min="1" max="720" style="width:52px"> 分</label>
       <button id="btnRefresh" class="primary">立即刷新</button>
       <button id="btnReconnect">重连</button>
       <button id="btnDisconnect" title="主动断开与游戏服的连接, 把账号让给手机 App">断开</button>
@@ -392,6 +400,7 @@
         <button id="btnSlots" style="flex:0 0 auto">刷新道具</button>
         <span class="mini" id="shieldSlotHint"></span>
       </div>
+      <div class="mini" id="shieldBagHint">背包列表加载中…</div>
       <div class="row">
         <button class="primary" id="btnShield">开启保护罩</button>
         <label style="margin-left:auto"><input type="checkbox" id="chkAutoShield"> 被攻击自动开罩</label>

@@ -52,6 +52,7 @@ const SET_DEBOUNCE = 350;      // 文本框输入防抖(ms)
 const SET_FIELDS = [
   ['autoSign','chkAutoSign'],['autoShield','chkAutoShield'],['cover','chkCover'],
   ['autoPoll','chkAuto'],['hookType','selHookType'],['hookURL','inpHook'],
+  ['kickReconnectPolicy','selKickPolicy'],['kickReconnectMinutes','inpKickMin'],
   ['lvLow','inpLvLow'],['lvHigh','inpLvHigh'],
   ['perType','inpPerType'],['squads','inpSquads'],['huntMax','inpHuntMax'],
   ['huntMix','inpHuntMix'],['huntAutoStamina','chkHuntAutoStamina'],
@@ -88,8 +89,15 @@ function applySettings(){
     if(el.type==='checkbox'){ if(k in SETTINGS) el.checked=!!SETTINGS[k]; }
     else { if(SETTINGS[k]!==undefined && SETTINGS[k]!==null) el.value=SETTINGS[k]; }
   }
+  syncKickPolicyUI();
   renderSquadPresetSelect(null);
   renderSquadRows();
+}
+/* 退避分钟输入只在「退避重试」策略下有意义: 其余策略藏掉, 免得误导。 */
+function syncKickPolicyUI(){
+  const sel=$('selKickPolicy'), wrap=$('kickMinWrap');
+  if(!sel||!wrap) return;
+  wrap.style.display=(sel.value==='backoff')?'':'none';
 }
 function bindSettings(){
   for(const [k,id] of SET_FIELDS){
@@ -1160,6 +1168,16 @@ function renderItems(st){
       ? ('背包数据来源: '+bs.label+(bs.detail?(' · '+bs.detail):'')+' · 共 '+its.length+' 种')
       : '背包数据不可用(需要手机连上后用 dump_bag.py 采集)';
   }
+  // 保护罩下拉的数据新鲜度提示(共用 st.bag_at: login.init 快照时间)
+  const shb=$('shieldBagHint');
+  if(shb){
+    if(!st.bag_at){
+      shb.innerHTML='<span style="color:#e5484d">背包列表尚未拉取 —— 点「刷新道具」拉一次真实背包</span>';
+    }else{
+      shb.textContent='背包数据: '+hhmmss(st.bag_at/1000)+' 拉取'
+        +(Date.now()/1000-st.bag_at>3600?(' · 已过期 '+Math.floor((Date.now()/1000-st.bag_at)/3600)+' 小时，建议刷新'):'');
+    }
+  }
 }
 
 function renderShield(st){
@@ -1192,9 +1210,22 @@ function renderShield(st){
   const slotHint=$('shieldSlotHint');
   if(slotHint){
     const configured=(sh.slots||[]).filter(s=>(s.items||[]).length>0);
+    const noStock=configured.filter(s=>(s.items||[]).some(i=>i.no_stock));
     slotHint.textContent=configured.length
-      ? ('已配置 '+configured.length+' 个槽位')
+      ? ('已配置 '+configured.length+' 个槽位'
+         +(noStock.length?(' · <span style="color:#e5484d">有槽位道具库存为 0，开罩会失败</span>'):''))
       : '未配置槽位';
+  }
+  // 背包数据新鲜度: 保护罩列表来自 login.init 快照, 没拉过时列表不可信
+  const bagHint=$('shieldBagHint');
+  if(bagHint){
+    if(!sh.bag_at){
+      bagHint.innerHTML='<span style="color:#e5484d">背包列表尚未拉取 —— 点「刷新道具」拉一次真实背包(login.init 约需 45 秒)</span>';
+    }else{
+      const bt=new Date(sh.bag_at*1000);
+      bagHint.textContent='背包数据: '+hhmmss(sh.bag_at/1000)+' 拉取'
+        +(Date.now()/1000-sh.bag_at>3600?(' · 已过期 '+Math.floor((Date.now()/1000-sh.bag_at)/3600)+' 小时，建议刷新'):'');
+    }
   }
   // 自动开罩的代价说明: 它靠服务端推送, 必须常驻连接
   const ah=$('shieldAutoHint');
@@ -2054,12 +2085,12 @@ $('btnShield').onclick=async()=>{
   });
 };
 $('btnSlots').onclick=async()=>{
-  await busy($('btnSlots'),'查询中…',async()=>{
-    const r=await api('/api/action',{action:'shieldslots'});
-    const n=(r.slots||[]).length;
-    setRes('resShield', n?('已取到 '+n+' 个槽位'):('取槽位失败: '+(r.error||'')), n?'ok':'err');
-    toast(n?('已取到 '+n+' 个槽位'):'取槽位失败', n?'ok':'err');
-    await refresh(true);
+  await busy($('btnSlots'),'拉背包中(约 45 秒)…',async()=>{
+    // 背包列表 = login.init 实时快照(保护罩道具 + 真实数量都在里面)
+    const r=await api('/api/action',{action:'bag-refresh'});
+    const ok=r&&r.ok!==false;
+    setRes('resShield', ok?(r.note||'背包拉取中…'):('拉背包失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?'已发起拉取, 完成后列表自动更新':'拉背包失败', ok?'ok':'err');
   });
 };
 $('btnDockReward').onclick=async()=>{
@@ -2475,9 +2506,9 @@ $('btnAutoStart').onclick=async()=>{
     await refresh(true);
   });
 };
-/* 体力药水: 同步背包里的道具实例。
-   游戏服没有「读背包」的接口 —— 药水的实例 id 只能从服务端下发道具时学到,
-   所以这里领一份可领奖励(里面有体力药水时)来触发下发。 */
+/* 体力药水: 同步背包里的道具实例(login.init 实时背包)。
+   2026-11-17 服务器实测: login.init 就能直接拿到体力药水的实例 uuid + 数量,
+   不再需要"领一份含药水的奖励"碰运气。 */
 function renderStaminaItems(st){
   const el=$('staminaItemHint'); if(!el) return;
   if(!st||!st.known){ el.textContent='还没抓到药水的道具实例(点「同步体力药水」拉背包)'; return; }
@@ -2489,12 +2520,14 @@ function renderStaminaItems(st){
 }
 $('btnStaminaSync').onclick=async()=>{
   await busy($('btnStaminaSync'),'拉背包中(约 45 秒)…',async()=>{
-    const r=await api('/api/action',{action:'hunt',op:'stamina-sync'});
-    const st=(r&&r.stamina)||{};
-    renderStaminaItems(st);
-    const ok=!!(r&&r.ok);
-    setRes('resHunt', ok?(r.note||'已同步'):('同步失败: '+(r.error||'未知')), ok?'ok':'err');
-    toast(ok?(r.note||'已同步'):(r.error||'同步失败'), ok?'ok':'err');
+    // 统一走 bag-refresh: 拉一次 login.init, 保护罩列表 + 药水 uuid/数量
+    // 都从这一份快照里出(见后端 _refresh_bag_snapshot)
+    const r=await api('/api/action',{action:'bag-refresh'});
+    const ok=!!(r&&r.ok!==false);
+    setRes('resHunt', ok?(r.note||'背包拉取中, 完成后自动更新'):(('同步失败: '+(r.error||'未知'))), ok?'ok':'err');
+    toast(ok?'已发起拉取, 约 45 秒后自动更新':'同步失败', ok?'ok':'err');
+    // 拉取是后台任务: 3 秒后刷新一次页面状态(完成时也会有事件推送)
+    setTimeout(()=>refresh(true), 3000);
   });
 };
 /* 编队预设: 切编队 / 从游戏里读设置(读到的直接存进当前编队) */
@@ -2947,6 +2980,8 @@ document.addEventListener('keydown',(e)=>{
 /* ---------------- 启动 ---------------- */
 bindSettings();
 applyFold();
+// 被踢策略切换时, 立即切换退避分钟输入的显隐(保存走 SET_FIELDS 的通用绑定)。
+(function(){ const s=$('selKickPolicy'); if(s) s.addEventListener('change', syncKickPolicyUI); })();
 $('banner').addEventListener('click',(e)=>{
   if(e.target && e.target.id==='bannerX'){ BANNER_HIDDEN=true; $('banner').className='banner'; $('banner').innerHTML=''; }
 });
