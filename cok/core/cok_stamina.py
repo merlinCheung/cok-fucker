@@ -90,6 +90,52 @@ def items_path(uid):
     return os.path.join(_accounts_dir(), "%s.items.json" % str(uid))
 
 
+def bag_path(uid):
+    """某个账号的**整背包快照**文件(login.init 拉到的原始 items 数组)。
+
+    和 items.json 的分工:
+      * items.json —— 只存**体力药水**的 {itemId: {uuid,count}}(学习/喝药用),
+        历史上塞过各种杂项 id, 是"按需累积"的缓存;
+      * bag.json   —— 存**一整份** login.init 的 items 数组(保护罩道具、加速道具、
+        药水……全都在), 是"某一时刻的完整背包", 供保护罩下拉/加速/药水共享。
+    """
+    return os.path.join(_accounts_dir(), "%s.bag.json" % str(uid))
+
+
+def load_bag(uid):
+    """读整背包快照: {"at": 秒, "items": [原始条目]}。没有就返回 None。"""
+    if not uid:
+        return None
+    try:
+        with open(bag_path(uid), encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return None
+    return {"at": int(data.get("at") or 0), "items": data["items"]}
+
+
+def save_bag(uid, items):
+    """把一整份背包 items 数组落盘(原子替换)。返回是否成功。"""
+    if not uid or not isinstance(items, list):
+        return False
+    path = bag_path(uid)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"at": int(time.time()), "items": items},
+                      f, ensure_ascii=False)
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+
+
 def load_items(uid):
     """读缓存: {itemId: {"uuid": str, "count": int, "at": ts}}"""
     try:

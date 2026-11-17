@@ -76,7 +76,9 @@ def make_engine(tmp, slot_num=0, bag_items=None):
     eng.settings = {}
     eng.lock = __import__("threading").RLock()
     eng.bag_snapshot = None
+    eng._bag_refreshing = False
     eng._shield_specs_cache = None
+    eng.names = {"items": {}}
     return eng
 
 
@@ -173,6 +175,46 @@ def main():
           str(cl2.calls))
     try:
         os.unlink(cok_stamina.items_path(uid2))
+    except OSError:
+        pass
+
+    # 5) 整背包快照落盘/读回(按账号隔离)
+    uid3 = "unit-bagsnap-%d" % os.getpid()
+    full = [{"itemId": "200411", "count": 3, "uuid": "a" * 32},
+            {"itemId": "200381", "count": 5, "uuid": "c" * 32},
+            {"itemId": "999999", "count": 1}]
+    check("save_bag 成功", cok_stamina.save_bag(uid3, full) is True)
+    back = cok_stamina.load_bag(uid3)
+    check("load_bag 读回 items 一致",
+          back and len(back.get("items") or []) == 3
+          and back["items"][0]["itemId"] == "200411",
+          str(back)[:80])
+    check("load_bag 带 at 时间戳", back and int(back.get("at") or 0) > 0)
+    check("另一个账号读不到(隔离)",
+          cok_stamina.load_bag("unit-bagsnap-other") is None)
+
+    # 6) _load_bag_from_disk 把落盘快照加载进内存
+    eng5 = make_engine(tmp)
+    eng5.account_key = uid3
+    eng5.bag_snapshot = None
+    eng5._load_bag_from_disk()
+    check("启动加载: bag_snapshot 从磁盘恢复",
+          eng5.bag_snapshot and len(eng5.bag_snapshot.get("items") or []) == 3,
+          str(eng5.bag_snapshot)[:60])
+
+    # 7) _bag_view 分类视图: 保护罩 / 体力药水分开, 杂项只计 total
+    eng5._bag_refreshing = False
+    view = eng5._bag_view()
+    check("_bag_view total 含全部道具", view.get("total") == 3, str(view.get("total")))
+    check("_bag_view 挑出保护罩",
+          any(s["itemId"] == "200411" for s in view.get("shields") or []),
+          str(view.get("shields"))[:80])
+    check("_bag_view 挑出体力药水",
+          any(p["itemId"] == "200381" for p in view.get("potions") or []),
+          str(view.get("potions"))[:80])
+    check("_bag_view loaded=True", view.get("loaded") is True)
+    try:
+        os.unlink(cok_stamina.bag_path(uid3))
     except OSError:
         pass
 

@@ -1180,6 +1180,34 @@ function renderItems(st){
   }
 }
 
+function renderBag(st){
+  // 背包卡: login.init 实时快照, 按账号隔离, 开罩/喝药共享同一份数据
+  const bag=st.bag||{};
+  const hint=$('bagCardHint');
+  const put=(id,html)=>{ const e=$(id); if(e) e.innerHTML=html; };
+  if(hint){
+    if(bag.refreshing){
+      hint.innerHTML='<span class="tag">拉取中…（login.init 约 45 秒）</span>';
+    }else if(!bag.loaded){
+      hint.innerHTML='<span style="color:#e5484d">尚未拉取背包 —— 点「刷新背包」拉一次</span>';
+    }else{
+      const age=Date.now()/1000-(bag.at||0);
+      const ageTxt=age>3600?('（'+Math.floor(age/3600)+' 小时前）'):(age>60?('（'+Math.floor(age/60)+' 分钟前）'):'（刚刚）');
+      hint.textContent='共 '+(bag.total||0)+' 种道具 · '+hhmmss((bag.at||0))+' 拉取 '+ageTxt;
+    }
+  }
+  const shields=(bag.shields||[]);
+  put('bagShields', shields.length
+    ? ('<b>保护罩</b>：'+shields.map(x=>esc(x.name)+(x.duration?('('+esc(x.duration)+')'):'')+' ×'+x.count).join('、'))
+    : (bag.loaded?'<b>保护罩</b>：<span class="tag">无</span>':''));
+  const potions=(bag.potions||[]);
+  put('bagPotions', potions.length
+    ? ('<b>体力药水</b>：'+potions.map(x=>esc(x.name)+'(+'+x.gain+') ×'+x.count).join('、'))
+    : (bag.loaded?'<b>体力药水</b>：<span class="tag">无</span>':''));
+  const sum=$('sumBag');
+  if(sum) sum.textContent=bag.loaded?((shields.length+potions.length)+' 项关键道具'):'';
+}
+
 function renderShield(st){
   const sh=st.shield||{};
   const end=sh.end_ms||0;
@@ -1909,7 +1937,7 @@ async function refresh(silent){
   if(st.error==='unauthorized'){ $('connText').textContent='token 无效'; return null; }
   S.state=st;
   renderHeader(st); renderAccounts(st); renderFleet(st); renderCardsStable(st); renderTaskStats(st); renderQueues(st); renderItems(st);
-  renderShield(st); renderEvents(st); renderHunt(st); renderDock(st); renderSky(st); renderWelfare(st); renderScore(st); renderScoreBuy(st); renderAlliance(st); renderAssist(st);
+  renderBag(st); renderShield(st); renderEvents(st); renderHunt(st); renderDock(st); renderSky(st); renderWelfare(st); renderScore(st); renderScoreBuy(st); renderAlliance(st); renderAssist(st);
   renderStaminaItems(st.stamina_items);
   renderOverview(st); renderSummaries(st); renderScan(st);
   if(!silent) $('sLast').title='页面读取时间';
@@ -2261,6 +2289,16 @@ $('btnSlots').onclick=async()=>{
     const ok=r&&r.ok!==false;
     setRes('resShield', ok?(r.note||'背包拉取中…'):('拉背包失败: '+(r.error||'')), ok?'ok':'err');
     toast(ok?'已发起拉取, 完成后列表自动更新':'拉背包失败', ok?'ok':'err');
+    setTimeout(()=>refresh(true), 3000);
+  });
+};
+if($('btnBagRefresh')) $('btnBagRefresh').onclick=async()=>{
+  await busy($('btnBagRefresh'),'拉背包中(约 45 秒)…',async()=>{
+    const r=await api('/api/action',{action:'bag-refresh'});
+    const ok=r&&r.ok!==false;
+    setRes('resBag', ok?(r.note||'背包拉取中…'):('拉背包失败: '+(r.error||'')), ok?'ok':'err');
+    toast(ok?'已发起拉取, 完成后自动更新(约 45 秒)':'拉背包失败', ok?'ok':'err');
+    setTimeout(()=>refresh(true), 3000);
   });
 };
 $('btnDockReward').onclick=async()=>{

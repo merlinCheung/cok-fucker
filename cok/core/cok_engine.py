@@ -450,9 +450,9 @@ class Engine(object):
             self._restore_states()
             # 背包快照也按账号隔离: 换账号时先清掉内存里上一个号的快照,
             # 再从这个号自己的 bag.json 加载(没有就保持 None, 等拉取)。
-            with self.lock:
-                self.bag_snapshot = None
-                self._bag_auto_at = 0.0
+            # (settle 阶段的单次赋值, 和上面 _restore_states 一样不持锁)
+            self.bag_snapshot = None
+            self._bag_auto_at = 0.0
             self._load_bag_from_disk()
         # 这两个模块的数据目录现在是**按账号的作用域**(cok_scope), 不再是
         # 进程内全局。同进程里 N 个引擎并行轮询时, 各写各的桶 —— 原来
@@ -3664,9 +3664,9 @@ class Engine(object):
         except Exception:  # noqa: BLE001
             snap = None
         if snap:
-            with self.lock:
-                self.bag_snapshot = snap
-                self._bag_auto_at = float(snap.get("at") or 0)
+            # settle 阶段单次赋值, 和 _apply_account_meta 的其它回填一样不持锁
+            self.bag_snapshot = snap
+            self._bag_auto_at = float(snap.get("at") or 0)
 
     def _bag_ttl(self):
         """背包自动拉取的 TTL 秒数(默认 4 小时)。
