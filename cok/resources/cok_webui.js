@@ -1851,10 +1851,13 @@ function chanSyncChannelLabel(){
   $('chanAcct').placeholder=name+'账号';
   $('chanTtl').textContent='渠道登录 · '+name;
 }
+/* 页脚(「添加选中」按钮)是弹窗的直接子元素, 固定在弹窗底部;
+   显隐要跟列表一起切 —— 还没列出游戏号时不该出现。 */
+function chanFootShow(on){ const f=$('chanFoot'); if(f) f.style.display=on?'flex':'none'; }
 function chanOpen(){
   $('chanRes').style.display='none';
   $('chanRes').innerHTML='';
-  $('chanListWrap').style.display='none';
+  $('chanListWrap').style.display='none'; chanFootShow(false);
   $('chanList').innerHTML='';
   CHAN_SID=''; CHAN_ITEMS=[];
   $('chanOvl').classList.add('show');
@@ -1878,7 +1881,7 @@ function chanRenderList(items){
   const box=$('chanList');
   if(!CHAN_ITEMS.length){
     box.innerHTML='<div class="mnote">这个账号下没有列出任何游戏号(可能还没在 COK 里开过号)。</div>';
-    $('chanListWrap').style.display='block';
+    $('chanListWrap').style.display='block'; chanFootShow(true);
     chanSyncFoot(); return;
   }
   box.innerHTML=CHAN_ITEMS.map((it,idx)=>{
@@ -1908,7 +1911,7 @@ function chanRenderList(items){
       chanSyncFoot();
     });
   });
-  $('chanListWrap').style.display='block';
+  $('chanListWrap').style.display='block'; chanFootShow(true);
   chanSyncFoot();
 }
 $('chanSelAll').onclick=()=>{
@@ -1923,7 +1926,7 @@ async function chanSubmit(){
   await busy($('chanSubmit'),'登录中…',async()=>{
     const r=await api('/api/action',{action:'channel-login',channel,account,password});
     const box=$('chanRes'); box.style.display='block';
-    $('chanListWrap').style.display='none';
+    $('chanListWrap').style.display='none'; chanFootShow(false);
     if(!r.ok){
       box.className='res err';
       box.innerHTML='<b>失败</b> · '+esc(r.error||'未知错误');
@@ -1962,7 +1965,7 @@ async function chanAdd(){
     (r.added||[]).forEach(a=>{ h+='<br>'+esc(a.label||a.key)+' · gameUid <code>'+esc(a.gameUid||'')+'</code>'; });
     if((r.skipped||[]).length) h+='<br><span class="dim">跳过: '+esc(r.skipped.join('; '))+'</span>';
     box.innerHTML=h;
-    $('chanListWrap').style.display='none';
+    $('chanListWrap').style.display='none'; chanFootShow(false);
     $('chanPwd').value='';
     ACCT_SIG='';
     await refresh(true);
@@ -2032,7 +2035,7 @@ $('btnSpeedGold').onclick=async()=>{
   });
 };
 $('btnShield').onclick=async()=>{
-  const slot=parseInt($('selSlot').value||'1',10), cover=$('chkCover').checked?1:0;
+  const slot=1, cover=$('chkCover').checked?1:0;
   const spec=$('selShieldSpec').value||'';
   if(!spec){ toast('先选保护罩规格','err'); setRes('resShield','需要先选保护罩规格','err'); return; }
   if(!confirm('确认开保护罩？\n规格: '+(($('selShieldSpec').selectedOptions[0]||{}).text||spec)
@@ -2963,7 +2966,11 @@ $('banner').addEventListener('click',(e)=>{
     histBox.closest('details').addEventListener('toggle',()=>{ if(histBox.closest('details').open) loadScanHistory(); });
   }
   setTimeout(()=>refresh(true),1200);
-  setInterval(()=>refresh(true),5000);
+  // 主轮询拉的是 /api/state(单账号 ~200KB)。页面在后台/最小化时没人看,
+  // 还每 5s 拉一次纯属浪费带宽(10 人挂着 = 每秒几百 KB)。所以**不可见时跳过**,
+  // 切回前台立刻补一轮 —— 回来不至于看到一屏旧数据。
+  setInterval(()=>{ if(!document.hidden) refresh(true); },5000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refresh(true); });
   // 巨型狮鹫集结: 独立定时拉(不塞进主轮询, 免得拖慢刷新)
   scheduleRally();
   // 扫描历史每 30 秒刷一次(扫描进行中时进度靠 state, 这里只刷历史)
